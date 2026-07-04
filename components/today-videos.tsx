@@ -8,10 +8,10 @@ import { PLATFORM_META } from '@/lib/platforms'
 import type { Submission } from '@/lib/db'
 
 export function TodayVideos({
-  token,
+  username,
   submissions,
 }: {
-  token: string
+  username: string
   submissions: Submission[]
 }) {
   const router = useRouter()
@@ -52,7 +52,7 @@ export function TodayVideos({
               disabled={pending}
               onClick={() =>
                 startTransition(async () => {
-                  await deleteOwnSubmission(token, s.id)
+                  await deleteOwnSubmission(username, s.id)
                   router.refresh()
                 })
               }

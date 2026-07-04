@@ -1,15 +1,13 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
-import type { Project, Creator } from '@/lib/db'
+import type { Creator } from '@/lib/db'
 
 export function FiltersBar({
-  projects,
   creators,
   defaultFrom,
   defaultTo,
 }: {
-  projects: Project[]
   creators: Creator[]
   defaultFrom: string
   defaultTo: string
@@ -24,11 +22,18 @@ export function FiltersBar({
     router.push(`/admin?${next.toString()}`)
   }
 
+  // Clearing keeps the selected project (owned by the top-level selector).
+  function clearFilters() {
+    const next = new URLSearchParams()
+    const project = params.get('project')
+    if (project) next.set('project', project)
+    router.push(`/admin?${next.toString()}`)
+  }
+
   const inputClass =
     'h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
   const hasFilters =
-    params.get('project') ||
     params.get('creator') ||
     params.get('platform') ||
     params.get('from') ||
@@ -53,21 +58,6 @@ export function FiltersBar({
           onChange={(e) => setParam('to', e.target.value)}
           className={inputClass}
         />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground">Project</label>
-        <select
-          defaultValue={params.get('project') ?? ''}
-          onChange={(e) => setParam('project', e.target.value)}
-          className={inputClass}
-        >
-          <option value="">All projects</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
       </div>
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-muted-foreground">Creator</label>
@@ -99,7 +89,7 @@ export function FiltersBar({
       {hasFilters ? (
         <button
           type="button"
-          onClick={() => router.push('/admin')}
+          onClick={clearFilters}
           className="h-10 rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
         >
           Clear

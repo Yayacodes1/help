@@ -1,16 +1,10 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
-import { Pencil, RefreshCw, Trash2, X } from 'lucide-react'
+import { Pencil, Trash2, X } from 'lucide-react'
 import type { Project } from '@/lib/db'
 import type { CreatorProgress } from '@/lib/queries'
-import {
-  createCreator,
-  deleteCreator,
-  regenerateCreatorToken,
-  updateCreator,
-} from '@/app/actions/admin'
-import { CopyLink } from '@/components/admin/copy-link'
+import { createCreator, deleteCreator, updateCreator } from '@/app/actions/admin'
 
 function GoalPill({
   label,
@@ -74,6 +68,10 @@ export function CreatorsManager({
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <h2 className="text-sm font-semibold">Creators</h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Creators submit at the shared <span className="font-medium">/submit</span> link using their
+        TikTok username. Only usernames added here can submit.
+      </p>
 
       <form
         ref={formRef}
@@ -89,7 +87,7 @@ export function CreatorsManager({
           <input
             name="name"
             required
-            placeholder="Creator name"
+            placeholder="TikTok username"
             className="h-10 min-w-40 flex-1 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
           <select name="project_id" defaultValue="" className={selectClass}>
@@ -170,19 +168,6 @@ export function CreatorsManager({
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <CopyLink token={c.token} />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm('Generate a new link? The old link will stop working.'))
-                            startTransition(() => regenerateCreatorToken(c.id))
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
-                        title="Regenerate link"
-                      >
-                        <RefreshCw className="size-3.5" />
-                        New link
-                      </button>
                       <button
                         type="button"
                         onClick={() => setEditingId(c.id)}

@@ -7,13 +7,14 @@ import {
   getServerToday,
   type AdminFilters,
 } from '@/lib/queries'
-import { campaignRange } from '@/lib/campaign'
+import { yearRange } from '@/lib/campaign'
 import { StatCard } from '@/components/stat-card'
 import { FiltersBar } from '@/components/admin/filters-bar'
 import { ViewsCell } from '@/components/admin/views-cell'
 import { DeleteSubmission } from '@/components/admin/delete-submission'
 import { ProjectsManager } from '@/components/admin/projects-manager'
 import { CreatorsManager } from '@/components/admin/creators-manager'
+import { ProjectSelector } from '@/components/admin/project-selector'
 import { TodayProgress } from '@/components/admin/today-progress'
 import { LogoutButton } from '@/components/admin/logout-button'
 import { formatDate, formatNumber } from '@/lib/format'
@@ -43,20 +44,22 @@ export default async function AdminPage({
       ? (sp.platform as Platform)
       : undefined
   const today = await getServerToday()
-  const { start: campaignStart, end: campaignEnd } = campaignRange(today)
+  const { start: yearStart, end: yearEnd } = yearRange(today)
+
+  const projectId = sp.project ? Number(sp.project) : undefined
 
   const filters: AdminFilters = {
-    projectId: sp.project ? Number(sp.project) : undefined,
+    projectId,
     creatorId: sp.creator ? Number(sp.creator) : undefined,
     platform,
-    from: sp.from || campaignStart,
-    to: sp.to || campaignEnd,
+    from: sp.from || yearStart,
+    to: sp.to || yearEnd,
   }
 
   const [submissions, projects, creators] = await Promise.all([
     getAdminSubmissions(filters),
     getAllProjects(),
-    getCreatorsWithTodayProgress(),
+    getCreatorsWithTodayProgress(projectId),
   ])
 
   const totalViews = submissions.reduce((sum, s) => sum + (s.views ?? 0), 0)
@@ -76,9 +79,12 @@ export default async function AdminPage({
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 py-8">
-      <header className="mb-6 flex items-center justify-between gap-4">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-xl font-semibold tracking-tight">Admin dashboard</h1>
-        <LogoutButton />
+        <div className="flex items-center gap-3">
+          <ProjectSelector projects={projects} />
+          <LogoutButton />
+        </div>
       </header>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -96,10 +102,9 @@ export default async function AdminPage({
       <section className="mt-8">
         <h2 className="mb-3 text-sm font-semibold tracking-tight">Videos</h2>
         <FiltersBar
-          projects={projects}
           creators={creators}
-          defaultFrom={campaignStart}
-          defaultTo={campaignEnd}
+          defaultFrom={yearStart}
+          defaultTo={yearEnd}
         />
       </section>
 

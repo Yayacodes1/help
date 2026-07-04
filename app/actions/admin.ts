@@ -89,13 +89,6 @@ export async function updateCreator(id: number, formData: FormData) {
   revalidatePath('/admin')
 }
 
-export async function regenerateCreatorToken(id: number) {
-  await requireAdmin()
-  const token = randomBytes(12).toString('hex')
-  await sql`UPDATE creators SET token = ${token} WHERE id = ${id}`
-  revalidatePath('/admin')
-}
-
 export async function deleteCreator(id: number) {
   await requireAdmin()
   await sql`DELETE FROM submissions WHERE creator_id = ${id}`

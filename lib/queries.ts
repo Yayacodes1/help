@@ -17,6 +17,17 @@ export async function getCreatorByToken(token: string): Promise<Creator | null> 
   return rows[0] ?? null
 }
 
+export async function getCreatorByName(name: string): Promise<Creator | null> {
+  const rows = (await sql`
+    SELECT id, name, token, project_id, created_at,
+           goal_instagram, goal_tiktok
+    FROM creators
+    WHERE lower(name) = lower(${name.trim()})
+    LIMIT 1
+  `) as Creator[]
+  return rows[0] ?? null
+}
+
 export async function getProjectById(id: number): Promise<Project | null> {
   const rows = (await sql`
     SELECT id, name, created_at FROM projects WHERE id = ${id} LIMIT 1
