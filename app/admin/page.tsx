@@ -36,7 +36,7 @@ export default async function AdminPage({
     to?: string
   }>
 }) {
-  if (!(await isAdmin())) redirect('/admin/login')
+  if (!(await isAdmin())) redirect('/login')
 
   const sp = await searchParams
   const platform =

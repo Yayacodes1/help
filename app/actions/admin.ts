@@ -28,7 +28,7 @@ export async function login(_prev: unknown, formData: FormData) {
 
 export async function logout() {
   await destroyAdminSession()
-  redirect('/admin/login')
+  redirect('/login')
 }
 
 // --- Projects ---
