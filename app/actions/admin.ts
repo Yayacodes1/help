@@ -28,7 +28,7 @@ export async function login(_prev: unknown, formData: FormData) {
 
 export async function logout() {
   await destroyAdminSession()
-  redirect('/admin/login')
+  redirect('/login')
 }
 
 // --- Projects ---
@@ -86,13 +86,6 @@ export async function updateCreator(id: number, formData: FormData) {
         goal_instagram = ${goalInstagram}, goal_tiktok = ${goalTiktok}
     WHERE id = ${id}
   `
-  revalidatePath('/admin')
-}
-
-export async function regenerateCreatorToken(id: number) {
-  await requireAdmin()
-  const token = randomBytes(12).toString('hex')
-  await sql`UPDATE creators SET token = ${token} WHERE id = ${id}`
   revalidatePath('/admin')
 }
 

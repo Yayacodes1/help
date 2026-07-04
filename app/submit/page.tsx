@@ -1,52 +1,53 @@
-import { notFound } from 'next/navigation'
 import { Send } from 'lucide-react'
 import { SubmitForm } from '@/components/submit-form'
 import { TodayVideos } from '@/components/today-videos'
 import { DateSelect } from '@/components/date-select'
 import { CreatorStats } from '@/components/creator-stats'
+import { UsernameGate } from '@/components/username-gate'
 import {
-  getCreatorByToken,
+  getCreatorByName,
   getServerToday,
   getSubmissionsForCreatorOnDate,
   getCreatorCountsByPlatformOnDate,
   getCreatorStats,
-  getCreatorDailyCounts,
 } from '@/lib/queries'
 import { PLATFORMS } from '@/lib/db'
 import { goalFor } from '@/lib/platforms'
-import { campaignRange, campaignDates } from '@/lib/campaign'
+import { yearRange } from '@/lib/campaign'
+
+export const dynamic = 'force-dynamic'
 
 function isValidDate(value: string | undefined): value is string {
   return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
 
 export default async function SubmitPage({
-  params,
   searchParams,
 }: {
-  params: Promise<{ token: string }>
-  searchParams: Promise<{ date?: string }>
+  searchParams: Promise<{ u?: string; date?: string }>
 }) {
-  const { token } = await params
-  const { date: dateParam } = await searchParams
-  const creator = await getCreatorByToken(token)
-  if (!creator) notFound()
+  const { u, date: dateParam } = await searchParams
+  const creator = u ? await getCreatorByName(u) : null
 
+  // No username yet, or an unknown username: show the public gate.
+  if (!creator) {
+    return <UsernameGate initialUsername={u ?? ''} />
+  }
+
+  const username = creator.name
   const today = await getServerToday()
-  const { start: campaignStart, end: campaignEnd } = campaignRange(today)
-  const dates = campaignDates()
+  const { start: rangeStart, end: rangeEnd } = yearRange(today)
 
-  // Default to today, but keep the selected date inside the campaign window.
+  // Default to today, clamped within the selectable range.
   let date = isValidDate(dateParam) ? dateParam : today
-  if (date < campaignStart) date = campaignStart
-  if (date > campaignEnd) date = campaignEnd
+  if (date < rangeStart) date = rangeStart
+  if (date > rangeEnd) date = rangeEnd
   const isToday = date === today
 
-  const [counts, submissions, stats, dailyCounts] = await Promise.all([
+  const [counts, submissions, stats] = await Promise.all([
     getCreatorCountsByPlatformOnDate(creator.id, date),
     getSubmissionsForCreatorOnDate(creator.id, date),
     getCreatorStats(creator.id),
-    getCreatorDailyCounts(creator.id),
   ])
 
   const activePlatforms = PLATFORMS.filter((p) => goalFor(creator, p) > 0)
@@ -90,10 +91,10 @@ export default async function SubmitPage({
             <div>
               <h2 className="text-sm font-semibold text-foreground">اختر اليوم</h2>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                يمكنك الرجوع لأي يوم من الحملة وإضافة فيديوهاتك.
+                يمكنك اختيار أي يوم وإضافة فيديوهاتك.
               </p>
             </div>
-            <DateSelect date={date} dates={dates} today={today} counts={dailyCounts} />
+            <DateSelect date={date} min={rangeStart} max={rangeEnd} />
           </div>
           {!isToday && (
             <p className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground">
@@ -107,12 +108,12 @@ export default async function SubmitPage({
             <Send className="h-4 w-4 text-primary" />
             <h2 className="text-sm font-semibold text-foreground">أضف روابط الفيديوهات</h2>
           </div>
-          <SubmitForm token={token} date={date} fields={fields} />
+          <SubmitForm username={username} date={date} fields={fields} />
         </section>
 
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-foreground">فيديوهات هذا اليوم</h2>
-          <TodayVideos token={token} submissions={submissions} />
+          <TodayVideos username={username} submissions={submissions} />
         </section>
       </main>
     </div>

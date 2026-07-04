@@ -21,17 +21,17 @@ type PlatformField = {
 type State = { ok: boolean; message: string } | null
 
 export function SubmitForm({
-  token,
+  username,
   date,
   fields,
 }: {
-  token: string
+  username: string
   date: string
   fields: PlatformField[]
 }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
-  const action = submitVideos.bind(null, token)
+  const action = submitVideos.bind(null, username)
   const [state, formAction, pending] = useActionState<State, FormData>(action, null)
 
   useEffect(() => {

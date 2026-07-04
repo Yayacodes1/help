@@ -1,8 +1,13 @@
 'use server'
 
 import { sql, PLATFORMS, type Platform } from '@/lib/db'
-import { getCreatorByToken } from '@/lib/queries'
+import { getCreatorByName } from '@/lib/queries'
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
+
+function normalizeUsername(raw: string): string {
+  return raw.trim().replace(/^@+/, '')
+}
 
 function normalizeUrl(raw: string): string | null {
   const value = raw.trim()
@@ -23,9 +28,23 @@ function isValidDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
 
-export async function submitVideos(token: string, _prev: unknown, formData: FormData) {
-  const creator = await getCreatorByToken(token)
-  if (!creator) return { ok: false, message: 'Invalid creator link.' }
+// Public gate: verify the TikTok username belongs to a registered creator,
+// then unlock the submission form for them.
+export async function startSubmission(_prev: unknown, formData: FormData) {
+  const username = normalizeUsername((formData.get('username') ?? '').toString())
+  if (!username) {
+    return { ok: false, message: 'أدخل اسم مستخدم تيك توك.' }
+  }
+  const creator = await getCreatorByName(username)
+  if (!creator) {
+    return { ok: false, message: 'اسم المستخدم غير مسجّل. تواصل مع الإدارة لإضافتك.' }
+  }
+  redirect(`/submit?u=${encodeURIComponent(creator.name)}`)
+}
+
+export async function submitVideos(username: string, _prev: unknown, formData: FormData) {
+  const creator = await getCreatorByName(username)
+  if (!creator) return { ok: false, message: 'اسم المستخدم غير مسجّل.' }
 
   const dateRaw = (formData.get('video_date') ?? '').toString()
   const videoDate = isValidDate(dateRaw) ? dateRaw : null
@@ -54,18 +73,16 @@ export async function submitVideos(token: string, _prev: unknown, formData: Form
     `
   }
 
-  revalidatePath(`/submit/${token}`)
-  revalidatePath(`/c/${token}`)
+  revalidatePath('/submit')
   return { ok: true, message: `Added ${rows.length} video${rows.length > 1 ? 's' : ''}.` }
 }
 
-export async function deleteOwnSubmission(token: string, submissionId: number) {
-  const creator = await getCreatorByToken(token)
+export async function deleteOwnSubmission(username: string, submissionId: number) {
+  const creator = await getCreatorByName(username)
   if (!creator) return
   await sql`
     DELETE FROM submissions
     WHERE id = ${submissionId} AND creator_id = ${creator.id}
   `
-  revalidatePath(`/submit/${token}`)
-  revalidatePath(`/c/${token}`)
+  revalidatePath('/submit')
 }
