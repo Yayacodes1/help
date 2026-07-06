@@ -65,7 +65,7 @@ export function TodayProgress({ creators }: { creators: CreatorProgress[] }) {
                   <Cell today={c.today_tiktok} goal={c.goal_tiktok} />
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-muted-foreground">
-                  {today} today · {c.total_videos} total
+                  {today} posted · {c.total_videos} total
                 </td>
               </tr>
             )

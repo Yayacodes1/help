@@ -3,7 +3,7 @@ import { isAdmin } from '@/lib/admin-auth'
 import {
   getAdminSubmissions,
   getAllProjects,
-  getCreatorsWithTodayProgress,
+  getCreatorsWithProgressOnDate,
   getServerToday,
   type AdminFilters,
 } from '@/lib/queries'
@@ -16,6 +16,7 @@ import { ProjectsManager } from '@/components/admin/projects-manager'
 import { CreatorsManager } from '@/components/admin/creators-manager'
 import { ProjectSelector } from '@/components/admin/project-selector'
 import { TodayProgress } from '@/components/admin/today-progress'
+import { DayNavigator } from '@/components/admin/day-navigator'
 import { LogoutButton } from '@/components/admin/logout-button'
 import { formatDate, formatNumber } from '@/lib/format'
 import { PLATFORM_META } from '@/lib/platforms'
@@ -34,6 +35,7 @@ export default async function AdminPage({
     platform?: string
     from?: string
     to?: string
+    day?: string
   }>
 }) {
   if (!(await isAdmin())) redirect('/login')
@@ -45,6 +47,9 @@ export default async function AdminPage({
       : undefined
   const today = await getServerToday()
   const { start: yearStart, end: yearEnd } = yearRange(today)
+
+  const selectedDay = /^\d{4}-\d{2}-\d{2}$/.test(sp.day ?? '') ? sp.day! : today
+  const isToday = selectedDay === today
 
   const projectId = sp.project ? Number(sp.project) : undefined
 
@@ -59,7 +64,7 @@ export default async function AdminPage({
   const [submissions, projects, creators] = await Promise.all([
     getAdminSubmissions(filters),
     getAllProjects(),
-    getCreatorsWithTodayProgress(projectId),
+    getCreatorsWithProgressOnDate(selectedDay, projectId),
   ])
 
   const totalViews = submissions.reduce((sum, s) => sum + (s.views ?? 0), 0)
@@ -88,14 +93,25 @@ export default async function AdminPage({
       </header>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Posted today" value={`${postedTodayTotal} / ${goalTotal}`} />
-        <StatCard label="Creators active today" value={`${creatorsPostedToday} / ${creators.length}`} />
+        <StatCard
+          label={isToday ? 'Posted today' : 'Posted that day'}
+          value={`${postedTodayTotal} / ${goalTotal}`}
+        />
+        <StatCard
+          label={isToday ? 'Creators active today' : 'Creators active that day'}
+          value={`${creatorsPostedToday} / ${creators.length}`}
+        />
         <StatCard label="Total videos" value={totalVideos} />
         <StatCard label="Total views" value={formatNumber(totalViews)} />
       </section>
 
       <section className="mt-8">
-        <h2 className="mb-3 text-sm font-semibold tracking-tight">Today&apos;s progress</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold tracking-tight">
+            {isToday ? "Today's progress" : 'Daily progress'}
+          </h2>
+          <DayNavigator selectedDay={selectedDay} today={today} />
+        </div>
         <TodayProgress creators={creators} />
       </section>
 
