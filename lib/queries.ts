@@ -144,7 +144,8 @@ export type CreatorProgress = CreatorWithProject & {
   total_videos: number
 }
 
-export async function getCreatorsWithTodayProgress(
+export async function getCreatorsWithProgressOnDate(
+  date: string,
   projectId?: number,
 ): Promise<CreatorProgress[]> {
   const pid = projectId ?? null
@@ -153,8 +154,8 @@ export async function getCreatorsWithTodayProgress(
       c.id, c.name, c.token, c.project_id, c.created_at,
       c.goal_instagram, c.goal_tiktok,
       p.name AS project_name,
-      COALESCE(SUM(CASE WHEN s.video_date = CURRENT_DATE AND s.platform = 'instagram' THEN 1 ELSE 0 END), 0)::int AS today_instagram,
-      COALESCE(SUM(CASE WHEN s.video_date = CURRENT_DATE AND s.platform = 'tiktok' THEN 1 ELSE 0 END), 0)::int AS today_tiktok,
+      COALESCE(SUM(CASE WHEN s.video_date = ${date}::date AND s.platform = 'instagram' THEN 1 ELSE 0 END), 0)::int AS today_instagram,
+      COALESCE(SUM(CASE WHEN s.video_date = ${date}::date AND s.platform = 'tiktok' THEN 1 ELSE 0 END), 0)::int AS today_tiktok,
       COALESCE(COUNT(s.id), 0)::int AS total_videos
     FROM creators c
     LEFT JOIN projects p ON p.id = c.project_id
