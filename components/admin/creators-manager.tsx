@@ -3,8 +3,9 @@
 import { useRef, useState, useTransition } from 'react'
 import { Pencil, Trash2, X } from 'lucide-react'
 import type { Project } from '@/lib/db'
-import type { CreatorProgress } from '@/lib/queries'
+import type { CreatorTrackingRow } from '@/lib/queries'
 import { createCreator, deleteCreator, updateCreator } from '@/app/actions/admin'
+import Link from 'next/link'
 
 function GoalPill({
   label,
@@ -32,7 +33,7 @@ export function CreatorsManager({
   creators,
   projects,
 }: {
-  creators: CreatorProgress[]
+  creators: CreatorTrackingRow[]
   projects: Project[]
 }) {
   const formRef = useRef<HTMLFormElement>(null)
@@ -162,9 +163,16 @@ export function CreatorsManager({
                 <div className="flex flex-col gap-2">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="font-medium">{c.name}</div>
+                      <Link
+                        href={`/admin/creators/${c.id}`}
+                        className="font-medium underline-offset-4 hover:underline"
+                      >
+                        {c.name}
+                      </Link>
                       <div className="text-xs text-muted-foreground">
-                        {c.project_name ?? 'No project'} · {c.total_videos} total
+                        {c.project_name ?? 'No project'} · {c.total_videos} total · streak{' '}
+                        {c.current_streak}
+                        {c.pay_due ? ' · pay due' : ''}
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">

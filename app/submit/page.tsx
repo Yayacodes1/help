@@ -4,12 +4,14 @@ import { TodayVideos } from '@/components/today-videos'
 import { DateSelect } from '@/components/date-select'
 import { CreatorStats } from '@/components/creator-stats'
 import { UsernameGate } from '@/components/username-gate'
+import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import {
   getCreatorByName,
   getServerToday,
   getSubmissionsForCreatorOnDate,
   getCreatorCountsByPlatformOnDate,
   getCreatorStats,
+  getCreatorConsistency,
 } from '@/lib/queries'
 import { PLATFORMS } from '@/lib/db'
 import { goalFor } from '@/lib/platforms'
@@ -27,6 +29,7 @@ export default async function SubmitPage({
   searchParams: Promise<{ u?: string; date?: string }>
 }) {
   const { u, date: dateParam } = await searchParams
+  await ensureCreatorTrackingColumns()
   const creator = u ? await getCreatorByName(u) : null
 
   // No username yet, or an unknown username: show the public gate.
@@ -44,10 +47,11 @@ export default async function SubmitPage({
   if (date > rangeEnd) date = rangeEnd
   const isToday = date === today
 
-  const [counts, submissions, stats] = await Promise.all([
+  const [counts, submissions, stats, consistency] = await Promise.all([
     getCreatorCountsByPlatformOnDate(creator.id, date),
     getSubmissionsForCreatorOnDate(creator.id, date),
     getCreatorStats(creator.id),
+    getCreatorConsistency(creator, today),
   ])
 
   const activePlatforms = PLATFORMS.filter((p) => goalFor(creator, p) > 0)
@@ -59,6 +63,13 @@ export default async function SubmitPage({
     todayCount: counts[platform],
   }))
 
+  const displayStats = {
+    ...stats,
+    current_streak: consistency.currentStreak,
+    best_streak: consistency.bestStreak,
+    hit_rate: consistency.hitRate,
+  }
+
   return (
     <div className="min-h-dvh bg-background">
       <main
@@ -66,24 +77,24 @@ export default async function SubmitPage({
         lang="ar"
         className="mx-auto flex w-full max-w-lg flex-col gap-7 px-5 py-8 text-right"
       >
-        <header className="animate-in fade-in slide-in-from-top-2 overflow-hidden rounded-2xl border border-border bg-gradient-to-bl from-primary to-[oklch(0.46_0.19_264)] p-6 text-primary-foreground shadow-sm">
+        <header className="animate-in fade-in slide-in-from-top-2 overflow-hidden rounded-2xl border border-[#e8cfc0] bg-[#fff1e6] p-6 text-[#9a0d18] shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm text-primary-foreground/80">مرحباً {creator.name}</p>
-              <h1 className="mt-1 text-balance text-2xl font-bold tracking-tight">
+              <p className="text-sm text-[#a05a55]">مرحباً {creator.name}</p>
+              <h1 className="mt-1 text-balance text-2xl font-bold tracking-tight text-[#9a0d18]">
                 تسليم فيديوهات نوتك
               </h1>
             </div>
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary-foreground/15 text-lg font-bold backdrop-blur">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#c41e2a] text-lg font-bold text-[#fff7f0]">
               نوتك
             </div>
           </div>
-          <p className="mt-3 text-sm font-medium text-primary-foreground/90">أرسل فيديوهات اليوم</p>
+          <p className="mt-3 text-sm font-medium text-[#b01020]">أرسل فيديوهات اليوم</p>
         </header>
 
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-foreground">ملخص نشاطك</h2>
-          <CreatorStats stats={stats} />
+          <CreatorStats stats={displayStats} />
         </section>
 
         <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">

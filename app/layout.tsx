@@ -1,9 +1,17 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { Geist } from 'next/font/google'
+import { Fraunces, Source_Sans_3 } from 'next/font/google'
 import './globals.css'
 
-const geist = Geist({ subsets: ['latin'] })
+const display = Fraunces({
+  subsets: ['latin'],
+  variable: '--font-display',
+})
+
+const body = Source_Sans_3({
+  subsets: ['latin'],
+  variable: '--font-body',
+})
 
 export const metadata: Metadata = {
   title: 'Creator Submissions',
@@ -13,7 +21,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   colorScheme: 'light',
-  themeColor: '#ffffff',
+  themeColor: '#f7ebe0',
 }
 
 export default function RootLayout({
@@ -22,8 +30,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="bg-background">
-      <body className={`${geist.className} antialiased`}>
+    <html lang="en" className={`${display.variable} ${body.variable} light bg-background`}>
+      <body className={`${body.className} antialiased`}>
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

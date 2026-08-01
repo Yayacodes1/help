@@ -16,12 +16,12 @@ export function UsernameGate({ initialUsername = '' }: { initialUsername?: strin
         lang="ar"
         className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-5 py-10 text-right"
       >
-        <header className="overflow-hidden rounded-2xl border border-border bg-gradient-to-bl from-primary to-[oklch(0.46_0.19_264)] p-6 text-primary-foreground shadow-sm">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-foreground/15 text-lg font-bold backdrop-blur">
+        <header className="overflow-hidden rounded-2xl border border-[#e8cfc0] bg-[#fff1e6] p-6 text-[#9a0d18] shadow-sm">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#c41e2a] text-lg font-bold text-[#fff7f0]">
             نوتك
           </div>
-          <h1 className="mt-4 text-balance text-2xl font-bold tracking-tight">تسليم الفيديوهات</h1>
-          <p className="mt-2 text-sm text-primary-foreground/90 text-pretty">
+          <h1 className="mt-4 text-balance text-2xl font-bold tracking-tight text-[#9a0d18]">تسليم الفيديوهات</h1>
+          <p className="mt-2 text-sm text-[#a05a55] text-pretty">
             أدخل اسم مستخدمك في تيك توك للمتابعة إلى نموذج التسليم.
           </p>
         </header>

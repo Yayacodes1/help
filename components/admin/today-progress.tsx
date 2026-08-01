@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import type { CreatorProgress } from '@/lib/queries'
+import type { CreatorTrackingRow } from '@/lib/queries'
 
 function Cell({ today, goal }: { today: number; goal: number }) {
   if (goal <= 0) {
@@ -17,7 +17,7 @@ function Cell({ today, goal }: { today: number; goal: number }) {
   )
 }
 
-export function TodayProgress({ creators }: { creators: CreatorProgress[] }) {
+export function TodayProgress({ creators }: { creators: CreatorTrackingRow[] }) {
   if (creators.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -34,6 +34,8 @@ export function TodayProgress({ creators }: { creators: CreatorProgress[] }) {
             <th className="px-4 py-3 font-medium">Creator</th>
             <th className="px-4 py-3 text-center font-medium">Instagram</th>
             <th className="px-4 py-3 text-center font-medium">TikTok</th>
+            <th className="px-4 py-3 text-center font-medium">Streak</th>
+            <th className="px-4 py-3 text-right font-medium">Hit rate</th>
             <th className="px-4 py-3 text-right font-medium">Videos</th>
           </tr>
         </thead>
@@ -49,7 +51,7 @@ export function TodayProgress({ creators }: { creators: CreatorProgress[] }) {
               <tr key={c.id} className="border-b border-border last:border-0">
                 <td className="whitespace-nowrap px-4 py-3">
                   <Link
-                    href={`/admin?creator=${c.id}`}
+                    href={`/admin/creators/${c.id}`}
                     className="font-medium underline-offset-4 hover:underline"
                   >
                     {c.name}
@@ -57,12 +59,21 @@ export function TodayProgress({ creators }: { creators: CreatorProgress[] }) {
                   {allMet && (
                     <span className="ml-2 text-xs font-medium text-primary">done</span>
                   )}
+                  {c.pay_due && (
+                    <span className="ml-2 text-xs font-medium text-amber-700">pay due</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-center">
                   <Cell today={c.today_instagram} goal={c.goal_instagram} />
                 </td>
                 <td className="px-4 py-3 text-center">
                   <Cell today={c.today_tiktok} goal={c.goal_tiktok} />
+                </td>
+                <td className="px-4 py-3 text-center tabular-nums font-medium">
+                  {c.current_streak}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                  {Math.round(c.hit_rate * 100)}%
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-muted-foreground">
                   {today} posted · {c.total_videos} total

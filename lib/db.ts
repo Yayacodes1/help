@@ -25,6 +25,11 @@ export type Creator = {
   created_at: string
   goal_instagram: number
   goal_tiktok: number
+  contract_start: string | null
+  contract_end: string | null
+  last_paid_at: string | null
+  pay_every_days: number
+  notes: string | null
 }
 
 export type Submission = {
@@ -35,5 +40,14 @@ export type Submission = {
   url: string
   video_date: string
   views: number
+  created_at: string
+}
+
+export type Contract = {
+  id: number
+  creator_id: number
+  name: string
+  start_date: string
+  end_date: string | null
   created_at: string
 }

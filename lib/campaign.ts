@@ -10,3 +10,12 @@ export function addDays(date: string, days: number): string {
   d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().slice(0, 10)
 }
+
+/** Min/max of two YYYY-MM-DD strings. */
+export function minDate(a: string, b: string): string {
+  return a <= b ? a : b
+}
+
+export function maxDate(a: string, b: string): string {
+  return a >= b ? a : b
+}
