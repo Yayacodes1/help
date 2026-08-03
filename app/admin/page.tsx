@@ -1,12 +1,17 @@
+import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { isAdmin } from '@/lib/admin-auth'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import {
   attachTracking,
   getAdminSubmissions,
+  getAllPaidTotal,
   getAllProjects,
   getCreatorsWithProgressOnDate,
   getMissesFromProgress,
+  getPaymentDueList,
+  getPaymentsInRange,
+  getPaymentsTotalInRange,
   getServerToday,
   type AdminFilters,
 } from '@/lib/queries'
@@ -22,7 +27,13 @@ import { LogoutButton } from '@/components/admin/logout-button'
 import { MissList } from '@/components/admin/miss-list'
 import { PanelBoard } from '@/components/admin/panel-board'
 import { SubmissionsTable } from '@/components/admin/submissions-table'
-import { formatDate, formatNumber } from '@/lib/format'
+import { PaymentsPeriodPanel } from '@/components/admin/payments-period-panel'
+import { PaymentDuePanel } from '@/components/admin/payment-due-panel'
+import { AssistantChat } from '@/components/admin/assistant-chat'
+import { LanguageToggle } from '@/components/language-toggle'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { getLocale } from '@/lib/locale'
+import { createT } from '@/lib/i18n'
 import type { Platform } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
@@ -40,10 +51,15 @@ export default async function AdminPage({
     to?: string
     day?: string
     panel?: string
+    payFrom?: string
+    payTo?: string
   }>
 }) {
   if (!(await isAdmin())) redirect('/login')
   await ensureCreatorTrackingColumns()
+
+  const locale = await getLocale()
+  const t = createT(locale)
 
   const sp = await searchParams
   const platform =
@@ -66,13 +82,21 @@ export default async function AdminPage({
     to: sp.to || yearEnd,
   }
 
-  const [submissions, projects, creatorsBase] = await Promise.all([
-    getAdminSubmissions(filters),
-    getAllProjects(),
-    getCreatorsWithProgressOnDate(selectedDay, projectId),
-  ])
+  const payFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.payFrom ?? '') ? sp.payFrom! : yearStart
+  const payTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.payTo ?? '') ? sp.payTo! : today
+
+  const [submissions, projects, creatorsBase, periodPayments, periodTotal, paidAllTime, payDueRows] =
+    await Promise.all([
+      getAdminSubmissions(filters),
+      getAllProjects(),
+      getCreatorsWithProgressOnDate(selectedDay, projectId),
+      getPaymentsInRange(payFrom, payTo),
+      getPaymentsTotalInRange(payFrom, payTo),
+      getAllPaidTotal(projectId),
+      getPaymentDueList(today, projectId),
+    ])
   const creators = await attachTracking(creatorsBase, today)
-  const misses = getMissesFromProgress(creatorsBase)
+  const misses = getMissesFromProgress(creators)
 
   const totalViews = submissions.reduce((sum, s) => sum + (s.views ?? 0), 0)
   const totalVideos = submissions.length
@@ -88,51 +112,85 @@ export default async function AdminPage({
   const creatorsPostedToday = creators.filter(
     (c) => c.today_instagram + c.today_tiktok > 0,
   ).length
-  const payDueCount = creators.filter((c) => c.pay_due).length
+  const payDueCount = payDueRows.due.length
 
   const defaultPanel =
-    sp.panel && ['progress', 'attention', 'videos', 'manage'].includes(sp.panel)
+    sp.panel &&
+    ['progress', 'attention', 'videos', 'paydue', 'payments', 'manage'].includes(sp.panel)
       ? sp.panel
-      : misses.length > 0
-        ? 'attention'
-        : 'progress'
+      : payDueCount > 0
+        ? 'paydue'
+        : misses.length > 0
+          ? 'attention'
+          : 'progress'
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 py-8">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-xl font-semibold tracking-tight">Admin dashboard</h1>
-        <div className="flex items-center gap-3">
+        <h1 className="text-xl font-semibold tracking-tight">{t('adminDashboard')}</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <LanguageToggle
+            locale={locale}
+            labels={{ english: t('english'), arabic: t('arabic') }}
+          />
           <ProjectSelector projects={projects} />
-          <LogoutButton />
+          <LogoutButton label={t('logOut')} />
         </div>
       </header>
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard
-          label={isToday ? 'Posted today' : 'Posted that day'}
+          label={isToday ? t('postedToday') : t('postedThatDay')}
           value={`${postedTodayTotal} / ${goalTotal}`}
         />
         <StatCard
-          label={isToday ? 'Creators active today' : 'Creators active that day'}
+          label={isToday ? t('creatorsActiveToday') : t('creatorsActiveThatDay')}
           value={`${creatorsPostedToday} / ${creators.length}`}
         />
-        <StatCard label="Total videos" value={totalVideos} />
-        <StatCard label="Total views" value={formatNumber(totalViews)} />
-        <StatCard label="Pay due" value={payDueCount} />
+        <StatCard label={t('totalVideos')} value={totalVideos} />
+        <StatCard label={t('totalViews')} value={formatNumber(totalViews)} />
+        <StatCard label={t('paidPeriod')} value={formatMoney(periodTotal)} />
+        <StatCard label={t('paidTotal')} value={formatMoney(paidAllTime)} />
       </section>
 
-      <p className="mt-6 mb-3 text-xs text-muted-foreground">
-        Tap a section to open it. Only one is open at a time.
-      </p>
+      <div className="mt-6">
+        <AssistantChat
+          labels={{
+            title: t('assistantTitle'),
+            subtitle: t('assistantSubtitle'),
+            placeholder: t('assistantPlaceholder'),
+            send: t('assistantSend'),
+            you: t('assistantYou'),
+            assistant: t('assistantBot'),
+            buildIt: t('assistantBuildIt'),
+            cancel: t('assistantCancel'),
+            working: t('assistantWorking'),
+            emptyHint: t('assistantEmpty'),
+            example1: t('assistantExample1'),
+            example2: t('assistantExample2'),
+            example3: t('assistantExample3'),
+            building: t('assistantBuilding'),
+            cancelled: t('assistantCancelled'),
+            done: t('assistantDone'),
+            error: t('assistantError'),
+            undo: t('assistantUndo'),
+            redo: t('assistantRedo'),
+          }}
+        />
+      </div>
+
+      <p className="mt-6 mb-3 text-xs text-muted-foreground">{t('tapSection')}</p>
 
       <PanelBoard
         defaultOpen={defaultPanel}
+        columns={3}
+        closeLabel={t('close')}
         panels={[
           {
             id: 'progress',
-            title: isToday ? "Today's progress" : 'Daily progress',
-            summary: `${creatorsPostedToday}/${creators.length} active`,
-            hint: isToday ? 'Goals for today' : formatDate(selectedDay),
+            title: isToday ? t('todaysProgress') : t('dailyProgress'),
+            summary: `${creatorsPostedToday}/${creators.length} ${t('active')}`,
+            hint: isToday ? t('goalsForToday') : formatDate(selectedDay),
             children: (
               <div className="flex flex-col gap-3">
                 <DayNavigator selectedDay={selectedDay} today={today} />
@@ -142,21 +200,21 @@ export default async function AdminPage({
           },
           {
             id: 'attention',
-            title: 'Needs attention',
-            summary: misses.length === 0 ? 'All clear' : `${misses.length} behind`,
-            hint: isToday ? 'today' : formatDate(selectedDay),
+            title: t('needsAttention'),
+            summary: misses.length === 0 ? t('allClear') : `${misses.length} ${t('behind')}`,
+            hint: isToday ? t('today') : formatDate(selectedDay),
             children: (
               <MissList
                 misses={misses}
-                dayLabel={isToday ? 'today' : formatDate(selectedDay)}
+                dayLabel={isToday ? t('today') : formatDate(selectedDay)}
               />
             ),
           },
           {
             id: 'videos',
-            title: 'Videos',
+            title: t('videos'),
             summary: `${totalVideos}`,
-            hint: `${formatNumber(totalViews)} views`,
+            hint: `${formatNumber(totalViews)} ${t('views')}`,
             children: (
               <div className="flex flex-col gap-3">
                 <FiltersBar
@@ -164,19 +222,69 @@ export default async function AdminPage({
                   defaultFrom={yearStart}
                   defaultTo={yearEnd}
                 />
-                <SubmissionsTable submissions={submissions} />
+                <SubmissionsTable
+                  submissions={submissions}
+                  emptyLabel={t('noVideosMatch')}
+                />
               </div>
             ),
           },
           {
-            id: 'manage',
-            title: 'Manage',
-            summary: `${creators.length} creators`,
-            hint: `${projects.length} projects`,
+            id: 'paydue',
+            title: t('payDue'),
+            summary:
+              payDueCount === 0 ? t('allClear') : `${payDueCount}`,
+            hint: t('payDueHint'),
             children: (
-              <div className="grid gap-4 lg:grid-cols-2">
-                <CreatorsManager creators={creators} projects={projects} />
-                <ProjectsManager projects={projects} />
+              <PaymentDuePanel
+                due={payDueRows.due}
+                settled={payDueRows.settled}
+                labels={{
+                  empty: t('payDueEmpty'),
+                  settledEmpty: t('payDueSettledEmpty'),
+                  settledTitle: t('payDueSettledTitle'),
+                  due: t('due'),
+                  creator: t('creators'),
+                  contract: t('contracts'),
+                  base: 'Base',
+                  commission: 'Commission',
+                  commissionMissing: t('commissionMissing'),
+                  paid: t('totalPaid'),
+                  balance: t('balanceDue'),
+                  videos: t('videos'),
+                  complete: t('videosComplete'),
+                  reasonEnded: t('reasonEnded'),
+                  reasonSchedule: t('reasonSchedule'),
+                  openCreator: t('backToAdmin'),
+                }}
+              />
+            ),
+          },
+          {
+            id: 'payments',
+            title: t('payments'),
+            summary: formatMoney(periodTotal),
+            hint: `${formatMoney(paidAllTime)} ${t('totalPaid').toLowerCase()}`,
+            children: (
+              <Suspense fallback={<p className="text-sm text-muted-foreground">…</p>}>
+                <PaymentsPeriodPanel
+                  payments={periodPayments}
+                  total={periodTotal}
+                  defaultFrom={payFrom}
+                  defaultTo={payTo}
+                />
+              </Suspense>
+            ),
+          },
+          {
+            id: 'manage',
+            title: t('manage'),
+            summary: `${creators.length} ${t('creators')}`,
+            hint: `${projects.length} ${t('projects')}`,
+            children: (
+              <div key="manage-grid" className="grid gap-4 lg:grid-cols-2">
+                <CreatorsManager key="creators-manager" creators={creators} projects={projects} />
+                <ProjectsManager key="projects-manager" projects={projects} />
               </div>
             ),
           },

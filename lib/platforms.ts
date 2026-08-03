@@ -26,9 +26,9 @@ export const PLATFORM_META: Record<Platform, PlatformMeta> = {
 }
 
 export function goalFor(
-  creator: { goal_instagram: number; goal_tiktok: number },
+  goals: { goal_instagram: number; goal_tiktok: number },
   platform: Platform,
 ): number {
-  if (platform === 'instagram') return creator.goal_instagram
-  return creator.goal_tiktok
+  if (platform === 'instagram') return goals.goal_instagram
+  return goals.goal_tiktok
 }

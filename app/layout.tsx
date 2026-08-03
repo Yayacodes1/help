@@ -1,6 +1,7 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { Fraunces, Source_Sans_3 } from 'next/font/google'
+import { Fraunces, Noto_Sans_Arabic, Source_Sans_3 } from 'next/font/google'
+import { getLocale } from '@/lib/locale'
 import './globals.css'
 
 const display = Fraunces({
@@ -11,6 +12,11 @@ const display = Fraunces({
 const body = Source_Sans_3({
   subsets: ['latin'],
   variable: '--font-body',
+})
+
+const arabic = Noto_Sans_Arabic({
+  subsets: ['arabic'],
+  variable: '--font-arabic',
 })
 
 export const metadata: Metadata = {
@@ -24,14 +30,21 @@ export const viewport: Viewport = {
   themeColor: '#f7ebe0',
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const locale = await getLocale()
+  const dir = locale === 'ar' ? 'rtl' : 'ltr'
+
   return (
-    <html lang="en" className={`${display.variable} ${body.variable} light bg-background`}>
-      <body className={`${body.className} antialiased`}>
+    <html
+      lang={locale}
+      dir={dir}
+      className={`${display.variable} ${body.variable} ${arabic.variable} light bg-background`}
+    >
+      <body className={`${locale === 'ar' ? arabic.className : body.className} antialiased`}>
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

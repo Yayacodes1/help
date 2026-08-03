@@ -1,11 +1,16 @@
 import 'server-only'
-import { sql, type Contract, type Creator, type Platform, type Project, type Submission } from '@/lib/db'
-import { maxDate, yearRange } from '@/lib/campaign'
+import { sql, type Contract, type Creator, type Payment, type Platform, type Project, type Submission } from '@/lib/db'
+import { addDays, maxDate, yearRange } from '@/lib/campaign'
 import {
   buildConsistency,
   nextPayDate,
   type ConsistencySummary,
 } from '@/lib/consistency'
+import {
+  normalizePlatforms,
+  videoCompletionRate,
+  type PlatformsMode,
+} from '@/lib/platforms-mode'
 
 export async function getServerToday(): Promise<string> {
   const rows = (await sql`SELECT CURRENT_DATE::text AS today`) as { today: string }[]
@@ -15,7 +20,7 @@ export async function getServerToday(): Promise<string> {
 export async function getCreatorByToken(token: string): Promise<Creator | null> {
   const rows = (await sql`
     SELECT id, name, token, project_id, created_at,
-           goal_instagram, goal_tiktok,
+           goal_instagram, goal_tiktok, platforms,
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
@@ -30,7 +35,7 @@ export async function getCreatorByToken(token: string): Promise<Creator | null> 
 export async function getCreatorById(id: number): Promise<Creator | null> {
   const rows = (await sql`
     SELECT id, name, token, project_id, created_at,
-           goal_instagram, goal_tiktok,
+           goal_instagram, goal_tiktok, platforms,
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
@@ -45,7 +50,7 @@ export async function getCreatorById(id: number): Promise<Creator | null> {
 export async function getCreatorByName(name: string): Promise<Creator | null> {
   const rows = (await sql`
     SELECT id, name, token, project_id, created_at,
-           goal_instagram, goal_tiktok,
+           goal_instagram, goal_tiktok, platforms,
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
@@ -159,7 +164,7 @@ export type CreatorWithProject = Creator & { project_name: string | null }
 export async function getAllCreators(): Promise<CreatorWithProject[]> {
   return (await sql`
     SELECT c.id, c.name, c.token, c.project_id, c.created_at,
-           c.goal_instagram, c.goal_tiktok,
+           c.goal_instagram, c.goal_tiktok, c.platforms,
            c.contract_start::text AS contract_start,
            c.contract_end::text AS contract_end,
            c.last_paid_at::text AS last_paid_at,
@@ -185,7 +190,7 @@ export async function getCreatorsWithProgressOnDate(
   return (await sql`
     SELECT
       c.id, c.name, c.token, c.project_id, c.created_at,
-      c.goal_instagram, c.goal_tiktok,
+      c.goal_instagram, c.goal_tiktok, c.platforms,
       c.contract_start::text AS contract_start,
       c.contract_end::text AS contract_end,
       c.last_paid_at::text AS last_paid_at,
@@ -291,7 +296,12 @@ export async function getContractsForCreator(creatorId: number): Promise<Contrac
     SELECT id, creator_id, name,
            start_date::text AS start_date,
            end_date::text AS end_date,
-           created_at
+           created_at,
+           goal_instagram, goal_tiktok,
+           target_instagram, target_tiktok,
+           platforms,
+           base_amount::float AS base_amount,
+           commission_amount::float AS commission_amount
     FROM contracts
     WHERE creator_id = ${creatorId}
     ORDER BY start_date DESC, id DESC
@@ -306,7 +316,12 @@ export async function getActiveContract(
     SELECT id, creator_id, name,
            start_date::text AS start_date,
            end_date::text AS end_date,
-           created_at
+           created_at,
+           goal_instagram, goal_tiktok,
+           target_instagram, target_tiktok,
+           platforms,
+           base_amount::float AS base_amount,
+           commission_amount::float AS commission_amount
     FROM contracts
     WHERE creator_id = ${creatorId}
       AND start_date <= ${today}::date
@@ -316,12 +331,16 @@ export async function getActiveContract(
   `) as Contract[]
   if (rows[0]) return rows[0]
 
-  // Fallback: most recent contract if none covers today
   const latest = (await sql`
     SELECT id, creator_id, name,
            start_date::text AS start_date,
            end_date::text AS end_date,
-           created_at
+           created_at,
+           goal_instagram, goal_tiktok,
+           target_instagram, target_tiktok,
+           platforms,
+           base_amount::float AS base_amount,
+           commission_amount::float AS commission_amount
     FROM contracts
     WHERE creator_id = ${creatorId}
     ORDER BY start_date DESC, id DESC
@@ -335,16 +354,61 @@ export async function getConsistencyForWindow(
   start: string,
   end: string,
   today: string,
+  goals?: { goalInstagram: number; goalTiktok: number },
 ): Promise<ConsistencySummary> {
   const countsByDate = await getCreatorDailyPlatformCounts(creator.id, start, end)
   return buildConsistency({
     start,
     end,
     today,
-    goalInstagram: creator.goal_instagram,
-    goalTiktok: creator.goal_tiktok,
+    goalInstagram: goals?.goalInstagram ?? creator.goal_instagram,
+    goalTiktok: goals?.goalTiktok ?? creator.goal_tiktok,
     countsByDate,
   })
+}
+
+export function contractPlatforms(
+  creator: Creator,
+  contract: Contract | null | undefined,
+): PlatformsMode {
+  if (contract?.platforms) return normalizePlatforms(contract.platforms)
+  return normalizePlatforms(creator.platforms)
+}
+
+/**
+ * Daily goals for scoring consistency.
+ * - Contract quotas win when the contract sets any daily/target numbers.
+ * - Otherwise fall back to creator profile goals.
+ * - Platform mode always zeros the unused network so it cannot tank %.
+ */
+export function goalsForContract(
+  creator: Creator,
+  contract: Contract | null | undefined,
+): { goalInstagram: number; goalTiktok: number } {
+  const mode = contractPlatforms(creator, contract)
+  let goalInstagram: number
+  let goalTiktok: number
+
+  if (!contract) {
+    goalInstagram = creator.goal_instagram
+    goalTiktok = creator.goal_tiktok
+  } else {
+    const hasContractDaily = contract.goal_instagram > 0 || contract.goal_tiktok > 0
+    const hasTargets = contract.target_instagram > 0 || contract.target_tiktok > 0
+    // If the contract defines quotas/targets, trust its zeros (do not revive profile goals).
+    if (hasContractDaily || hasTargets || normalizePlatforms(contract.platforms) !== 'both') {
+      goalInstagram = contract.goal_instagram
+      goalTiktok = contract.goal_tiktok
+    } else {
+      goalInstagram = creator.goal_instagram
+      goalTiktok = creator.goal_tiktok
+    }
+  }
+
+  if (mode === 'instagram') goalTiktok = 0
+  if (mode === 'tiktok') goalInstagram = 0
+
+  return { goalInstagram, goalTiktok }
 }
 
 export async function getCreatorConsistency(
@@ -353,14 +417,143 @@ export async function getCreatorConsistency(
 ): Promise<ConsistencySummary> {
   const active = await getActiveContract(creator.id, today)
   const { start, end } = contractWindow(creator, today, active)
-  return getConsistencyForWindow(creator, start, end, today)
+  return getConsistencyForWindow(creator, start, end, today, goalsForContract(creator, active))
+}
+
+export type ContractProgress = {
+  instagram: number
+  tiktok: number
+  targetInstagram: number
+  targetTiktok: number
+}
+
+/** ±1 day slack so late/early logged videos still count toward the contract total. */
+export function contractVideoWindow(
+  start: string,
+  end: string,
+): { start: string; end: string } {
+  return {
+    start: addDays(start, -1),
+    end: addDays(end, 1),
+  }
+}
+
+export async function getContractVideoCounts(
+  creatorId: number,
+  start: string,
+  end: string,
+  options?: { slackDays?: boolean },
+): Promise<{ instagram: number; tiktok: number; total: number }> {
+  const window =
+    options?.slackDays === false
+      ? { start, end }
+      : contractVideoWindow(start, end)
+  const rows = (await sql`
+    SELECT
+      COALESCE(SUM(CASE WHEN platform = 'instagram' THEN 1 ELSE 0 END), 0)::int AS instagram,
+      COALESCE(SUM(CASE WHEN platform = 'tiktok' THEN 1 ELSE 0 END), 0)::int AS tiktok,
+      COUNT(*)::int AS total
+    FROM submissions
+    WHERE creator_id = ${creatorId}
+      AND video_date >= ${window.start}::date
+      AND video_date <= ${window.end}::date
+  `) as { instagram: number; tiktok: number; total: number }[]
+  return rows[0] ?? { instagram: 0, tiktok: 0, total: 0 }
 }
 
 export type ContractCompareRow = {
   contract: Contract
   consistency: ConsistencySummary
   videoCount: number
+  postedInstagram: number
+  postedTiktok: number
+  targetTotal: number
+  /** Video-target completion 0–1 when totals exist; else null */
+  videoRate: number | null
+  /** Prefer video completion (esp. past); fall back to days-hit */
+  displayRate: number
+  videosComplete: boolean
+  isPast: boolean
+  /** Past contracts: targets are final hits the admin entered, not goals. */
+  manualHits: boolean
+  paidAmount: number
+  /** Base only when commission missing; base+commission when set */
+  expectedTotal: number | null
+  commissionMissing: boolean
+  /** minimum due (base + commission-or-0) minus paid */
+  balance: number
+  /**
+   * Always true so admins can record pay anytime (current, past, or upfront).
+   * UI still only shows “still due” when balance > 0.
+   */
+  showBalanceDue: boolean
   isActive: boolean
+}
+
+export function targetVideoTotal(contract: Contract): number {
+  const mode = normalizePlatforms(contract.platforms)
+  const ig = mode === 'tiktok' ? 0 : Math.max(0, contract.target_instagram)
+  const tt = mode === 'instagram' ? 0 : Math.max(0, contract.target_tiktok)
+  return ig + tt
+}
+
+export function expectedContractPay(contract: Contract): number | null {
+  const base = Number(contract.base_amount) || 0
+  if (contract.commission_amount == null) {
+    return base > 0 ? base : null
+  }
+  return base + Number(contract.commission_amount)
+}
+
+/** Minimum owed for balance math: base + commission (0 if TBD). */
+export function minimumContractDue(contract: Contract): number {
+  const base = Number(contract.base_amount) || 0
+  const commission =
+    contract.commission_amount == null ? 0 : Number(contract.commission_amount)
+  return Math.max(0, base + commission)
+}
+
+export async function getCreatorPaidTotal(creatorId: number): Promise<number> {
+  const rows = (await sql`
+    SELECT COALESCE(SUM(amount), 0)::float AS total
+    FROM payments
+    WHERE creator_id = ${creatorId}
+  `) as { total: number }[]
+  return rows[0]?.total ?? 0
+}
+
+export async function getAllPaidTotal(projectId?: number): Promise<number> {
+  const pid = projectId ?? null
+  const rows = (await sql`
+    SELECT COALESCE(SUM(p.amount), 0)::float AS total
+    FROM payments p
+    JOIN creators c ON c.id = p.creator_id
+    WHERE (${pid}::int IS NULL OR c.project_id = ${pid})
+  `) as { total: number }[]
+  return rows[0]?.total ?? 0
+}
+
+/** Payments linked to the contract, plus unlinked ones whose paid_on falls in the period. */
+export async function getPaidForContract(
+  creatorId: number,
+  contractId: number,
+  start: string,
+  end: string,
+): Promise<number> {
+  const rows = (await sql`
+    SELECT COALESCE(SUM(amount), 0)::float AS total
+    FROM payments
+    WHERE creator_id = ${creatorId}
+      AND (
+        contract_id = ${contractId}
+        OR (
+          contract_id IS NULL
+          AND paid_on >= ${start}::date
+          AND paid_on <= ${end}::date
+        )
+      )
+  `) as { total: number }[]
+  return rows[0]?.total ?? 0
 }
 
 export async function getContractComparisons(
@@ -374,27 +567,325 @@ export async function getContractComparisons(
   return Promise.all(
     contracts.map(async (contract) => {
       const end = contract.end_date ?? yearEnd
+      const windowEnd = maxDate(contract.start_date, end)
       const consistency = await getConsistencyForWindow(
         creator,
         contract.start_date,
-        maxDate(contract.start_date, end),
+        windowEnd,
         today,
+        goalsForContract(creator, contract),
       )
-      const countRows = (await sql`
-        SELECT COUNT(*)::int AS n
-        FROM submissions
-        WHERE creator_id = ${creator.id}
-          AND video_date >= ${contract.start_date}::date
-          AND video_date <= ${end}::date
-      `) as { n: number }[]
+      const counts = await getContractVideoCounts(
+        creator.id,
+        contract.start_date,
+        windowEnd,
+      )
+      const paidAmount = await getPaidForContract(
+        creator.id,
+        contract.id,
+        contract.start_date,
+        windowEnd,
+      )
+      const isPast = contract.end_date != null && contract.end_date <= today
+      const isActive = active?.id === contract.id
+      // Past: targets you enter are final hits. Current: targets are goals.
+      const manualHits =
+        isPast &&
+        !isActive &&
+        (contract.target_instagram > 0 || contract.target_tiktok > 0)
+      const postedInstagram = manualHits
+        ? contract.target_instagram
+        : counts.instagram
+      const postedTiktok = manualHits
+        ? contract.target_tiktok
+        : counts.tiktok
+      const videoCount = manualHits
+        ? targetVideoTotal(contract)
+        : counts.total
+      const videoRate = manualHits
+        ? 1
+        : videoCompletionRate({
+            postedInstagram: counts.instagram,
+            postedTiktok: counts.tiktok,
+            targetInstagram: contract.target_instagram,
+            targetTiktok: contract.target_tiktok,
+            platforms: contract.platforms,
+          })
+      const videosComplete = videoRate != null && videoRate >= 0.999
+      // Prefer video totals whenever the contract has targets (past or current).
+      const displayRate = videoRate != null ? videoRate : consistency.hitRate
+      const commissionMissing = contract.commission_amount == null
+      const minDue = minimumContractDue(contract)
+      const balance = Math.max(0, Math.round((minDue - paidAmount) * 100) / 100)
       return {
         contract,
         consistency,
-        videoCount: countRows[0]?.n ?? 0,
-        isActive: active?.id === contract.id,
+        videoCount,
+        postedInstagram,
+        postedTiktok,
+        targetTotal: targetVideoTotal(contract),
+        videoRate,
+        displayRate,
+        videosComplete,
+        isPast,
+        /** True when period totals were entered as final hits, not goals. */
+        manualHits,
+        paidAmount,
+        expectedTotal: expectedContractPay(contract),
+        commissionMissing,
+        balance,
+        /** Always true — you can record pay on current contracts anytime (including upfront). */
+        showBalanceDue: true,
+        isActive,
       }
     }),
   )
+}
+
+export type PaymentDueRow = {
+  creatorId: number
+  creatorName: string
+  contractId: number | null
+  contractName: string | null
+  dueDate: string
+  reason: 'contract_ended' | 'pay_schedule'
+  baseAmount: number
+  commissionAmount: number | null
+  commissionMissing: boolean
+  expectedTotal: number | null
+  paidAmount: number
+  balance: number
+  videoCount: number
+  targetTotal: number
+  videoRate: number | null
+  videosComplete: boolean
+  /** True = paid/settled history (keep after paying); false = still needs attention */
+  settled: boolean
+}
+
+function buildDueRow(input: {
+  creator: Creator
+  contract: Contract | null
+  dueDate: string
+  reason: 'contract_ended' | 'pay_schedule'
+  paidAmount: number
+  counts: { total: number; instagram: number; tiktok: number }
+  settled: boolean
+}): PaymentDueRow {
+  const contract = input.contract
+  const baseAmount = contract ? Number(contract.base_amount) || 0 : 0
+  const commissionMissing = !contract || contract.commission_amount == null
+  const minDue = contract ? minimumContractDue(contract) : 0
+  const balance = Math.max(0, Math.round((minDue - input.paidAmount) * 100) / 100)
+  const videoRate = contract
+    ? videoCompletionRate({
+        postedInstagram: input.counts.instagram,
+        postedTiktok: input.counts.tiktok,
+        targetInstagram: contract.target_instagram,
+        targetTiktok: contract.target_tiktok,
+        platforms: contract.platforms,
+      })
+    : null
+  return {
+    creatorId: input.creator.id,
+    creatorName: input.creator.name,
+    contractId: contract?.id ?? null,
+    contractName: contract?.name ?? null,
+    dueDate: input.dueDate,
+    reason: input.reason,
+    baseAmount,
+    commissionAmount:
+      !contract || contract.commission_amount == null
+        ? null
+        : Number(contract.commission_amount),
+    commissionMissing,
+    expectedTotal: contract ? expectedContractPay(contract) : null,
+    paidAmount: input.paidAmount,
+    balance,
+    videoCount: input.counts.total,
+    targetTotal: contract ? targetVideoTotal(contract) : 0,
+    videoRate,
+    videosComplete: videoRate != null && videoRate >= 0.999,
+    settled: input.settled,
+  }
+}
+
+export async function getPaymentDueList(
+  today: string,
+  projectId?: number,
+): Promise<{ due: PaymentDueRow[]; settled: PaymentDueRow[] }> {
+  const pid = projectId ?? null
+  const creators = (await sql`
+    SELECT id, name, token, project_id, created_at,
+           goal_instagram, goal_tiktok, platforms,
+           contract_start::text AS contract_start,
+           contract_end::text AS contract_end,
+           last_paid_at::text AS last_paid_at,
+           pay_every_days, notes
+    FROM creators
+    WHERE (${pid}::int IS NULL OR project_id = ${pid})
+    ORDER BY name ASC
+  `) as Creator[]
+
+  const yearEnd = yearRange(today).end
+  const due: PaymentDueRow[] = []
+  const settled: PaymentDueRow[] = []
+
+  for (const creator of creators) {
+    const pay = await getPaySummary(creator, today)
+    const contracts = await getContractsForCreator(creator.id)
+    const active = await getActiveContract(creator.id, today)
+
+    for (const contract of contracts) {
+      const ended =
+        contract.end_date != null && contract.end_date <= today
+      const scheduleDue = pay.isDue && active?.id === contract.id
+      if (!ended && !scheduleDue) continue
+
+      const end = contract.end_date ?? yearEnd
+      const windowEnd = maxDate(contract.start_date, end)
+      const counts = await getContractVideoCounts(
+        creator.id,
+        contract.start_date,
+        windowEnd,
+      )
+      const paidAmount = await getPaidForContract(
+        creator.id,
+        contract.id,
+        contract.start_date,
+        windowEnd,
+      )
+      const baseAmount = Number(contract.base_amount) || 0
+      const commissionMissing = contract.commission_amount == null
+      const minDue = minimumContractDue(contract)
+      // Settled once recorded payments cover the amounts typed on the contract.
+      const fullySettled = minDue > 0 && paidAmount >= minDue - 0.009
+      const dueDate = ended
+        ? (contract.end_date as string)
+        : (pay.nextPayAt ?? today)
+      const reason = ended
+        ? ('contract_ended' as const)
+        : ('pay_schedule' as const)
+
+      const rowBase = {
+        creator,
+        contract,
+        dueDate,
+        reason,
+        paidAmount,
+        counts,
+      }
+
+      // Still open: unpaid ended, or pay schedule hit
+      if (scheduleDue || (ended && !fullySettled && minDue > 0)) {
+        due.push(buildDueRow({ ...rowBase, settled: false }))
+      } else if (ended && !fullySettled && minDue <= 0 && commissionMissing) {
+        // Ended with money not filled in yet — keep visible so you don't forget
+        due.push(buildDueRow({ ...rowBase, settled: false }))
+      }
+
+      // Keep previous due dates after paying
+      if (ended && fullySettled) {
+        settled.push(buildDueRow({ ...rowBase, settled: true }))
+      }
+    }
+
+    if (pay.isDue && contracts.length === 0) {
+      const paidTotal = await getCreatorPaidTotal(creator.id)
+      due.push(
+        buildDueRow({
+          creator,
+          contract: null,
+          dueDate: pay.nextPayAt ?? today,
+          reason: 'pay_schedule',
+          paidAmount: paidTotal,
+          counts: { total: 0, instagram: 0, tiktok: 0 },
+          settled: false,
+        }),
+      )
+    }
+  }
+
+  const byDate = (a: PaymentDueRow, b: PaymentDueRow) => {
+    if (a.dueDate !== b.dueDate) return a.dueDate < b.dueDate ? -1 : 1
+    return a.creatorName.localeCompare(b.creatorName)
+  }
+  due.sort(byDate)
+  settled.sort((a, b) => -byDate(a, b)) // newest paid history first
+
+  return { due, settled }
+}
+
+export type PaymentRow = Payment & {
+  creator_name?: string
+  contract_name?: string | null
+}
+
+export async function getPaymentsForCreator(creatorId: number): Promise<PaymentRow[]> {
+  return (await sql`
+    SELECT p.id, p.creator_id, p.contract_id,
+           p.paid_on::text AS paid_on,
+           p.amount::float AS amount,
+           p.note, p.created_at,
+           ct.name AS contract_name
+    FROM payments p
+    LEFT JOIN contracts ct ON ct.id = p.contract_id
+    WHERE p.creator_id = ${creatorId}
+    ORDER BY p.paid_on DESC, p.id DESC
+  `) as PaymentRow[]
+}
+
+export async function getLatestPayment(creatorId: number): Promise<Payment | null> {
+  const rows = (await sql`
+    SELECT id, creator_id, contract_id,
+           paid_on::text AS paid_on,
+           amount::float AS amount,
+           note, created_at
+    FROM payments
+    WHERE creator_id = ${creatorId}
+    ORDER BY paid_on DESC, id DESC
+    LIMIT 1
+  `) as Payment[]
+  return rows[0] ?? null
+}
+
+export async function getPaymentsInRange(
+  from: string,
+  to: string,
+  creatorId?: number,
+): Promise<PaymentRow[]> {
+  const cid = creatorId ?? null
+  return (await sql`
+    SELECT p.id, p.creator_id, p.contract_id,
+           p.paid_on::text AS paid_on,
+           p.amount::float AS amount,
+           p.note, p.created_at,
+           c.name AS creator_name,
+           ct.name AS contract_name
+    FROM payments p
+    JOIN creators c ON c.id = p.creator_id
+    LEFT JOIN contracts ct ON ct.id = p.contract_id
+    WHERE p.paid_on >= ${from}::date
+      AND p.paid_on <= ${to}::date
+      AND (${cid}::int IS NULL OR p.creator_id = ${cid})
+    ORDER BY p.paid_on DESC, p.id DESC
+  `) as PaymentRow[]
+}
+
+export async function getPaymentsTotalInRange(
+  from: string,
+  to: string,
+  creatorId?: number,
+): Promise<number> {
+  const cid = creatorId ?? null
+  const rows = (await sql`
+    SELECT COALESCE(SUM(amount), 0)::float AS total
+    FROM payments
+    WHERE paid_on >= ${from}::date
+      AND paid_on <= ${to}::date
+      AND (${cid}::int IS NULL OR creator_id = ${cid})
+  `) as { total: number }[]
+  return rows[0]?.total ?? 0
 }
 
 export type MissRow = {
@@ -478,10 +969,15 @@ export async function attachTracking(
 ): Promise<CreatorTrackingRow[]> {
   return Promise.all(
     creators.map(async (c) => {
+      const active = await getActiveContract(c.id, today)
+      const goals = goalsForContract(c, active)
       const consistency = await getCreatorConsistency(c, today)
       const pay = await getPaySummary(c, today)
       return {
         ...c,
+        // Today board / misses use effective contract goals (platform mode applied).
+        goal_instagram: goals.goalInstagram,
+        goal_tiktok: goals.goalTiktok,
         current_streak: consistency.currentStreak,
         hit_rate: consistency.hitRate,
         next_pay_at: pay.nextPayAt,

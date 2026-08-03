@@ -1,4 +1,7 @@
 import { neon } from '@neondatabase/serverless'
+import type { PlatformsMode } from '@/lib/platforms-mode'
+
+export type { PlatformsMode }
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL is not set')
@@ -25,6 +28,8 @@ export type Creator = {
   created_at: string
   goal_instagram: number
   goal_tiktok: number
+  /** Default platforms when a contract does not override */
+  platforms: PlatformsMode
   contract_start: string | null
   contract_end: string | null
   last_paid_at: string | null
@@ -49,5 +54,29 @@ export type Contract = {
   name: string
   start_date: string
   end_date: string | null
+  created_at: string
+  /** Daily Instagram goal for this contract period */
+  goal_instagram: number
+  /** Daily TikTok goal for this contract period */
+  goal_tiktok: number
+  /** Total Instagram videos required over the whole contract */
+  target_instagram: number
+  /** Total TikTok videos required over the whole contract */
+  target_tiktok: number
+  /** Platforms this contract requires */
+  platforms: PlatformsMode
+  /** Base pay for this contract period */
+  base_amount: number
+  /** Commission (nullable until set later) */
+  commission_amount: number | null
+}
+
+export type Payment = {
+  id: number
+  creator_id: number
+  contract_id: number | null
+  paid_on: string
+  amount: number
+  note: string | null
   created_at: string
 }

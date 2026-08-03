@@ -15,10 +15,12 @@ export function PanelBoard({
   panels,
   defaultOpen = null,
   columns = 4,
+  closeLabel = 'Close',
 }: {
   panels: PanelItem[]
   defaultOpen?: string | null
   columns?: 2 | 3 | 4
+  closeLabel?: string
 }) {
   const [open, setOpen] = useState<string | null>(defaultOpen)
   const active = panels.find((p) => p.id === open) ?? null
@@ -78,9 +80,9 @@ export function PanelBoard({
         })}
       </div>
 
-      {active && (
+      {active ? (
         <div
-          key={active.id}
+          key={`panel-body-${active.id}`}
           className="animate-in fade-in slide-in-from-top-1 rounded-xl border border-border bg-card p-4 shadow-sm"
         >
           <div className="mb-3 flex items-center justify-between gap-2 border-b border-border pb-2">
@@ -90,12 +92,12 @@ export function PanelBoard({
               onClick={() => setOpen(null)}
               className="text-xs font-medium text-muted-foreground underline-offset-4 hover:underline"
             >
-              Close
+              {closeLabel}
             </button>
           </div>
-          {active.children}
+          <div key={`panel-content-${active.id}`}>{active.children}</div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { Video, Camera, Music2, CalendarCheck, Flame, Trophy } from 'lucide-react'
+import { createT, type Locale } from '@/lib/i18n'
 
 export type CreatorStatsDisplay = {
   total_videos: number
@@ -10,66 +11,73 @@ export type CreatorStatsDisplay = {
   hit_rate: number
 }
 
-const CARDS: {
-  key: keyof CreatorStatsDisplay
-  label: string
-  Icon: typeof Video
-  accent: string
-  bg: string
-  format?: (n: number) => string
-}[] = [
-  {
-    key: 'current_streak',
-    label: 'السلسلة الحالية',
-    Icon: Flame,
-    accent: 'text-[oklch(0.62_0.22_8)]',
-    bg: 'bg-[oklch(0.62_0.22_8)]/10',
-  },
-  {
-    key: 'best_streak',
-    label: 'أفضل سلسلة',
-    Icon: Trophy,
-    accent: 'text-[oklch(0.7_0.16_45)]',
-    bg: 'bg-[oklch(0.7_0.16_45)]/10',
-  },
-  {
-    key: 'hit_rate',
-    label: 'نسبة الالتزام',
-    Icon: CalendarCheck,
-    accent: 'text-primary',
-    bg: 'bg-primary/10',
-    format: (n) => `${Math.round(n * 100)}%`,
-  },
-  {
-    key: 'total_videos',
-    label: 'إجمالي الفيديوهات',
-    Icon: Video,
-    accent: 'text-primary',
-    bg: 'bg-primary/10',
-  },
-  {
-    key: 'instagram_videos',
-    label: 'انستقرام',
-    Icon: Camera,
-    accent: 'text-[oklch(0.62_0.22_8)]',
-    bg: 'bg-[oklch(0.62_0.22_8)]/10',
-  },
-  {
-    key: 'tiktok_videos',
-    label: 'تيك توك',
-    Icon: Music2,
-    accent: 'text-[oklch(0.68_0.14_190)]',
-    bg: 'bg-[oklch(0.68_0.14_190)]/10',
-  },
-]
+export function CreatorStats({
+  stats,
+  locale = 'ar',
+}: {
+  stats: CreatorStatsDisplay
+  locale?: Locale
+}) {
+  const t = createT(locale)
+  const cards: {
+    key: keyof CreatorStatsDisplay
+    label: string
+    Icon: typeof Video
+    accent: string
+    bg: string
+    format?: (n: number) => string
+  }[] = [
+    {
+      key: 'current_streak',
+      label: t('currentStreak'),
+      Icon: Flame,
+      accent: 'text-[oklch(0.62_0.22_8)]',
+      bg: 'bg-[oklch(0.62_0.22_8)]/10',
+    },
+    {
+      key: 'best_streak',
+      label: t('bestStreak'),
+      Icon: Trophy,
+      accent: 'text-[oklch(0.7_0.16_45)]',
+      bg: 'bg-[oklch(0.7_0.16_45)]/10',
+    },
+    {
+      key: 'hit_rate',
+      label: t('hitRate'),
+      Icon: CalendarCheck,
+      accent: 'text-primary',
+      bg: 'bg-primary/10',
+      format: (n) => `${Math.round(n * 100)}%`,
+    },
+    {
+      key: 'total_videos',
+      label: t('totalVideos'),
+      Icon: Video,
+      accent: 'text-primary',
+      bg: 'bg-primary/10',
+    },
+    {
+      key: 'instagram_videos',
+      label: t('instagram'),
+      Icon: Camera,
+      accent: 'text-[oklch(0.62_0.22_8)]',
+      bg: 'bg-[oklch(0.62_0.22_8)]/10',
+    },
+    {
+      key: 'tiktok_videos',
+      label: t('tiktok'),
+      Icon: Music2,
+      accent: 'text-[oklch(0.68_0.14_190)]',
+      bg: 'bg-[oklch(0.68_0.14_190)]/10',
+    },
+  ]
 
-export function CreatorStats({ stats }: { stats: CreatorStatsDisplay }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      {CARDS.map(({ key, label, Icon, accent, bg, format }, i) => (
+      {cards.map(({ key, label, Icon, accent, bg, format }, i) => (
         <div
           key={key}
-          className="animate-in fade-in slide-in-from-bottom-2 rounded-xl border border-border bg-card p-4 text-right shadow-sm transition-shadow duration-300 hover:shadow-md"
+          className="animate-in fade-in slide-in-from-bottom-2 rounded-xl border border-border bg-card p-4 shadow-sm transition-shadow duration-300 hover:shadow-md"
           style={{ animationDelay: `${i * 60}ms`, animationFillMode: 'both' }}
         >
           <div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-lg ${bg} ${accent}`}>

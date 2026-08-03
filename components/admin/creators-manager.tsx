@@ -100,6 +100,11 @@ export function CreatorsManager({
             ))}
           </select>
         </div>
+        <select name="platforms" defaultValue="both" className={selectClass}>
+          <option value="both">Instagram + TikTok</option>
+          <option value="tiktok">TikTok only</option>
+          <option value="instagram">Instagram only</option>
+        </select>
         <GoalInputs />
         <button
           type="submit"
@@ -142,6 +147,11 @@ export function CreatorsManager({
                       ))}
                     </select>
                   </div>
+                  <select name="platforms" defaultValue={c.platforms || 'both'} className={selectClass}>
+                    <option value="both">Instagram + TikTok</option>
+                    <option value="tiktok">TikTok only</option>
+                    <option value="instagram">Instagram only</option>
+                  </select>
                   <GoalInputs ig={c.goal_instagram} tt={c.goal_tiktok} />
                   <div className="flex items-center gap-2">
                     <button

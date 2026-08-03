@@ -6,10 +6,13 @@ import {
   getActiveContract,
   getAllProjects,
   getContractComparisons,
+  getContractsForCreator,
   getCreatorById,
   getCreatorConsistency,
+  getCreatorPaidTotal,
   getCreatorStats,
   getPaySummary,
+  getPaymentsForCreator,
   getProjectById,
   getServerToday,
   getSubmissionsForCreator,
@@ -18,10 +21,14 @@ import {
 import { ConsistencyCalendar } from '@/components/admin/consistency-calendar'
 import { CreatorContractForm } from '@/components/admin/creator-contract-form'
 import { ContractsManager } from '@/components/admin/contracts-manager'
+import { PaymentsManager } from '@/components/admin/payments-manager'
 import { PanelBoard } from '@/components/admin/panel-board'
 import { SubmissionsTable } from '@/components/admin/submissions-table'
+import { LanguageToggle } from '@/components/language-toggle'
 import { StatCard } from '@/components/stat-card'
-import { formatDate, formatNumber } from '@/lib/format'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { getLocale } from '@/lib/locale'
+import { createT } from '@/lib/i18n'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,9 +49,12 @@ export default async function CreatorDetailPage({
   const creator = await getCreatorById(id)
   if (!creator) notFound()
 
+  const locale = await getLocale()
+  const t = createT(locale)
+
   const sp = await searchParams
   const today = await getServerToday()
-  const [projects, consistency, stats, submissions, comparisons, active] =
+  const [projects, consistency, stats, submissions, comparisons, active, payments, contracts, paidTotal] =
     await Promise.all([
       getAllProjects(),
       getCreatorConsistency(creator, today),
@@ -52,16 +62,21 @@ export default async function CreatorDetailPage({
       getSubmissionsForCreator(creator.id),
       getContractComparisons(creator, today),
       getActiveContract(creator.id, today),
+      getPaymentsForCreator(creator.id),
+      getContractsForCreator(creator.id),
+      getCreatorPaidTotal(creator.id),
     ])
   const project = creator.project_id ? await getProjectById(creator.project_id) : null
   const pay = await getPaySummary(creator, today)
   const window = contractWindow(creator, today, active)
   const totalViews = submissions.reduce((sum, s) => sum + (s.views ?? 0), 0)
+  const latestPayment = payments[0] ?? null
+  const activeCompare = comparisons.find((c) => c.isActive)
 
   const defaultPanel =
-    sp.panel && ['consistency', 'contracts', 'pay', 'videos'].includes(sp.panel)
+    sp.panel && ['consistency', 'contracts', 'payments', 'profile', 'videos'].includes(sp.panel)
       ? sp.panel
-      : 'consistency'
+      : 'contracts'
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 py-8">
@@ -71,67 +86,92 @@ export default async function CreatorDetailPage({
             href="/admin"
             className="text-xs font-medium text-muted-foreground underline-offset-4 hover:underline"
           >
-            ← Back to admin
+            {t('backToAdmin')}
           </Link>
           <h1 className="mt-2 text-xl font-semibold tracking-tight">{creator.name}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {project?.name ?? 'No project'}
+            {project?.name ?? t('noProject')}
             {active
               ? ` · ${active.name}: ${formatDate(active.start_date)}${
-                  active.end_date ? ` → ${formatDate(active.end_date)}` : ' → open'
+                  active.end_date ? ` → ${formatDate(active.end_date)}` : ` → ${t('open')}`
                 }`
-              : ` · No contract set · tracking ${formatDate(window.start)} → ${formatDate(window.end)}`}
+              : ` · ${t('noContractSet')} · ${t('tracking')} ${formatDate(window.start)} → ${formatDate(window.end)}`}
           </p>
         </div>
+        <LanguageToggle
+          locale={locale}
+          labels={{ english: t('english'), arabic: t('arabic') }}
+        />
       </header>
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Current streak" value={`${consistency.currentStreak} days`} />
-        <StatCard label="Best streak" value={`${consistency.bestStreak} days`} />
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <StatCard label={t('currentStreak')} value={`${consistency.currentStreak} ${t('days')}`} />
         <StatCard
-          label="Hit rate"
-          value={`${Math.round(consistency.hitRate * 100)}%`}
+          label={t('videoProgress')}
+          value={
+            activeCompare?.videoRate != null
+              ? `${Math.round(activeCompare.videoRate * 100)}%`
+              : `${Math.round(consistency.hitRate * 100)}%`
+          }
         />
         <StatCard
-          label="Days hit"
-          value={`${consistency.hitDays} / ${consistency.requiredDays}`}
+          label={t('contractVideos')}
+          value={
+            activeCompare
+              ? activeCompare.targetTotal > 0
+                ? `${activeCompare.videoCount}/${activeCompare.targetTotal}`
+                : `${activeCompare.videoCount}`
+              : `${stats.total_videos}`
+          }
+        />
+        <StatCard label={t('totalPaid')} value={formatMoney(paidTotal)} />
+        <StatCard
+          label={t('lastPaid')}
+          value={
+            latestPayment
+              ? `${formatMoney(latestPayment.amount)}`
+              : pay.lastPaidAt
+                ? formatDate(pay.lastPaidAt)
+                : '—'
+          }
         />
       </section>
+      <p className="mt-2 text-xs text-muted-foreground">{t('paidFromPaymentsOnly')}</p>
 
       {creator.notes && (
         <p className="mt-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
-          <span className="font-medium">Notes: </span>
+          <span className="font-medium">{t('notes')}: </span>
           {creator.notes}
         </p>
       )}
 
-      <p className="mt-6 mb-3 text-xs text-muted-foreground">
-        Tap a section to open it. Only one is open at a time.
-      </p>
+      <p className="mt-6 mb-3 text-xs text-muted-foreground">{t('tapSection')}</p>
 
       <PanelBoard
         defaultOpen={defaultPanel}
+        columns={3}
+        closeLabel={t('close')}
         panels={[
           {
             id: 'consistency',
-            title: 'Consistency',
-            summary: `${Math.round(consistency.hitRate * 100)}% hit`,
-            hint: active ? active.name : 'Current window',
+            title: t('consistency'),
+            summary: `${Math.round(consistency.hitRate * 100)}%`,
+            hint: active ? active.name : undefined,
             children: (
               <div>
                 <ConsistencyCalendar days={consistency.days} />
                 <p className="mt-3 text-xs text-muted-foreground">
-                  Missed {consistency.missDays} · Partial {consistency.partialDays} · Streak{' '}
-                  {consistency.currentStreak} (best {consistency.bestStreak})
+                  {consistency.missDays} · {consistency.partialDays} · {consistency.currentStreak} /{' '}
+                  {consistency.bestStreak}
                 </p>
               </div>
             ),
           },
           {
             id: 'contracts',
-            title: 'Contracts',
-            summary: comparisons.length === 0 ? 'None yet' : `${comparisons.length} periods`,
-            hint: active ? active.name : 'Add a contract',
+            title: t('contracts'),
+            summary: comparisons.length === 0 ? t('noneYet') : `${comparisons.length} ${t('periods')}`,
+            hint: active ? active.name : t('addAContract'),
             children: (
               <ContractsManager
                 creatorId={creator.id}
@@ -141,23 +181,36 @@ export default async function CreatorDetailPage({
             ),
           },
           {
-            id: 'pay',
-            title: 'Pay & profile',
-            summary: pay.nextPayAt ? formatDate(pay.nextPayAt) : '—',
-            hint: pay.isDue
-              ? 'Pay due'
-              : pay.lastPaidAt
-                ? `Last ${formatDate(pay.lastPaidAt)}`
-                : 'Set pay dates',
+            id: 'payments',
+            title: t('payments'),
+            summary: formatMoney(paidTotal),
+            hint: latestPayment
+              ? `${t('lastPaid')} ${formatDate(latestPayment.paid_on)}`
+              : pay.nextPayAt
+                ? formatDate(pay.nextPayAt)
+                : t('recordAPayment'),
             children: (
-              <CreatorContractForm creator={creator} projects={projects} today={today} />
+              <PaymentsManager
+                creatorId={creator.id}
+                today={today}
+                contracts={contracts}
+                payments={payments}
+                paidTotal={paidTotal}
+              />
             ),
           },
           {
+            id: 'profile',
+            title: t('profile'),
+            summary: `${creator.goal_instagram + creator.goal_tiktok}/day`,
+            hint: t('fallbackGoals'),
+            children: <CreatorContractForm creator={creator} projects={projects} />,
+          },
+          {
             id: 'videos',
-            title: 'Videos',
+            title: t('videos'),
             summary: `${stats.total_videos}`,
-            hint: `${formatNumber(totalViews)} views`,
+            hint: `${formatNumber(totalViews)} ${t('views')}`,
             children: (
               <SubmissionsTable
                 submissions={submissions.map((s) => ({
@@ -165,7 +218,7 @@ export default async function CreatorDetailPage({
                   creator_name: creator.name,
                   project_name: project?.name ?? null,
                 }))}
-                emptyLabel="No videos yet."
+                emptyLabel={t('noVideosYet')}
                 showCreator={false}
                 showProject={false}
                 editableViews={false}
