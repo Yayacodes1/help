@@ -30,7 +30,10 @@ export async function POST(req: Request) {
     body = {}
   }
 
-  const scope: RefreshViewsScope = body.scope === 'recent' ? 'recent' : 'all'
+  const raw = body.scope
+  const scope: RefreshViewsScope =
+    raw === 'recent' || raw === 'all' || raw === 'zeros' ? raw : 'zeros'
+
   const result = await refreshViews(scope, {
     limit: body.limit,
     offset: body.offset,

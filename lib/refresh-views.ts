@@ -3,9 +3,9 @@ import { sql } from '@/lib/db'
 import type { Platform } from '@/lib/db'
 import { addDays } from '@/lib/campaign'
 import { getServerToday } from '@/lib/queries'
-import { fetchViewsForUrl } from '@/lib/datalikers'
+import { fetchViewsDetailed } from '@/lib/datalikers'
 
-export type RefreshViewsScope = 'recent' | 'all'
+export type RefreshViewsScope = 'recent' | 'all' | 'zeros'
 
 export type RefreshViewsResult = {
   scope: RefreshViewsScope
@@ -15,8 +15,12 @@ export type RefreshViewsResult = {
   updated: number
   skipped: number
   failed: number
-  /** Next offset for chunked `all` runs; null when finished. */
+  /** Next offset for chunked `all` scans; null when finished / not used for zeros. */
   nextOffset: number | null
+  /** True when another zeros batch should be requested. */
+  hasMore: boolean
+  /** Top failure reasons in this chunk (for admin UI). */
+  failures: { reason: string; count: number }[]
 }
 
 type Row = {
@@ -26,28 +30,49 @@ type Row = {
   views: number
 }
 
-const DEFAULT_CHUNK = 30
+const DEFAULT_CHUNK = 25
+
+function tallyFailures(
+  reasons: string[],
+): { reason: string; count: number }[] {
+  const map = new Map<string, number>()
+  for (const r of reasons) map.set(r, (map.get(r) ?? 0) + 1)
+  return [...map.entries()]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8)
+}
 
 /**
  * Fetch view counts via DataLikers.
- * - recent: today + yesterday (daily cron; one shot)
- * - all: every submission, oldest first, in chunks (admin backfill)
- * Only writes when a new count is returned — never clears existing views on failure.
+ * - recent: today + yesterday (daily cron)
+ * - all: every submission, oldest first, offset chunks
+ * - zeros: only rows still at 0 (no offset — each call picks remaining zeros)
  */
 export async function refreshViews(
   scope: RefreshViewsScope = 'recent',
   options: { delayMs?: number; limit?: number; offset?: number } = {},
 ): Promise<RefreshViewsResult> {
-  const delayMs = options.delayMs ?? 120
+  const delayMs = options.delayMs ?? 150
   const today = await getServerToday()
   const yesterday = addDays(today, -1)
+  const limit = Math.min(100, Math.max(1, options.limit ?? DEFAULT_CHUNK))
+  const offset = Math.max(0, options.offset ?? 0)
 
   let rows: Row[]
   let nextOffset: number | null = null
+  let hasMore = false
 
-  if (scope === 'all') {
-    const limit = Math.min(100, Math.max(1, options.limit ?? DEFAULT_CHUNK))
-    const offset = Math.max(0, options.offset ?? 0)
+  if (scope === 'zeros') {
+    rows = (await sql`
+      SELECT id, platform, url, views
+      FROM submissions
+      WHERE views = 0
+      ORDER BY video_date ASC, id ASC
+      LIMIT ${limit}
+    `) as Row[]
+    hasMore = rows.length >= limit
+  } else if (scope === 'all') {
     rows = (await sql`
       SELECT id, platform, url, views
       FROM submissions
@@ -55,6 +80,7 @@ export async function refreshViews(
       LIMIT ${limit} OFFSET ${offset}
     `) as Row[]
     nextOffset = rows.length < limit ? null : offset + rows.length
+    hasMore = nextOffset != null
   } else {
     rows = (await sql`
       SELECT id, platform, url, views
@@ -67,6 +93,7 @@ export async function refreshViews(
   let updated = 0
   let skipped = 0
   let failed = 0
+  const failReasons: string[] = []
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]
@@ -74,17 +101,34 @@ export async function refreshViews(
       await new Promise((r) => setTimeout(r, delayMs))
     }
 
-    const views = await fetchViewsForUrl(row.platform, row.url)
-    if (views == null) {
+    const result = await fetchViewsDetailed(row.platform, row.url)
+    if (!result.ok) {
       failed += 1
+      failReasons.push(result.reason)
       continue
     }
-    if (views === row.views) {
+
+    if (result.views === row.views && !result.resolvedUrl) {
       skipped += 1
       continue
     }
-    await sql`UPDATE submissions SET views = ${views} WHERE id = ${row.id}`
+
+    if (result.resolvedUrl && result.resolvedUrl !== row.url) {
+      await sql`
+        UPDATE submissions
+        SET views = ${result.views}, url = ${result.resolvedUrl}
+        WHERE id = ${row.id}
+      `
+    } else {
+      await sql`UPDATE submissions SET views = ${result.views} WHERE id = ${row.id}`
+    }
     updated += 1
+  }
+
+  // For zeros scope: if every row in the batch failed, stop looping
+  // (otherwise we'd retry the same zeros forever).
+  if (scope === 'zeros' && rows.length > 0 && updated === 0 && skipped === 0) {
+    hasMore = false
   }
 
   return {
@@ -96,10 +140,12 @@ export async function refreshViews(
     skipped,
     failed,
     nextOffset,
+    hasMore,
+    failures: tallyFailures(failReasons),
   }
 }
 
 /** @deprecated Prefer refreshViews('recent') */
-export async function refreshViewsForRecentDays(delayMs = 120) {
+export async function refreshViewsForRecentDays(delayMs = 150) {
   return refreshViews('recent', { delayMs })
 }

@@ -3,6 +3,9 @@ import type { Platform } from '@/lib/db'
 
 const BASE = 'https://api.datalikers.com'
 
+const TIKTOK_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+
 function getApiKey(): string {
   const key = process.env.DATALIKERS_API_KEY?.trim()
   if (!key) throw new Error('DATALIKERS_API_KEY is not set')
@@ -13,31 +16,96 @@ export function extractInstagramCode(url: string): string | null {
   try {
     const u = new URL(url.trim())
     const host = u.hostname.replace(/^www\./, '')
-    if (!/(^|\.)instagram\.com$/i.test(host)) return null
-    const m = u.pathname.match(/\/(reel|p|tv)\/([A-Za-z0-9_-]+)/i)
+    if (!/(^|\.)instagram\.com$/i.test(host) && !/^instagr\.am$/i.test(host)) {
+      return null
+    }
+    const m = u.pathname.match(/\/(reels?|p|tv)\/([A-Za-z0-9_-]+)/i)
     return m?.[2] ?? null
   } catch {
     return null
   }
 }
 
-/** Numeric TikTok video id from a standard or short URL. */
-export async function resolveTikTokVideoId(url: string): Promise<string | null> {
-  const direct = url.match(/\/video\/(\d+)/)?.[1]
-  if (direct) return direct
-
-  // Short links (vm.tiktok.com, tiktok.com/t/…) need redirect resolution.
-  try {
-    const res = await fetch(url, {
-      method: 'GET',
-      redirect: 'follow',
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    })
-    const finalUrl = res.url || url
-    return finalUrl.match(/\/video\/(\d+)/)?.[1] ?? null
-  } catch {
-    return null
+function extractTikTokIdFromText(text: string): string | null {
+  const patterns = [
+    /\/video\/(\d{10,})/,
+    /["']aweme_id["']\s*:\s*["']?(\d{10,})/,
+    /["']video[_]?id["']\s*:\s*["']?(\d{10,})/,
+    /["']itemId["']\s*:\s*["']?(\d{10,})/,
+    /["']id["']\s*:\s*["'](\d{15,})["']/,
+  ]
+  for (const re of patterns) {
+    const m = text.match(re)
+    if (m?.[1]) return m[1]
   }
+  return null
+}
+
+/**
+ * Resolve numeric TikTok video id from full or short URLs (vt / vm / t /…).
+ * Tries redirects + HTML body scrape because TikTok often doesn't land on /video/{id} for bots.
+ */
+export async function resolveTikTokVideoId(
+  url: string,
+): Promise<{ id: string | null; resolvedUrl: string | null; error?: string }> {
+  const direct = url.match(/\/video\/(\d{10,})/)?.[1]
+  if (direct) {
+    return { id: direct, resolvedUrl: url }
+  }
+
+  const attempts: { method: 'GET' | 'HEAD'; redirect: RequestRedirect }[] = [
+    { method: 'GET', redirect: 'follow' },
+    { method: 'GET', redirect: 'manual' },
+  ]
+
+  let lastError = 'could not resolve TikTok short link'
+  for (const attempt of attempts) {
+    try {
+      const res = await fetch(url, {
+        method: attempt.method,
+        redirect: attempt.redirect,
+        headers: {
+          'User-Agent': TIKTOK_UA,
+          Accept: 'text/html,application/xhtml+xml',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      })
+
+      const location = res.headers.get('location')
+      const fromLocation = location ? extractTikTokIdFromText(location) : null
+      if (fromLocation) {
+        return {
+          id: fromLocation,
+          resolvedUrl: location!.startsWith('http')
+            ? location!
+            : `https://www.tiktok.com/video/${fromLocation}`,
+        }
+      }
+
+      const finalUrl = res.url || url
+      const fromFinal = extractTikTokIdFromText(finalUrl)
+      if (fromFinal) {
+        return { id: fromFinal, resolvedUrl: finalUrl }
+      }
+
+      if (attempt.redirect === 'follow' && attempt.method === 'GET') {
+        const text = await res.text().catch(() => '')
+        const fromBody = extractTikTokIdFromText(text.slice(0, 500_000))
+        if (fromBody) {
+          return {
+            id: fromBody,
+            resolvedUrl: `https://www.tiktok.com/video/${fromBody}`,
+          }
+        }
+        if (!res.ok) lastError = `TikTok short link HTTP ${res.status}`
+        else lastError = 'TikTok page had no video id'
+      }
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : 'TikTok fetch failed'
+    }
+  }
+
+  return { id: null, resolvedUrl: null, error: lastError }
 }
 
 function asFiniteCount(value: unknown): number | null {
@@ -66,8 +134,6 @@ const VIEW_KEYS = [
 function viewsFromObject(obj: Record<string, unknown>): number | null {
   for (const k of VIEW_KEYS) {
     const n = asFiniteCount(obj[k])
-    // Prefer a positive count when both 0 and a nested real value exist —
-    // still accept 0 as a valid API response.
     if (n != null) return n
   }
   return null
@@ -78,7 +144,6 @@ export function extractViewCount(payload: unknown): number | null {
   if (!payload || typeof payload !== 'object') return null
   const root = payload as Record<string, unknown>
 
-  // Common wrappers from cache gateways
   const candidates: Record<string, unknown>[] = [root]
   for (const key of ['data', 'result', 'media', 'item', 'aweme_detail', 'aweme']) {
     const nested = root[key]
@@ -134,32 +199,76 @@ async function datalikersGet(path: string, query: Record<string, string>): Promi
 
   if (!res.ok) {
     const body = await res.text().catch(() => '')
-    throw new Error(`DataLikers ${path} ${res.status}: ${body.slice(0, 200)}`)
+    throw new Error(`DataLikers ${path} ${res.status}: ${body.slice(0, 180)}`)
   }
   return res.json()
 }
 
-export async function fetchViewsForUrl(
+export type FetchViewsOk = {
+  ok: true
+  views: number
+  /** Canonical URL when a short link was expanded */
+  resolvedUrl?: string
+}
+
+export type FetchViewsErr = {
+  ok: false
+  reason: string
+}
+
+export type FetchViewsResult = FetchViewsOk | FetchViewsErr
+
+export async function fetchViewsDetailed(
   platform: Platform,
   url: string,
-): Promise<number | null> {
+): Promise<FetchViewsResult> {
   const trimmed = url.trim()
-  if (!trimmed) return null
+  if (!trimmed) return { ok: false, reason: 'empty url' }
 
   try {
     if (platform === 'instagram') {
       const code = extractInstagramCode(trimmed)
-      const data = code
-        ? await datalikersGet('/v1/media/by/code', { code })
-        : await datalikersGet('/v1/media/by/url', { url: trimmed })
-      return extractViewCount(data)
+      if (!code) {
+        return { ok: false, reason: 'instagram: could not parse reel/post code' }
+      }
+      const data = await datalikersGet('/v1/media/by/code', { code })
+      const views = extractViewCount(data)
+      if (views == null) {
+        return { ok: false, reason: 'instagram: no play/view count in API response' }
+      }
+      return { ok: true, views }
     }
 
-    const id = await resolveTikTokVideoId(trimmed)
-    if (!id) return null
-    const data = await datalikersGet('/t1/media/by/id', { id })
-    return extractViewCount(data)
-  } catch {
-    return null
+    const resolved = await resolveTikTokVideoId(trimmed)
+    if (!resolved.id) {
+      return {
+        ok: false,
+        reason: `tiktok: ${resolved.error ?? 'could not resolve video id'}`,
+      }
+    }
+    const data = await datalikersGet('/t1/media/by/id', { id: resolved.id })
+    const views = extractViewCount(data)
+    if (views == null) {
+      return { ok: false, reason: 'tiktok: no play/view count in API response' }
+    }
+    return {
+      ok: true,
+      views,
+      resolvedUrl: resolved.resolvedUrl ?? undefined,
+    }
+  } catch (e) {
+    return {
+      ok: false,
+      reason: e instanceof Error ? e.message.slice(0, 180) : 'unknown error',
+    }
   }
+}
+
+/** @deprecated Prefer fetchViewsDetailed */
+export async function fetchViewsForUrl(
+  platform: Platform,
+  url: string,
+): Promise<number | null> {
+  const r = await fetchViewsDetailed(platform, url)
+  return r.ok ? r.views : null
 }

@@ -627,15 +627,14 @@ export async function updateViews(id: number, views: number) {
   revalidatePath('/admin')
 }
 
-/** Pull DataLikers view counts for every submission (chunked; prefer API for full runs). */
+/** Pull DataLikers view counts for submissions still at 0 views. */
 export async function refreshRecentViews() {
   await requireAdmin()
   if (!process.env.DATALIKERS_API_KEY?.trim()) {
     throw new Error('DATALIKERS_API_KEY is not set')
   }
   const { refreshViews } = await import('@/lib/refresh-views')
-  // Single-shot fallback: first chunk oldest-first. UI uses /api/admin/refresh-views for full runs.
-  const result = await refreshViews('all', { limit: 30, offset: 0 })
+  const result = await refreshViews('zeros', { limit: 30 })
   revalidatePath('/admin')
   revalidatePath('/submit')
   return result
