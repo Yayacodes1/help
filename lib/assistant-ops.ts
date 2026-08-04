@@ -274,6 +274,137 @@ export async function getPaidTotalsSnapshot(input: {
   }
 }
 
+export async function getViewsSummarySnapshot(input: {
+  from?: string
+  to?: string
+  creatorUsername?: string
+  projectId?: number
+}) {
+  const { getViewsSummary } = await import('@/lib/analytics')
+  let creatorId: number | null = null
+  if (input.creatorUsername) {
+    const resolved = await resolveCreator(input.creatorUsername)
+    if (!resolved.ok) return resolved
+    creatorId = resolved.creator.id
+  }
+  const summary = await getViewsSummary({
+    from: input.from,
+    to: input.to,
+    creatorId,
+    projectId: input.projectId ?? null,
+  })
+  return {
+    ok: true as const,
+    ...summary,
+    creator: input.creatorUsername?.replace(/^@+/, '') ?? null,
+    advice:
+      summary.videos === 0
+        ? 'No videos in this range.'
+        : summary.zero_view_videos > summary.videos * 0.3
+          ? `Many videos still show 0 views (${summary.zero_view_videos}/${summary.videos}). Run Retry 0-view videos in Analytics/Videos, then revisit totals.`
+          : summary.views_tiktok >= summary.views_instagram * 2
+            ? 'TikTok is carrying most of the views in this period.'
+            : summary.views_instagram >= summary.views_tiktok * 2
+              ? 'Instagram is carrying most of the views in this period.'
+              : 'Instagram and TikTok views are relatively balanced in this period.',
+  }
+}
+
+export async function getViewsLeaderboardSnapshot(input: {
+  from?: string
+  to?: string
+  projectId?: number
+  limit?: number
+}) {
+  const { getViewsLeaderboard, getViewsSummary } = await import('@/lib/analytics')
+  const [rows, summary] = await Promise.all([
+    getViewsLeaderboard({
+      from: input.from,
+      to: input.to,
+      projectId: input.projectId ?? null,
+      limit: input.limit ?? 10,
+    }),
+    getViewsSummary({
+      from: input.from,
+      to: input.to,
+      projectId: input.projectId ?? null,
+    }),
+  ])
+  const top = rows[0] ?? null
+  return {
+    ok: true as const,
+    from: summary.from,
+    to: summary.to,
+    totalViews: summary.views,
+    leaders: rows,
+    topCreator: top
+      ? {
+          name: top.creator_name,
+          views: top.views,
+          videos: top.videos,
+          avgViewsPerVideo:
+            top.videos > 0 ? Math.round(top.views / top.videos) : 0,
+        }
+      : null,
+    advice: top
+      ? `${top.creator_name} leads with ${top.views} views across ${top.videos} videos (${summary.from} → ${summary.to}).`
+      : 'No submissions in this period.',
+  }
+}
+
+export async function getViewsByDaySnapshot(input: {
+  from?: string
+  to?: string
+  creatorUsername?: string
+  projectId?: number
+}) {
+  const { getDailyAnalytics, getViewsSummary } = await import('@/lib/analytics')
+  let creatorId: number | null = null
+  if (input.creatorUsername) {
+    const resolved = await resolveCreator(input.creatorUsername)
+    if (!resolved.ok) return resolved
+    creatorId = resolved.creator.id
+  }
+  const [daily, summary] = await Promise.all([
+    getDailyAnalytics({
+      from: input.from,
+      to: input.to,
+      creatorId,
+      projectId: input.projectId ?? null,
+    }),
+    getViewsSummary({
+      from: input.from,
+      to: input.to,
+      creatorId,
+      projectId: input.projectId ?? null,
+    }),
+  ])
+  const peak = daily.reduce<{
+    date: string
+    views: number
+  } | null>((best, d) => {
+    const views = d.views_instagram + d.views_tiktok
+    if (!best || views > best.views) return { date: d.date, views }
+    return best
+  }, null)
+
+  return {
+    ok: true as const,
+    summary,
+    creator: input.creatorUsername?.replace(/^@+/, '') ?? null,
+    days: daily.map((d) => ({
+      date: d.date,
+      views: d.views_instagram + d.views_tiktok,
+      videos: d.videos_instagram + d.videos_tiktok,
+      views_instagram: d.views_instagram,
+      views_tiktok: d.views_tiktok,
+      videos_instagram: d.videos_instagram,
+      videos_tiktok: d.videos_tiktok,
+    })),
+    peakDay: peak,
+  }
+}
+
 // --- Contract lookup helper (shared by update / record-payment / end) ---
 
 export type ContractWhich = 'active' | 'past' | 'oldestPast'

@@ -15,6 +15,12 @@ import {
   getServerToday,
   type AdminFilters,
 } from '@/lib/queries'
+import {
+  defaultAnalyticsRange,
+  getDailyAnalytics,
+  getViewsLeaderboard,
+  getViewsSummary,
+} from '@/lib/analytics'
 import { yearRange } from '@/lib/campaign'
 import { StatCard } from '@/components/stat-card'
 import { FiltersBar } from '@/components/admin/filters-bar'
@@ -30,6 +36,8 @@ import { SubmissionsTable } from '@/components/admin/submissions-table'
 import { PaymentsPeriodPanel } from '@/components/admin/payments-period-panel'
 import { PaymentDuePanel } from '@/components/admin/payment-due-panel'
 import { AssistantChat } from '@/components/admin/assistant-chat'
+import { AssistantDrawer } from '@/components/admin/assistant-drawer'
+import { AnalyticsPanel } from '@/components/admin/analytics-panel'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { LanguageToggle } from '@/components/language-toggle'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
@@ -54,6 +62,9 @@ export default async function AdminPage({
     panel?: string
     payFrom?: string
     payTo?: string
+    aFrom?: string
+    aTo?: string
+    aCreator?: string
   }>
 }) {
   if (!(await isAdmin())) redirect('/login')
@@ -69,6 +80,7 @@ export default async function AdminPage({
       : undefined
   const today = await getServerToday()
   const { start: yearStart, end: yearEnd } = yearRange(today)
+  const analyticsDefault = defaultAnalyticsRange(today)
 
   const selectedDay = /^\d{4}-\d{2}-\d{2}$/.test(sp.day ?? '') ? sp.day! : today
   const isToday = selectedDay === today
@@ -86,16 +98,49 @@ export default async function AdminPage({
   const payFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.payFrom ?? '') ? sp.payFrom! : yearStart
   const payTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.payTo ?? '') ? sp.payTo! : today
 
-  const [submissions, projects, creatorsBase, periodPayments, periodTotal, paidAllTime, payDueRows] =
-    await Promise.all([
-      getAdminSubmissions(filters),
-      getAllProjects(),
-      getCreatorsWithProgressOnDate(selectedDay, projectId),
-      getPaymentsInRange(payFrom, payTo),
-      getPaymentsTotalInRange(payFrom, payTo),
-      getAllPaidTotal(projectId),
-      getPaymentDueList(today, projectId),
-    ])
+  const aFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.aFrom ?? '')
+    ? sp.aFrom!
+    : analyticsDefault.from
+  const aTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.aTo ?? '') ? sp.aTo! : analyticsDefault.to
+  const aCreatorId = sp.aCreator ? Number(sp.aCreator) : null
+
+  const [
+    submissions,
+    projects,
+    creatorsBase,
+    periodPayments,
+    periodTotal,
+    paidAllTime,
+    payDueRows,
+    dailyAnalytics,
+    creatorDaily,
+    leaderboard,
+    viewsSummary,
+  ] = await Promise.all([
+    getAdminSubmissions(filters),
+    getAllProjects(),
+    getCreatorsWithProgressOnDate(selectedDay, projectId),
+    getPaymentsInRange(payFrom, payTo),
+    getPaymentsTotalInRange(payFrom, payTo),
+    getAllPaidTotal(projectId),
+    getPaymentDueList(today, projectId),
+    getDailyAnalytics({ from: aFrom, to: aTo, projectId: projectId ?? null }),
+    aCreatorId
+      ? getDailyAnalytics({
+          from: aFrom,
+          to: aTo,
+          projectId: projectId ?? null,
+          creatorId: aCreatorId,
+        })
+      : Promise.resolve([]),
+    getViewsLeaderboard({
+      from: aFrom,
+      to: aTo,
+      projectId: projectId ?? null,
+      limit: 8,
+    }),
+    getViewsSummary({ from: aFrom, to: aTo, projectId: projectId ?? null }),
+  ])
   const creators = await attachTracking(creatorsBase, today)
   const misses = getMissesFromProgress(creators)
 
@@ -117,13 +162,15 @@ export default async function AdminPage({
 
   const defaultPanel =
     sp.panel &&
-    ['progress', 'attention', 'videos', 'paydue', 'payments', 'manage'].includes(sp.panel)
+    ['analytics', 'progress', 'attention', 'videos', 'paydue', 'payments', 'manage'].includes(
+      sp.panel,
+    )
       ? sp.panel
       : payDueCount > 0
         ? 'paydue'
         : misses.length > 0
           ? 'attention'
-          : 'progress'
+          : 'analytics'
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 py-8">
@@ -139,7 +186,7 @@ export default async function AdminPage({
         </div>
       </header>
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           label={isToday ? t('postedToday') : t('postedThatDay')}
           value={`${postedTodayTotal} / ${goalTotal}`}
@@ -148,37 +195,9 @@ export default async function AdminPage({
           label={isToday ? t('creatorsActiveToday') : t('creatorsActiveThatDay')}
           value={`${creatorsPostedToday} / ${creators.length}`}
         />
-        <StatCard label={t('totalVideos')} value={totalVideos} />
         <StatCard label={t('totalViews')} value={formatNumber(totalViews)} />
-        <StatCard label={t('paidPeriod')} value={formatMoney(periodTotal)} />
         <StatCard label={t('paidTotal')} value={formatMoney(paidAllTime)} />
       </section>
-
-      <div className="mt-6">
-        <AssistantChat
-          labels={{
-            title: t('assistantTitle'),
-            subtitle: t('assistantSubtitle'),
-            placeholder: t('assistantPlaceholder'),
-            send: t('assistantSend'),
-            you: t('assistantYou'),
-            assistant: t('assistantBot'),
-            buildIt: t('assistantBuildIt'),
-            cancel: t('assistantCancel'),
-            working: t('assistantWorking'),
-            emptyHint: t('assistantEmpty'),
-            example1: t('assistantExample1'),
-            example2: t('assistantExample2'),
-            example3: t('assistantExample3'),
-            building: t('assistantBuilding'),
-            cancelled: t('assistantCancelled'),
-            done: t('assistantDone'),
-            error: t('assistantError'),
-            undo: t('assistantUndo'),
-            redo: t('assistantRedo'),
-          }}
-        />
-      </div>
 
       <p className="mt-6 mb-3 text-xs text-muted-foreground">{t('tapSection')}</p>
 
@@ -187,6 +206,39 @@ export default async function AdminPage({
         columns={3}
         closeLabel={t('close')}
         panels={[
+          {
+            id: 'analytics',
+            title: t('analytics'),
+            summary: formatNumber(viewsSummary.views),
+            hint: `${viewsSummary.videos} ${t('videos')} · ${aFrom.slice(5)}→${aTo.slice(5)}`,
+            children: (
+              <AnalyticsPanel
+                daily={dailyAnalytics}
+                creatorDaily={creatorDaily}
+                leaderboard={leaderboard}
+                creators={creators.map((c) => ({ id: c.id, name: c.name }))}
+                selectedCreatorId={aCreatorId}
+                defaultFrom={aFrom}
+                defaultTo={aTo}
+                labels={{
+                  views: t('views'),
+                  videos: t('videos'),
+                  creator: t('creators'),
+                  allCreators: t('allCreators'),
+                  instagram: t('instagram'),
+                  tiktok: t('tiktok'),
+                  showViews: t('showViews'),
+                  showVideos: t('showVideos'),
+                  showCreator: t('showCreator'),
+                  topCreators: t('topCreators'),
+                  empty: t('analyticsEmpty'),
+                  from: t('from'),
+                  to: t('to'),
+                  apply: t('apply'),
+                }}
+              />
+            ),
+          },
           {
             id: 'progress',
             title: isToday ? t('todaysProgress') : t('dailyProgress'),
@@ -234,8 +286,7 @@ export default async function AdminPage({
           {
             id: 'paydue',
             title: t('payDue'),
-            summary:
-              payDueCount === 0 ? t('allClear') : `${payDueCount}`,
+            summary: payDueCount === 0 ? t('allClear') : `${payDueCount}`,
             hint: t('payDueHint'),
             children: (
               <PaymentDuePanel
@@ -292,6 +343,35 @@ export default async function AdminPage({
           },
         ]}
       />
+
+      <div className="mt-6">
+        <AssistantDrawer title={t('assistantTitle')} subtitle={t('assistantSubtitle')}>
+          <AssistantChat
+            embedded
+            labels={{
+              title: t('assistantTitle'),
+              subtitle: t('assistantSubtitle'),
+              placeholder: t('assistantPlaceholder'),
+              send: t('assistantSend'),
+              you: t('assistantYou'),
+              assistant: t('assistantBot'),
+              buildIt: t('assistantBuildIt'),
+              cancel: t('assistantCancel'),
+              working: t('assistantWorking'),
+              emptyHint: t('assistantEmpty'),
+              example1: t('assistantExample1'),
+              example2: t('assistantExample2'),
+              example3: t('assistantExample3'),
+              building: t('assistantBuilding'),
+              cancelled: t('assistantCancelled'),
+              done: t('assistantDone'),
+              error: t('assistantError'),
+              undo: t('assistantUndo'),
+              redo: t('assistantRedo'),
+            }}
+          />
+        </AssistantDrawer>
+      </div>
     </main>
   )
 }

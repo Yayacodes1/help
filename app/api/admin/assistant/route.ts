@@ -18,6 +18,9 @@ import {
   getMissesSnapshot,
   getPaidTotalsSnapshot,
   getPayDueSnapshot,
+  getViewsByDaySnapshot,
+  getViewsLeaderboardSnapshot,
+  getViewsSummarySnapshot,
   listContractsForCreator,
   listCreatorsBrief,
   listPaymentsForCreator,
@@ -68,21 +71,28 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model,
-    system: `You are the admin-only assistant for a creator contract & payments dashboard.
+    system: `You are the admin-only assistant for a creator performance, contracts & payments dashboard.
 Today's date is ${today} (YYYY-MM-DD).
 
 You can read almost anything in the dashboard (creators, projects, contracts, payments, pay-due list,
-today's misses, paid totals) and you can write contracts, payments, creators, and projects — but every
-write only happens after the admin taps Build It in the UI. You never apply a write yourself.
+today's misses, paid totals, AND views / video analytics) and you can write contracts, payments, creators,
+and projects — but every write only happens after the admin taps Build It in the UI. You never apply a write yourself.
 
 Creators are identified by their TikTok username (the "name" field).
 
 Reply style (required):
 - First line: quote the user's latest message EXACTLY — copy/paste their words inside double quotes. Do not paraphrase.
 - For write actions: one short sentence asking them to tap Build It if the draft looks right (or ask one clarifying question if details are missing).
-- For read/lookup questions: answer directly with the numbers/facts from the tool result — no Build It needed.
+- For read/lookup questions (including views, leaderboards, trends): answer directly with the numbers/facts from the tool result — no Build It needed. Add one short advice sentence when the tool returns an "advice" field.
 - Do not claim you already built anything. Writes only run after the admin taps Build It.
 - If you propose multiple write tool calls in one turn (e.g. one contract paid + one contract started), that's fine — each gets its own Build It card.
+
+Views & analytics (read-only):
+- Use getViewsSummary for totals (views, videos, IG vs TikTok split, zero-view count) over a date range or creator.
+- Use getViewsLeaderboard for “who got the most views” / ranking creators in a period.
+- Use getViewsByDay for trends / best day / Instagram vs TikTok by day.
+- Default a missing date range to the last 30 days ending today when the user says “recently” / “this month” without dates.
+- When giving advice: be concrete (names, numbers, dates). Mention if many videos still show 0 views.
 
 Multi-step / multi-period requests (IMPORTANT):
 - Requests like "first contract paid $32, second started at $30 for @username" describe TWO different
@@ -238,6 +248,68 @@ General rules:
           creatorUsername: z.string().optional(),
         }),
         execute: async (input) => getPaidTotalsSnapshot(input),
+      }),
+      getViewsSummary: tool({
+        description:
+          'Views + video totals for a date range (Instagram vs TikTok split, zero-view count). Use for “how many views do we have” and light advice.',
+        inputSchema: z.object({
+          from: z.string().optional().describe('YYYY-MM-DD; defaults to start of year if omitted with to, or last 30 days when both omitted — pass last-30 when user says recently'),
+          to: z.string().optional().describe('YYYY-MM-DD; defaults to today'),
+          creatorUsername: z.string().optional(),
+          projectId: z.number().int().optional(),
+        }),
+        execute: async (input) => {
+          // If no dates, default last 30 days for “advice” style questions
+          if (!input.from && !input.to) {
+            const { addDays } = await import('@/lib/campaign')
+            const end = today
+            const start = addDays(today, -29)
+            return getViewsSummarySnapshot({ ...input, from: start, to: end })
+          }
+          return getViewsSummarySnapshot(input)
+        },
+      }),
+      getViewsLeaderboard: tool({
+        description:
+          'Rank creators by total views in a period. Use for “who is making us the most views”.',
+        inputSchema: z.object({
+          from: z.string().optional(),
+          to: z.string().optional(),
+          projectId: z.number().int().optional(),
+          limit: z.number().int().min(1).max(50).optional(),
+        }),
+        execute: async (input) => {
+          if (!input.from && !input.to) {
+            const { addDays } = await import('@/lib/campaign')
+            return getViewsLeaderboardSnapshot({
+              ...input,
+              from: addDays(today, -29),
+              to: today,
+            })
+          }
+          return getViewsLeaderboardSnapshot(input)
+        },
+      }),
+      getViewsByDay: tool({
+        description:
+          'Daily views and video counts (IG/TT) for trends, peak days, or one creator over time.',
+        inputSchema: z.object({
+          from: z.string().optional(),
+          to: z.string().optional(),
+          creatorUsername: z.string().optional(),
+          projectId: z.number().int().optional(),
+        }),
+        execute: async (input) => {
+          if (!input.from && !input.to) {
+            const { addDays } = await import('@/lib/campaign')
+            return getViewsByDaySnapshot({
+              ...input,
+              from: addDays(today, -29),
+              to: today,
+            })
+          }
+          return getViewsByDaySnapshot(input)
+        },
       }),
 
       // --- Write tools (Build It approval required) ---

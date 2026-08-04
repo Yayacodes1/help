@@ -566,7 +566,14 @@ function projectRecreateFromInput(input: Record<string, unknown>): ProjectRecrea
   return { name: String(input.name ?? '') }
 }
 
-export function AssistantChat({ labels }: { labels: Labels }) {
+export function AssistantChat({
+  labels,
+  embedded = false,
+}: {
+  labels: Labels
+  /** When true, skip outer card chrome (used inside AssistantDrawer). */
+  embedded?: boolean
+}) {
   const router = useRouter()
   const [input, setInput] = useState('')
   const [undoStack, setUndoStack] = useState<HistoryEntry[]>([])
@@ -918,16 +925,15 @@ export function AssistantChat({ labels }: { labels: Labels }) {
   }
 
   return (
-    <section className="rounded-xl border border-border bg-card">
-      <div className="flex items-start gap-3 border-b border-border px-4 py-3">
-        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Sparkles className="size-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold tracking-tight">{labels.title}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{labels.subtitle}</p>
-        </div>
-        <div className="flex shrink-0 gap-1">
+    <section
+      className={
+        embedded
+          ? 'flex flex-col'
+          : 'rounded-xl border border-border bg-card'
+      }
+    >
+      {embedded ? (
+        <div className="mb-2 flex justify-end gap-1">
           <button
             type="button"
             disabled={busy || undoStack.length === 0}
@@ -949,9 +955,47 @@ export function AssistantChat({ labels }: { labels: Labels }) {
             {labels.redo}
           </button>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-start gap-3 border-b border-border px-4 py-3">
+          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Sparkles className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold tracking-tight">{labels.title}</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">{labels.subtitle}</p>
+          </div>
+          <div className="flex shrink-0 gap-1">
+            <button
+              type="button"
+              disabled={busy || undoStack.length === 0}
+              onClick={() => void undoLast()}
+              title={labels.undo}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-border px-2 text-xs text-muted-foreground hover:bg-accent/40 disabled:opacity-40"
+            >
+              <Undo2 className="size-3.5" />
+              {labels.undo}
+            </button>
+            <button
+              type="button"
+              disabled={busy || redoStack.length === 0}
+              onClick={() => void redoLast()}
+              title={labels.redo}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-border px-2 text-xs text-muted-foreground hover:bg-accent/40 disabled:opacity-40"
+            >
+              <Redo2 className="size-3.5" />
+              {labels.redo}
+            </button>
+          </div>
+        </div>
+      )}
 
-      <div className="flex max-h-[28rem] min-h-[12rem] flex-col gap-3 overflow-y-auto px-4 py-3">
+      <div
+        className={
+          embedded
+            ? 'flex max-h-[26rem] min-h-[11rem] flex-col gap-3 overflow-y-auto'
+            : 'flex max-h-[28rem] min-h-[12rem] flex-col gap-3 overflow-y-auto px-4 py-3'
+        }
+      >
         {messages.length === 0 && (
           <div className="space-y-3 py-2">
             <p className="text-sm text-muted-foreground">{labels.emptyHint}</p>
@@ -1075,7 +1119,11 @@ export function AssistantChat({ labels }: { labels: Labels }) {
       </div>
 
       <form
-        className="flex gap-2 border-t border-border p-3"
+        className={
+          embedded
+            ? 'mt-2 flex gap-2 border-t border-border pt-3'
+            : 'flex gap-2 border-t border-border p-3'
+        }
         onSubmit={(e) => {
           e.preventDefault()
           void submit(input)
