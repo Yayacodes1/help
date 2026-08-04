@@ -627,6 +627,19 @@ export async function updateViews(id: number, views: number) {
   revalidatePath('/admin')
 }
 
+/** Pull DataLikers view counts for submissions dated today or yesterday. */
+export async function refreshRecentViews() {
+  await requireAdmin()
+  if (!process.env.DATALIKERS_API_KEY?.trim()) {
+    throw new Error('DATALIKERS_API_KEY is not set')
+  }
+  const { refreshViewsForRecentDays } = await import('@/lib/refresh-views')
+  const result = await refreshViewsForRecentDays()
+  revalidatePath('/admin')
+  revalidatePath('/submit')
+  return result
+}
+
 export async function deleteSubmission(id: number) {
   await requireAdmin()
   await sql`DELETE FROM submissions WHERE id = ${id}`

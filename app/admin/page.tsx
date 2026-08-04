@@ -30,6 +30,7 @@ import { SubmissionsTable } from '@/components/admin/submissions-table'
 import { PaymentsPeriodPanel } from '@/components/admin/payments-period-panel'
 import { PaymentDuePanel } from '@/components/admin/payment-due-panel'
 import { AssistantChat } from '@/components/admin/assistant-chat'
+import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { LanguageToggle } from '@/components/language-toggle'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
@@ -222,6 +223,7 @@ export default async function AdminPage({
                   defaultFrom={yearStart}
                   defaultTo={yearEnd}
                 />
+                <RefreshViewsButton label={t('refreshViews')} />
                 <SubmissionsTable
                   submissions={submissions}
                   emptyLabel={t('noVideosMatch')}
