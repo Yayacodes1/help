@@ -18,7 +18,7 @@ export function RefreshViewsButton({ label }: { label: string }) {
             try {
               const r = await refreshRecentViews()
               setMessage(
-                `Checked ${r.checked}: ${r.updated} updated, ${r.skipped} unchanged, ${r.failed} failed`,
+                `All videos — checked ${r.checked}: ${r.updated} updated, ${r.skipped} unchanged, ${r.failed} failed`,
               )
             } catch (e) {
               setMessage(e instanceof Error ? e.message : 'Refresh failed')

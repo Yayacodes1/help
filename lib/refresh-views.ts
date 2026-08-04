@@ -5,7 +5,10 @@ import { addDays } from '@/lib/campaign'
 import { getServerToday } from '@/lib/queries'
 import { fetchViewsForUrl } from '@/lib/datalikers'
 
+export type RefreshViewsScope = 'recent' | 'all'
+
 export type RefreshViewsResult = {
+  scope: RefreshViewsScope
   today: string
   yesterday: string
   checked: number
@@ -22,21 +25,32 @@ type Row = {
 }
 
 /**
- * Fetch view counts via DataLikers for submissions dated today or yesterday.
+ * Fetch view counts via DataLikers.
+ * - recent: video_date is today or yesterday (cheap daily cron)
+ * - all: every submission (admin backfill)
  * Only writes when a new count is returned — never clears existing views on failure.
  */
-export async function refreshViewsForRecentDays(
-  delayMs = 200,
+export async function refreshViews(
+  scope: RefreshViewsScope = 'recent',
+  delayMs = 150,
 ): Promise<RefreshViewsResult> {
   const today = await getServerToday()
   const yesterday = addDays(today, -1)
 
-  const rows = (await sql`
-    SELECT id, platform, url, views
-    FROM submissions
-    WHERE video_date = ${today}::date OR video_date = ${yesterday}::date
-    ORDER BY id ASC
-  `) as Row[]
+  const rows = (
+    scope === 'all'
+      ? await sql`
+          SELECT id, platform, url, views
+          FROM submissions
+          ORDER BY video_date DESC, id DESC
+        `
+      : await sql`
+          SELECT id, platform, url, views
+          FROM submissions
+          WHERE video_date = ${today}::date OR video_date = ${yesterday}::date
+          ORDER BY id ASC
+        `
+  ) as Row[]
 
   let updated = 0
   let skipped = 0
@@ -62,6 +76,7 @@ export async function refreshViewsForRecentDays(
   }
 
   return {
+    scope,
     today,
     yesterday,
     checked: rows.length,
@@ -69,4 +84,9 @@ export async function refreshViewsForRecentDays(
     skipped,
     failed,
   }
+}
+
+/** @deprecated Prefer refreshViews('recent') */
+export async function refreshViewsForRecentDays(delayMs = 150) {
+  return refreshViews('recent', delayMs)
 }

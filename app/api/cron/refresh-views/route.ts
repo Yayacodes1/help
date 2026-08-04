@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { refreshViewsForRecentDays } from '@/lib/refresh-views'
+import { refreshViews, type RefreshViewsScope } from '@/lib/refresh-views'
 import { revalidatePath } from 'next/cache'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300
 
 function authorize(req: Request): boolean {
   const secret = process.env.CRON_SECRET?.trim()
@@ -28,7 +28,12 @@ async function run(req: Request) {
     )
   }
 
-  const result = await refreshViewsForRecentDays()
+  const url = new URL(req.url)
+  const scopeParam = url.searchParams.get('scope')
+  // Daily cron stays cheap (today+yesterday). Pass ?scope=all for a full backfill.
+  const scope: RefreshViewsScope = scopeParam === 'all' ? 'all' : 'recent'
+
+  const result = await refreshViews(scope)
   revalidatePath('/admin')
   revalidatePath('/submit')
   return NextResponse.json(result)

@@ -51,57 +51,84 @@ function asFiniteCount(value: unknown): number | null {
   return null
 }
 
+const VIEW_KEYS = [
+  'play_count',
+  'playCount',
+  'view_count',
+  'viewCount',
+  'video_view_count',
+  'videoViewCount',
+  'ig_play_count',
+  'plays',
+  'views',
+] as const
+
+function viewsFromObject(obj: Record<string, unknown>): number | null {
+  for (const k of VIEW_KEYS) {
+    const n = asFiniteCount(obj[k])
+    // Prefer a positive count when both 0 and a nested real value exist —
+    // still accept 0 as a valid API response.
+    if (n != null) return n
+  }
+  return null
+}
+
 /** Pull play/view count from Instagram (Hiker-shaped) or TikTok (LamTok-shaped) payloads. */
 export function extractViewCount(payload: unknown): number | null {
   if (!payload || typeof payload !== 'object') return null
-  const obj = payload as Record<string, unknown>
+  const root = payload as Record<string, unknown>
 
-  const topKeys = [
-    'play_count',
-    'playCount',
-    'view_count',
-    'viewCount',
-    'video_view_count',
-    'videoViewCount',
-    'ig_play_count',
-    'plays',
-    'views',
-  ]
-  for (const k of topKeys) {
-    const n = asFiniteCount(obj[k])
-    if (n != null) return n
+  // Common wrappers from cache gateways
+  const candidates: Record<string, unknown>[] = [root]
+  for (const key of ['data', 'result', 'media', 'item', 'aweme_detail', 'aweme']) {
+    const nested = root[key]
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      candidates.push(nested as Record<string, unknown>)
+    }
   }
 
-  const nestedRoots = [obj.statistics, obj.stats, obj.itemInfo, obj.video, obj.media]
-  for (const root of nestedRoots) {
-    if (!root || typeof root !== 'object') continue
-    const nested = root as Record<string, unknown>
-    for (const k of topKeys) {
-      const n = asFiniteCount(nested[k])
-      if (n != null) return n
+  let foundZero: number | null = null
+  for (const obj of candidates) {
+    const direct = viewsFromObject(obj)
+    if (direct != null) {
+      if (direct > 0) return direct
+      foundZero = direct
     }
-    // TikTok often: itemInfo.itemStruct.stats.playCount
-    const itemStruct = nested.itemStruct
-    if (itemStruct && typeof itemStruct === 'object') {
-      const stats = (itemStruct as Record<string, unknown>).stats
-      if (stats && typeof stats === 'object') {
-        for (const k of ['playCount', 'play_count', 'viewCount', 'view_count']) {
-          const n = asFiniteCount((stats as Record<string, unknown>)[k])
-          if (n != null) return n
+
+    for (const nestedKey of ['statistics', 'stats', 'itemInfo', 'video', 'media']) {
+      const nested = obj[nestedKey]
+      if (!nested || typeof nested !== 'object' || Array.isArray(nested)) continue
+      const n = viewsFromObject(nested as Record<string, unknown>)
+      if (n != null) {
+        if (n > 0) return n
+        foundZero = n
+      }
+
+      const itemStruct = (nested as Record<string, unknown>).itemStruct
+      if (itemStruct && typeof itemStruct === 'object') {
+        const stats = (itemStruct as Record<string, unknown>).stats
+        if (stats && typeof stats === 'object') {
+          const sn = viewsFromObject(stats as Record<string, unknown>)
+          if (sn != null) {
+            if (sn > 0) return sn
+            foundZero = sn
+          }
         }
       }
     }
   }
 
-  return null
+  return foundZero
 }
 
 async function datalikersGet(path: string, query: Record<string, string>): Promise<unknown> {
+  const key = getApiKey()
   const u = new URL(path, BASE)
   for (const [k, v] of Object.entries(query)) u.searchParams.set(k, v)
+  u.searchParams.set('access_key', key)
 
   const res = await fetch(u, {
-    headers: { 'x-access-key': getApiKey(), Accept: 'application/json' },
+    headers: { 'x-access-key': key, Accept: 'application/json' },
     cache: 'no-store',
   })
 
