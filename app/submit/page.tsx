@@ -181,7 +181,17 @@ export default async function SubmitPage({
                       {' · '}
                       {t('tiktok')} {dailyGoals.goalTiktok}
                     </p>
-                    <SubmitForm username={username} date={date} fields={fields} />
+                    <SubmitForm
+                      username={username}
+                      date={date}
+                      fields={fields}
+                      labels={{
+                        pasteLinks: t('pasteLinks'),
+                        pasteHint: t('pasteLinksHint'),
+                        send: t('submitVideos'),
+                        sending: '…',
+                      }}
+                    />
                   </section>
 
                   <section className="flex flex-col gap-3">

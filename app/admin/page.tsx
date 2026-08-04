@@ -39,6 +39,7 @@ import { AssistantChat } from '@/components/admin/assistant-chat'
 import { AssistantDrawer } from '@/components/admin/assistant-drawer'
 import { AnalyticsPanel } from '@/components/admin/analytics-panel'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
+import { ReclassifyPlatformsButton } from '@/components/admin/reclassify-platforms-button'
 import { LanguageToggle } from '@/components/language-toggle'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
@@ -275,7 +276,10 @@ export default async function AdminPage({
                   defaultFrom={yearStart}
                   defaultTo={yearEnd}
                 />
-                <RefreshViewsButton label={t('refreshViews')} />
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
+                  <ReclassifyPlatformsButton label={t('fixPlatforms')} />
+                  <RefreshViewsButton label={t('refreshViews')} />
+                </div>
                 <SubmissionsTable
                   submissions={submissions}
                   emptyLabel={t('noVideosMatch')}

@@ -640,6 +640,45 @@ export async function refreshRecentViews() {
   return result
 }
 
+/**
+ * Set platform from each submission URL (fixes IG links stored as TikTok and vice versa).
+ */
+export async function reclassifySubmissionPlatforms() {
+  await requireAdmin()
+  const { detectPlatformFromUrl } = await import('@/lib/media-url')
+  const rows = (await sql`
+    SELECT id, platform, url FROM submissions ORDER BY id ASC
+  `) as { id: number; platform: string; url: string }[]
+
+  let checked = 0
+  let updated = 0
+  let skipped = 0
+  let unknown = 0
+  let toInstagram = 0
+  let toTiktok = 0
+
+  for (const row of rows) {
+    checked += 1
+    const detected = detectPlatformFromUrl(row.url)
+    if (!detected) {
+      unknown += 1
+      continue
+    }
+    if (detected === row.platform) {
+      skipped += 1
+      continue
+    }
+    await sql`UPDATE submissions SET platform = ${detected} WHERE id = ${row.id}`
+    updated += 1
+    if (detected === 'instagram') toInstagram += 1
+    else toTiktok += 1
+  }
+
+  revalidatePath('/admin')
+  revalidatePath('/submit')
+  return { checked, updated, skipped, unknown, toInstagram, toTiktok }
+}
+
 export async function deleteSubmission(id: number) {
   await requireAdmin()
   await sql`DELETE FROM submissions WHERE id = ${id}`

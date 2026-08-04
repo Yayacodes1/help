@@ -1,27 +1,13 @@
 'use server'
 
-import { sql, PLATFORMS, type Platform } from '@/lib/db'
+import { sql } from '@/lib/db'
 import { getCreatorByName } from '@/lib/queries'
+import { classifyMediaLinks, normalizeMediaUrl } from '@/lib/media-url'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 function normalizeUsername(raw: string): string {
   return raw.trim().replace(/^@+/, '')
-}
-
-function normalizeUrl(raw: string): string | null {
-  const value = raw.trim()
-  if (!value) return null
-  if (!/^https?:\/\//i.test(value)) return `https://${value}`
-  return value
-}
-
-function parseLinks(value: FormDataEntryValue | null): string[] {
-  return (value ?? '')
-    .toString()
-    .split(/[\n,\s]+/)
-    .map((l) => normalizeUrl(l))
-    .filter((l): l is string => Boolean(l))
 }
 
 function isValidDate(value: string): boolean {
@@ -50,20 +36,25 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   const videoDate = isValidDate(dateRaw) ? dateRaw : null
   if (!videoDate) return { ok: false, message: 'Please choose a valid date.' }
 
-  const byPlatform: Record<Platform, string[]> = {
-    instagram: parseLinks(formData.get('instagram_links')),
-    tiktok: parseLinks(formData.get('tiktok_links')),
-  }
+  // Prefer unified "links" field; fall back to legacy per-platform fields.
+  const unified = (formData.get('links') ?? '').toString()
+  const legacy = [
+    (formData.get('instagram_links') ?? '').toString(),
+    (formData.get('tiktok_links') ?? '').toString(),
+  ]
+    .filter(Boolean)
+    .join('\n')
 
-  const rows: { platform: Platform; url: string }[] = []
-  for (const platform of PLATFORMS) {
-    for (const url of byPlatform[platform]) {
-      rows.push({ platform, url })
-    }
-  }
+  const { rows, rejected } = classifyMediaLinks(unified || legacy)
 
   if (rows.length === 0) {
-    return { ok: false, message: 'Paste at least one video link.' }
+    if (rejected.length > 0) {
+      return {
+        ok: false,
+        message: `Could not recognize ${rejected.length} link(s). Use Instagram or TikTok URLs only.`,
+      }
+    }
+    return { ok: false, message: 'Paste at least one Instagram or TikTok video link.' }
   }
 
   for (const row of rows) {
@@ -74,7 +65,14 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   }
 
   revalidatePath('/submit')
-  return { ok: true, message: `Added ${rows.length} video${rows.length > 1 ? 's' : ''}.` }
+  const skipped =
+    rejected.length > 0 ? ` Skipped ${rejected.length} unrecognized link(s).` : ''
+  const ig = rows.filter((r) => r.platform === 'instagram').length
+  const tt = rows.filter((r) => r.platform === 'tiktok').length
+  return {
+    ok: true,
+    message: `Added ${rows.length} video${rows.length > 1 ? 's' : ''} (IG ${ig} · TT ${tt}).${skipped}`,
+  }
 }
 
 export async function deleteOwnSubmission(username: string, submissionId: number) {

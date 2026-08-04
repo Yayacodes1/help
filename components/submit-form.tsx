@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Music2, Send, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Camera, Music2, Send, CheckCircle2, AlertCircle, Link2 } from 'lucide-react'
 import { submitVideos } from '@/app/actions/creator'
 import { PLATFORM_META } from '@/lib/platforms'
 import type { Platform } from '@/lib/db'
@@ -20,14 +20,23 @@ type PlatformField = {
 
 type State = { ok: boolean; message: string } | null
 
+type Labels = {
+  pasteLinks: string
+  pasteHint: string
+  send: string
+  sending: string
+}
+
 export function SubmitForm({
   username,
   date,
   fields,
+  labels,
 }: {
   username: string
   date: string
   fields: PlatformField[]
+  labels: Labels
 }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
@@ -45,46 +54,57 @@ export function SubmitForm({
     <form ref={formRef} action={formAction} className="flex flex-col gap-5">
       <input type="hidden" name="video_date" value={date} />
 
-      {fields.map(({ platform, goal, todayCount }) => {
-        const meta = PLATFORM_META[platform]
-        const met = goal > 0 && todayCount >= goal
-        const Icon = PLATFORM_ICON[platform]
-        return (
-          <div
-            key={platform}
-            className="rounded-2xl border border-border bg-card p-4 text-right shadow-sm transition-shadow duration-300 focus-within:shadow-md"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary text-foreground">
-                  <Icon className="h-5 w-5" />
-                </span>
-                <p className="font-semibold text-card-foreground">{meta.ar}</p>
+      <div className="grid grid-cols-2 gap-2">
+        {fields.map(({ platform, goal, todayCount }) => {
+          const meta = PLATFORM_META[platform]
+          const met = goal > 0 && todayCount >= goal
+          const Icon = PLATFORM_ICON[platform]
+          return (
+            <div
+              key={platform}
+              className="rounded-xl border border-border bg-card px-3 py-2.5 text-right shadow-sm"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-foreground">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <p className="text-sm font-semibold text-card-foreground">{meta.ar}</p>
+                </div>
+                {goal > 0 && (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums ${
+                      met
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-secondary text-secondary-foreground'
+                    }`}
+                  >
+                    {met && <CheckCircle2 className="h-3 w-3" />}
+                    {todayCount} / {goal}
+                  </span>
+                )}
               </div>
-              {goal > 0 && (
-                <span
-                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums ${
-                    met
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-secondary text-secondary-foreground'
-                  }`}
-                >
-                  {met && <CheckCircle2 className="h-3.5 w-3.5" />}
-                  {todayCount} / {goal}
-                </span>
-              )}
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">{meta.hint_ar}</p>
-            <textarea
-              name={`${platform}_links`}
-              rows={3}
-              dir="ltr"
-              placeholder="https://..."
-              className="mt-2 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-4 text-right shadow-sm transition-shadow duration-300 focus-within:shadow-md">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary text-foreground">
+            <Link2 className="h-5 w-5" />
+          </span>
+          <p className="font-semibold text-card-foreground">{labels.pasteLinks}</p>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">{labels.pasteHint}</p>
+        <textarea
+          name="links"
+          rows={5}
+          dir="ltr"
+          placeholder={'https://www.instagram.com/reel/…\nhttps://vt.tiktok.com/…'}
+          className="mt-2 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+      </div>
 
       {state && (
         <p
@@ -110,7 +130,7 @@ export function SubmitForm({
         className="flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-60"
       >
         <Send className="h-4 w-4" />
-        {pending ? '...' : 'إرسال'}
+        {pending ? labels.sending : labels.send}
       </button>
     </form>
   )
