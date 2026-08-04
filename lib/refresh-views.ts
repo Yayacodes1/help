@@ -15,6 +15,8 @@ export type RefreshViewsResult = {
   updated: number
   skipped: number
   failed: number
+  /** Next offset for chunked `all` runs; null when finished. */
+  nextOffset: number | null
 }
 
 type Row = {
@@ -24,33 +26,43 @@ type Row = {
   views: number
 }
 
+const DEFAULT_CHUNK = 30
+
 /**
  * Fetch view counts via DataLikers.
- * - recent: video_date is today or yesterday (cheap daily cron)
- * - all: every submission (admin backfill)
+ * - recent: today + yesterday (daily cron; one shot)
+ * - all: every submission, oldest first, in chunks (admin backfill)
  * Only writes when a new count is returned — never clears existing views on failure.
  */
 export async function refreshViews(
   scope: RefreshViewsScope = 'recent',
-  delayMs = 150,
+  options: { delayMs?: number; limit?: number; offset?: number } = {},
 ): Promise<RefreshViewsResult> {
+  const delayMs = options.delayMs ?? 120
   const today = await getServerToday()
   const yesterday = addDays(today, -1)
 
-  const rows = (
-    scope === 'all'
-      ? await sql`
-          SELECT id, platform, url, views
-          FROM submissions
-          ORDER BY video_date DESC, id DESC
-        `
-      : await sql`
-          SELECT id, platform, url, views
-          FROM submissions
-          WHERE video_date = ${today}::date OR video_date = ${yesterday}::date
-          ORDER BY id ASC
-        `
-  ) as Row[]
+  let rows: Row[]
+  let nextOffset: number | null = null
+
+  if (scope === 'all') {
+    const limit = Math.min(100, Math.max(1, options.limit ?? DEFAULT_CHUNK))
+    const offset = Math.max(0, options.offset ?? 0)
+    rows = (await sql`
+      SELECT id, platform, url, views
+      FROM submissions
+      ORDER BY video_date ASC, id ASC
+      LIMIT ${limit} OFFSET ${offset}
+    `) as Row[]
+    nextOffset = rows.length < limit ? null : offset + rows.length
+  } else {
+    rows = (await sql`
+      SELECT id, platform, url, views
+      FROM submissions
+      WHERE video_date = ${today}::date OR video_date = ${yesterday}::date
+      ORDER BY id ASC
+    `) as Row[]
+  }
 
   let updated = 0
   let skipped = 0
@@ -83,10 +95,11 @@ export async function refreshViews(
     updated,
     skipped,
     failed,
+    nextOffset,
   }
 }
 
 /** @deprecated Prefer refreshViews('recent') */
-export async function refreshViewsForRecentDays(delayMs = 150) {
-  return refreshViews('recent', delayMs)
+export async function refreshViewsForRecentDays(delayMs = 120) {
+  return refreshViews('recent', { delayMs })
 }
