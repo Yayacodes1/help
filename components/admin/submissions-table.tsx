@@ -21,6 +21,7 @@ export function SubmissionsTable({
     platform: 'instagram' | 'tiktok'
     url: string
     views: number
+    views_error?: string | null
   }>
   emptyLabel?: string
   showCreator?: boolean
@@ -50,56 +51,76 @@ export function SubmissionsTable({
           </tr>
         </thead>
         <tbody>
-          {submissions.map((s) => (
-            <tr key={s.id} className="border-b border-border last:border-0">
-              {showCreator && (
-                <td className="whitespace-nowrap px-4 py-3 font-medium">
-                  {'creator_id' in s && s.creator_id != null ? (
-                    <Link
-                      href={`/admin/creators/${s.creator_id}`}
-                      className="underline-offset-4 hover:underline"
-                    >
-                      {s.creator_name}
-                    </Link>
-                  ) : (
-                    s.creator_name ?? '—'
-                  )}
-                </td>
-              )}
-              {showProject && (
-                <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                  {s.project_name ?? '—'}
-                </td>
-              )}
-              <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                {formatDate(s.video_date)}
-              </td>
-              <td className="whitespace-nowrap px-4 py-3">{PLATFORM_META[s.platform].en}</td>
-              <td className="max-w-[220px] px-4 py-3">
-                <a
-                  href={s.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block truncate font-medium underline underline-offset-4"
-                  dir="ltr"
-                >
-                  {s.url}
-                </a>
-              </td>
-              <td className="px-2 py-2 text-right">
-                {editableViews ? (
-                  <ViewsCell id={s.id} views={s.views ?? 0} />
-                ) : (
-                  <span className="px-2 tabular-nums">{formatNumber(s.views ?? 0)}</span>
+          {submissions.map((s) => {
+            const err =
+              'views_error' in s && typeof s.views_error === 'string' && s.views_error
+                ? s.views_error
+                : null
+            return (
+              <tr key={s.id} className="border-b border-border last:border-0">
+                {showCreator && (
+                  <td className="whitespace-nowrap px-4 py-3 font-medium">
+                    {'creator_id' in s && s.creator_id != null ? (
+                      <Link
+                        href={`/admin/creators/${s.creator_id}`}
+                        className="underline-offset-4 hover:underline"
+                      >
+                        {s.creator_name}
+                      </Link>
+                    ) : (
+                      s.creator_name ?? '—'
+                    )}
+                  </td>
                 )}
-              </td>
-              {editableViews && (
-                <td className="px-2 py-2 text-right">
-                  <DeleteSubmission id={s.id} />
+                {showProject && (
+                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                    {s.project_name ?? '—'}
+                  </td>
+                )}
+                <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                  {formatDate(s.video_date)}
                 </td>
-              )}
-            </tr>
-          ))}
+                <td className="whitespace-nowrap px-4 py-3">
+                  {PLATFORM_META[s.platform].en}
+                </td>
+                <td className="max-w-[220px] px-4 py-3">
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block truncate font-medium underline underline-offset-4"
+                    dir="ltr"
+                  >
+                    {s.url}
+                  </a>
+                </td>
+                <td className="px-2 py-2 text-right">
+                  <div className="flex flex-col items-end gap-0.5">
+                    {editableViews ? (
+                      <ViewsCell id={s.id} views={s.views ?? 0} />
+                    ) : (
+                      <span className="px-2 tabular-nums">
+                        {formatNumber(s.views ?? 0)}
+                      </span>
+                    )}
+                    {err && (
+                      <span
+                        className="max-w-[220px] text-left text-[11px] leading-snug text-destructive"
+                        title={err}
+                      >
+                        {err}
+                      </span>
+                    )}
+                  </div>
+                </td>
+                {editableViews && (
+                  <td className="px-2 py-2 text-right">
+                    <DeleteSubmission id={s.id} />
+                  </td>
+                )}
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

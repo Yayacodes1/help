@@ -8,6 +8,12 @@ import { fetchViewsDetailed } from '@/lib/tikhub'
 
 export type RefreshViewsScope = 'recent' | 'all' | 'zeros'
 
+export type RefreshFailureSample = {
+  id: number
+  url: string
+  reason: string
+}
+
 export type RefreshViewsResult = {
   scope: RefreshViewsScope
   today: string
@@ -20,10 +26,12 @@ export type RefreshViewsResult = {
   platformsFixed: number
   /** Next offset for chunked `all` scans; null when finished / not used for zeros. */
   nextOffset: number | null
-  /** True when another zeros batch should be requested. */
+  /** True when another zeros/all batch should be requested. */
   hasMore: boolean
   /** Top failure reasons in this chunk (for admin UI). */
   failures: { reason: string; count: number }[]
+  /** Per-video samples so admins can see why a link failed. */
+  failureSamples: RefreshFailureSample[]
 }
 
 type Row = {
@@ -51,6 +59,9 @@ function tallyFailures(
  * - recent: today + yesterday (daily cron)
  * - all: every submission, oldest first, offset chunks
  * - zeros: only rows still at 0 (no offset — each call picks remaining zeros)
+ *
+ * Always repairs platform from URL before calling TikHub.
+ * Writes views_error on failure; clears it on success.
  */
 export async function refreshViews(
   scope: RefreshViewsScope = 'recent',
@@ -98,6 +109,7 @@ export async function refreshViews(
   let failed = 0
   let platformsFixed = 0
   const failReasons: string[] = []
+  const failureSamples: RefreshFailureSample[] = []
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]
@@ -120,6 +132,18 @@ export async function refreshViews(
     if (!result.ok) {
       failed += 1
       failReasons.push(result.reason)
+      if (failureSamples.length < 12) {
+        failureSamples.push({
+          id: row.id,
+          url: row.url,
+          reason: result.reason,
+        })
+      }
+      await sql`
+        UPDATE submissions
+        SET views_error = ${result.reason.slice(0, 400)}
+        WHERE id = ${row.id}
+      `
       continue
     }
 
@@ -127,21 +151,29 @@ export async function refreshViews(
       result.resolvedUrl && result.resolvedUrl !== row.url,
     )
     const viewsChanged = result.views !== row.views
-    if (!viewsChanged && !urlChanged) {
-      skipped += 1
-      continue
-    }
 
     if (urlChanged && result.resolvedUrl) {
       await sql`
         UPDATE submissions
-        SET views = ${result.views}, url = ${result.resolvedUrl}
+        SET views = ${result.views},
+            url = ${result.resolvedUrl},
+            views_error = NULL
         WHERE id = ${row.id}
       `
+      updated += 1
+    } else if (viewsChanged) {
+      await sql`
+        UPDATE submissions
+        SET views = ${result.views}, views_error = NULL
+        WHERE id = ${row.id}
+      `
+      updated += 1
     } else {
-      await sql`UPDATE submissions SET views = ${result.views} WHERE id = ${row.id}`
+      await sql`
+        UPDATE submissions SET views_error = NULL WHERE id = ${row.id}
+      `
+      skipped += 1
     }
-    updated += 1
   }
 
   // For zeros scope: if every row in the batch failed, stop looping
@@ -162,6 +194,7 @@ export async function refreshViews(
     nextOffset,
     hasMore,
     failures: tallyFailures(failReasons),
+    failureSamples,
   }
 }
 

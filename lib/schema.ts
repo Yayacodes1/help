@@ -115,4 +115,7 @@ export async function ensureCreatorTrackingColumns() {
     WHERE p.contract_id IS NULL
       AND EXISTS (SELECT 1 FROM contracts c WHERE c.creator_id = p.creator_id)
   `
+
+  // Why a views lookup failed (cleared on success).
+  await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS views_error text`
 }

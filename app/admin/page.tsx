@@ -278,7 +278,10 @@ export default async function AdminPage({
                 />
                 <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
                   <ReclassifyPlatformsButton label={t('fixPlatforms')} />
-                  <RefreshViewsButton label={t('refreshViews')} />
+                  <RefreshViewsButton
+                    label={t('refreshViews')}
+                    allLabel={t('refreshAllViews')}
+                  />
                 </div>
                 <SubmissionsTable
                   submissions={submissions}

@@ -71,7 +71,8 @@ export async function getProjectById(id: number): Promise<Project | null> {
 
 export async function getSubmissionsForCreator(creatorId: number): Promise<Submission[]> {
   return (await sql`
-    SELECT id, creator_id, project_id, platform, url, video_date::text AS video_date, views, created_at
+    SELECT id, creator_id, project_id, platform, url, video_date::text AS video_date,
+           views, views_error, created_at
     FROM submissions
     WHERE creator_id = ${creatorId}
     ORDER BY video_date DESC, created_at DESC
@@ -83,7 +84,8 @@ export async function getSubmissionsForCreatorOnDate(
   date: string,
 ): Promise<Submission[]> {
   return (await sql`
-    SELECT id, creator_id, project_id, platform, url, video_date::text AS video_date, views, created_at
+    SELECT id, creator_id, project_id, platform, url, video_date::text AS video_date,
+           views, views_error, created_at
     FROM submissions
     WHERE creator_id = ${creatorId} AND video_date = ${date}
     ORDER BY created_at DESC
@@ -138,6 +140,7 @@ export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<A
       s.url,
       s.video_date::text AS video_date,
       s.views,
+      s.views_error,
       s.created_at,
       c.name AS creator_name,
       p.name AS project_name

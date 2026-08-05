@@ -2,7 +2,7 @@
 
 import { sql } from '@/lib/db'
 import { getCreatorByName } from '@/lib/queries'
-import { classifyMediaLinks, normalizeMediaUrl } from '@/lib/media-url'
+import { classifyMediaLinks } from '@/lib/media-url'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
@@ -12,6 +12,34 @@ function normalizeUsername(raw: string): string {
 
 function isValidDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
+async function fillViewsForNewSubmission(
+  id: number,
+  platform: 'instagram' | 'tiktok',
+  url: string,
+) {
+  if (!process.env.TIKHUB_API_KEY?.trim()) return
+  try {
+    const { fetchViewsDetailed } = await import('@/lib/tikhub')
+    const result = await fetchViewsDetailed(platform, url)
+    if (result.ok) {
+      await sql`
+        UPDATE submissions
+        SET views = ${result.views}, views_error = NULL
+        WHERE id = ${id}
+      `
+    } else {
+      await sql`
+        UPDATE submissions
+        SET views_error = ${result.reason.slice(0, 400)}
+        WHERE id = ${id}
+      `
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message.slice(0, 400) : 'views fetch failed'
+    await sql`UPDATE submissions SET views_error = ${msg} WHERE id = ${id}`
+  }
 }
 
 // Public gate: verify the TikTok username belongs to a registered creator,
@@ -58,13 +86,19 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   }
 
   for (const row of rows) {
-    await sql`
+    const inserted = (await sql`
       INSERT INTO submissions (creator_id, project_id, platform, url, video_date)
       VALUES (${creator.id}, ${creator.project_id}, ${row.platform}, ${row.url}, ${videoDate})
-    `
+      RETURNING id
+    `) as { id: number }[]
+    const id = inserted[0]?.id
+    if (id != null) {
+      await fillViewsForNewSubmission(id, row.platform, row.url)
+    }
   }
 
   revalidatePath('/submit')
+  revalidatePath('/admin')
   const skipped =
     rejected.length > 0 ? ` Skipped ${rejected.length} unrecognized link(s).` : ''
   const ig = rows.filter((r) => r.platform === 'instagram').length

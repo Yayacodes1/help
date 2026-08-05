@@ -45,6 +45,8 @@ export type Submission = {
   url: string
   video_date: string
   views: number
+  /** Last TikHub/views lookup error; null when last fetch succeeded or never tried. */
+  views_error: string | null
   created_at: string
 }
 

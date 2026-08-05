@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { reclassifySubmissionPlatforms } from '@/app/actions/admin'
+import type { RefreshViewsScope } from '@/lib/refresh-views'
 
 type ChunkResult = {
   checked: number
@@ -13,6 +14,7 @@ type ChunkResult = {
   nextOffset: number | null
   hasMore: boolean
   failures?: { reason: string; count: number }[]
+  failureSamples?: { id: number; url: string; reason: string }[]
 }
 
 function mergeFailures(
@@ -23,37 +25,55 @@ function mergeFailures(
   for (const f of list) into.set(f.reason, (into.get(f.reason) ?? 0) + f.count)
 }
 
-export function RefreshViewsButton({ label }: { label: string }) {
+export function RefreshViewsButton({
+  label,
+  allLabel,
+}: {
+  label: string
+  allLabel: string
+}) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [sampleFails, setSampleFails] = useState<
+    { id: number; url: string; reason: string }[]
+  >([])
 
-  async function runFixAndRetry() {
+  async function run(scope: RefreshViewsScope) {
     setPending(true)
     setMessage(null)
+    setSampleFails([])
 
     let checked = 0
     let updated = 0
     let skipped = 0
     let failed = 0
     let platformsFixedInChunks = 0
+    let offset = 0
     const failMap = new Map<string, number>()
+    const samples: { id: number; url: string; reason: string }[] = []
 
     try {
-      // Heal ALL old submits (every creator) — not only zero-view rows.
       setMessage('Fixing platforms from URLs for all videos…')
       const reclass = await reclassifySubmissionPlatforms()
       const platformLine = `Platforms: ${reclass.updated} fixed (→IG ${reclass.toInstagram}, →TT ${reclass.toTiktok}), ${reclass.skipped} already correct`
 
-      for (let round = 0; round < 80; round++) {
+      const verb = scope === 'all' ? 'Refreshing all views' : 'Retrying 0-view videos'
+      const maxRounds = scope === 'all' ? 200 : 80
+
+      for (let round = 0; round < maxRounds; round++) {
         setMessage(
-          `${platformLine} · Retrying 0-view videos… ${updated} updated, ${failed} failed so far`,
+          `${platformLine} · ${verb}… ${updated} updated, ${failed} failed so far`,
         )
 
         const res = await fetch('/api/admin/refresh-views', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scope: 'zeros', limit: 20 }),
+          body: JSON.stringify({
+            scope,
+            limit: 20,
+            offset: scope === 'all' ? offset : undefined,
+          }),
         })
         const data = (await res.json().catch(() => null)) as
           | (ChunkResult & { error?: string })
@@ -70,10 +90,19 @@ export function RefreshViewsButton({ label }: { label: string }) {
         failed += data.failed
         platformsFixedInChunks += data.platformsFixed ?? 0
         mergeFailures(failMap, data.failures)
+        for (const s of data.failureSamples ?? []) {
+          if (samples.length < 25) samples.push(s)
+        }
 
         if (data.checked === 0) break
         if (!data.hasMore) break
-        if (data.updated === 0 && data.skipped === 0) break
+
+        if (scope === 'all') {
+          if (data.nextOffset == null) break
+          offset = data.nextOffset
+        } else if (data.updated === 0 && data.skipped === 0) {
+          break
+        }
       }
 
       const topFails = [...failMap.entries()]
@@ -82,9 +111,10 @@ export function RefreshViewsButton({ label }: { label: string }) {
         .map(([reason, count]) => `${count}× ${reason}`)
         .join(' · ')
 
+      setSampleFails(samples)
       setMessage(
         [
-          `${platformLine}${platformsFixedInChunks ? ` (+${platformsFixedInChunks} during retry)` : ''}`,
+          `${platformLine}${platformsFixedInChunks ? ` (+${platformsFixedInChunks} during refresh)` : ''}`,
           `Views: checked ${checked}, ${updated} updated, ${skipped} unchanged, ${failed} failed`,
           topFails ? `Top fails: ${topFails}` : null,
         ]
@@ -100,15 +130,23 @@ export function RefreshViewsButton({ label }: { label: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           disabled={pending}
-          onClick={() => void runFixAndRetry()}
+          onClick={() => void run('all')}
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-60"
         >
-          {pending ? 'Fixing platforms + retrying views…' : label}
+          {pending ? 'Refreshing views…' : allLabel}
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => void run('zeros')}
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-60"
+        >
+          {pending ? 'Working…' : label}
         </button>
       </div>
       {message ? (
@@ -117,9 +155,29 @@ export function RefreshViewsButton({ label }: { label: string }) {
         </p>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Fixes Instagram/TikTok for all old links from the URL, then fills 0-view
-          counts via TikHub.
+          Refresh all recounts every video. Zeros only is cheaper. Failures are
+          stored on each row so you can see why views are missing.
         </p>
+      )}
+      {sampleFails.length > 0 && (
+        <ul className="max-w-3xl space-y-1 rounded-md border border-border bg-muted/30 p-2 text-xs text-muted-foreground">
+          <li className="font-medium text-foreground">Why some videos failed</li>
+          {sampleFails.map((s) => (
+            <li key={`${s.id}-${s.reason}`} className="break-all">
+              <a
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2"
+                dir="ltr"
+              >
+                #{s.id}
+              </a>
+              {': '}
+              {s.reason}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   )
