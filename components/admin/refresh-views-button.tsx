@@ -250,8 +250,8 @@ export function RefreshViewsButton({
       ) : (
         <p className="text-xs text-muted-foreground">
           Uses the date / creator / platform filters above. Fixes IG↔TT from each
-          URL, then pulls current views. Cron also refreshes today + yesterday
-          every 12 hours.
+          URL, then pulls current views. A daily cron also refreshes today +
+          yesterday once per day (Vercel Hobby limit).
         </p>
       )}
       {sampleFails.length > 0 && (

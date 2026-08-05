@@ -30,7 +30,7 @@ async function run(req: Request) {
 
   const url = new URL(req.url)
   const scopeParam = url.searchParams.get('scope')
-  // Default: today + yesterday (every 12h). Pass ?scope=all only for rare full backfills.
+  // Default: today + yesterday once daily (Hobby allows 1 cron/day). Pass ?scope=all for rare full backfills.
   const scope: RefreshViewsScope = scopeParam === 'all' ? 'all' : 'recent'
 
   const result = await refreshViews(scope, { delayMs: 80, limit: 40 })

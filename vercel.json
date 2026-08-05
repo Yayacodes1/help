@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/refresh-views",
-      "schedule": "0 */12 * * *"
+      "schedule": "0 14 * * *"
     }
   ]
 }
