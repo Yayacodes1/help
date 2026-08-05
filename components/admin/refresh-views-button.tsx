@@ -1,9 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { reclassifySubmissionPlatforms } from '@/app/actions/admin'
-import type { RefreshViewsScope } from '@/lib/refresh-views'
+import { useRouter, useSearchParams } from 'next/navigation'
+import type { Platform } from '@/lib/db'
 
 type ChunkResult = {
   checked: number
@@ -31,7 +30,7 @@ function explainHttpError(status: number, apiError?: string): string {
     return 'Not logged in as admin (401). Refresh the page and sign in again.'
   }
   if (status === 502 || status === 503 || status === 504) {
-    return `Server timed out (${status}). The host stopped the request before TikHub finished. Progress on videos already updated is kept — click the same button again to continue.`
+    return `Server timed out (${status}). Progress is kept — click Refresh again to continue.`
   }
   if (status === 500) {
     return 'Server error (500). Check TIKHUB_API_KEY on Vercel or try again.'
@@ -39,15 +38,46 @@ function explainHttpError(status: number, apiError?: string): string {
   return `Refresh failed (HTTP ${status}).`
 }
 
+function readFilters(params: URLSearchParams, defaults: { from: string; to: string }) {
+  const from = params.get('from') || defaults.from
+  const to = params.get('to') || defaults.to
+  const creatorRaw = params.get('creator')
+  const projectRaw = params.get('project')
+  const platformRaw = params.get('platform')
+  const creatorId = creatorRaw ? Number(creatorRaw) : undefined
+  const projectId = projectRaw ? Number(projectRaw) : undefined
+  const platform =
+    platformRaw === 'instagram' || platformRaw === 'tiktok'
+      ? (platformRaw as Platform)
+      : undefined
+
+  return {
+    from,
+    to,
+    creatorId: Number.isFinite(creatorId) ? creatorId : undefined,
+    projectId: Number.isFinite(projectId) ? projectId : undefined,
+    platform,
+  }
+}
+
 async function fetchChunk(
-  scope: RefreshViewsScope,
   offset: number,
   limit: number,
+  filters: ReturnType<typeof readFilters>,
 ): Promise<ChunkResult> {
   const res = await fetch('/api/admin/refresh-views', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scope, limit, offset }),
+    body: JSON.stringify({
+      scope: 'filtered',
+      limit,
+      offset,
+      from: filters.from,
+      to: filters.to,
+      creatorId: filters.creatorId,
+      projectId: filters.projectId,
+      platform: filters.platform,
+    }),
   })
 
   const data = (await res.json().catch(() => null)) as
@@ -65,12 +95,15 @@ async function fetchChunk(
 
 export function RefreshViewsButton({
   label,
-  allLabel,
+  defaultFrom,
+  defaultTo,
 }: {
   label: string
-  allLabel: string
+  defaultFrom: string
+  defaultTo: string
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [isError, setIsError] = useState(false)
@@ -78,69 +111,58 @@ export function RefreshViewsButton({
     { id: number; url: string; reason: string }[]
   >([])
 
-  async function run(scope: RefreshViewsScope) {
+  async function run() {
     setPending(true)
     setMessage(null)
     setIsError(false)
     setSampleFails([])
 
+    const filters = readFilters(searchParams, {
+      from: defaultFrom,
+      to: defaultTo,
+    })
+
     let checked = 0
     let updated = 0
     let skipped = 0
     let failed = 0
-    let platformsFixedInChunks = 0
+    let platformsFixed = 0
     let offset = 0
     let timeouts = 0
     const failMap = new Map<string, number>()
     const samples: { id: number; url: string; reason: string }[] = []
-    let platformLine = 'Platforms: skipped (will still fix from each URL while refreshing)'
-
-    // Tiny chunks so Vercel does not 504 mid-batch.
-    const limit = 5
-    const maxRounds = scope === 'all' ? 400 : 200
+    const limit = 4
+    const filterLine = `Dates ${filters.from} → ${filters.to}${
+      filters.creatorId ? ` · creator #${filters.creatorId}` : ''
+    }${filters.platform ? ` · ${filters.platform}` : ''}`
 
     try {
-      setMessage('Fixing platforms from URLs for all videos…')
-      try {
-        const reclass = await reclassifySubmissionPlatforms()
-        platformLine = `Platforms: ${reclass.updated} fixed (→IG ${reclass.toInstagram}, →TT ${reclass.toTiktok}), ${reclass.skipped} already correct`
-      } catch (e) {
-        const why = e instanceof Error ? e.message : 'unknown error'
-        platformLine = `Platforms: fix step failed (${why}). Continuing views refresh anyway — each video is still classified from its URL.`
-        setIsError(true)
-      }
-
-      const verb = scope === 'all' ? 'Refreshing all views' : 'Retrying 0-view videos'
-
-      for (let round = 0; round < maxRounds; round++) {
+      for (let round = 0; round < 500; round++) {
         setMessage(
-          `${platformLine} · ${verb}… checked ${checked}, ${updated} updated, ${failed} failed` +
-            (timeouts ? ` · recovered from ${timeouts} timeout(s)` : ''),
+          `Refreshing views (${filterLine})… checked ${checked}, ${updated} updated, ${failed} failed` +
+            (timeouts ? ` · ${timeouts} timeout(s) recovered` : ''),
         )
 
         let data: ChunkResult
         try {
-          data = await fetchChunk(scope, offset, limit)
+          data = await fetchChunk(offset, limit, filters)
         } catch (chunkErr) {
           const why =
             chunkErr instanceof Error ? chunkErr.message : 'chunk failed'
           const timedOut = /\b(502|503|504|timed out|timeout)\b/i.test(why)
 
-          if (timedOut && timeouts < 8) {
-            // Shrink further and keep going from the same offset.
+          if (timedOut && timeouts < 10) {
             timeouts += 1
             setMessage(
-              `${platformLine} · Timed out on a batch (host limit). Retrying smaller chunk from where we left off… (${timeouts})`,
+              `Timed out on a batch — retrying smaller chunk… (${timeouts})`,
             )
-            await new Promise((r) => setTimeout(r, 800))
+            await new Promise((r) => setTimeout(r, 700))
             try {
-              data = await fetchChunk(scope, offset, 3)
+              data = await fetchChunk(offset, 2, filters)
             } catch (retryErr) {
-              // Advance offset so one stuck batch cannot block forever.
               offset += limit
-              timeouts += 1
               setMessage(
-                `${platformLine} · Batch still timing out — skipped ahead to keep progressing. Last error: ${
+                `Batch still timing out — skipped ahead. ${
                   retryErr instanceof Error ? retryErr.message : why
                 }`,
               )
@@ -155,15 +177,14 @@ export function RefreshViewsButton({
         updated += data.updated
         skipped += data.skipped
         failed += data.failed
-        platformsFixedInChunks += data.platformsFixed ?? 0
+        platformsFixed += data.platformsFixed ?? 0
         mergeFailures(failMap, data.failures)
         for (const s of data.failureSamples ?? []) {
           if (samples.length < 25) samples.push(s)
         }
 
         if (data.checked === 0) break
-        if (!data.hasMore) break
-        if (data.nextOffset == null) break
+        if (!data.hasMore || data.nextOffset == null) break
         offset = data.nextOffset
       }
 
@@ -174,19 +195,20 @@ export function RefreshViewsButton({
         .join(' · ')
 
       setSampleFails(samples)
-      const summary = [
-        `${platformLine}${platformsFixedInChunks ? ` (+${platformsFixedInChunks} during refresh)` : ''}`,
-        `Views: checked ${checked}, ${updated} updated, ${skipped} unchanged, ${failed} failed`,
-        timeouts ? `Host timeouts recovered: ${timeouts}` : null,
-        topFails ? `Top fails: ${topFails}` : null,
-        failed > 0
-          ? 'Open any still-0 row — red text under Views is the reason for that video.'
-          : null,
-      ]
-        .filter(Boolean)
-        .join(' — ')
-
-      setMessage(summary)
+      setMessage(
+        [
+          `Done (${filterLine})`,
+          `checked ${checked}: ${updated} updated, ${skipped} unchanged, ${failed} failed`,
+          platformsFixed ? `${platformsFixed} platforms fixed from URLs` : null,
+          timeouts ? `${timeouts} host timeout(s) recovered` : null,
+          topFails ? `Top fails: ${topFails}` : null,
+          failed > 0
+            ? 'Red text under Views = reason for that video.'
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' — '),
+      )
       setIsError(failed > 0 || timeouts > 0)
       router.refresh()
     } catch (e) {
@@ -195,9 +217,9 @@ export function RefreshViewsButton({
       setMessage(
         [
           msg,
-          updated || checked
-            ? `Partial progress before stop: checked ${checked}, ${updated} updated, ${failed} failed. Click the same button again to continue.`
-            : 'No videos were updated. Fix the error above, then try again.',
+          checked
+            ? `Partial: checked ${checked}, ${updated} updated, ${failed} failed. Click Refresh again to continue.`
+            : 'Nothing updated. Fix the error, then try again.',
         ].join(' '),
       )
       router.refresh()
@@ -208,24 +230,14 @@ export function RefreshViewsButton({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => void run('all')}
-          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-60"
-        >
-          {pending ? 'Refreshing views…' : allLabel}
-        </button>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => void run('zeros')}
-          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-60"
-        >
-          {pending ? 'Working…' : label}
-        </button>
-      </div>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => void run()}
+        className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-60"
+      >
+        {pending ? 'Refreshing views…' : label}
+      </button>
       {message ? (
         <p
           className={`max-w-3xl text-xs break-words ${
@@ -237,15 +249,15 @@ export function RefreshViewsButton({
         </p>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Refresh all recounts every video (small batches so it won&apos;t time
-          out). If something fails, you&apos;ll see a clear error here and under
-          each video&apos;s Views.
+          Uses the date / creator / platform filters above. Fixes IG↔TT from each
+          URL, then pulls current views. Cron also refreshes today + yesterday
+          every 12 hours.
         </p>
       )}
       {sampleFails.length > 0 && (
         <ul className="max-w-3xl space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-muted-foreground">
           <li className="font-medium text-destructive">
-            Why some videos failed (fix these links or TikHub)
+            Why some videos failed
           </li>
           {sampleFails.map((s) => (
             <li key={`${s.id}-${s.reason}`} className="break-all">

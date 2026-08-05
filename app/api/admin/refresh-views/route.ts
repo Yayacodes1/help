@@ -1,16 +1,26 @@
 import { NextResponse } from 'next/server'
 import { isAdmin } from '@/lib/admin-auth'
-import { refreshViews, type RefreshViewsScope } from '@/lib/refresh-views'
+import {
+  refreshViews,
+  type RefreshFilters,
+  type RefreshViewsScope,
+} from '@/lib/refresh-views'
 import { revalidatePath } from 'next/cache'
+import type { Platform } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
-/** Keep under Vercel hobby/pro limits; client uses tiny chunks so we finish in time. */
+/** Keep under Vercel limits; client uses tiny chunks. */
 export const maxDuration = 60
 
 type Body = {
   scope?: RefreshViewsScope
   limit?: number
   offset?: number
+  from?: string
+  to?: string
+  creatorId?: number
+  projectId?: number
+  platform?: Platform
 }
 
 function friendlyEnvError(): string {
@@ -37,16 +47,26 @@ export async function POST(req: Request) {
 
   const raw = body.scope
   const scope: RefreshViewsScope =
-    raw === 'recent' || raw === 'all' || raw === 'zeros' ? raw : 'zeros'
+    raw === 'recent' || raw === 'all' || raw === 'zeros' || raw === 'filtered'
+      ? raw
+      : 'filtered'
 
-  // Hard-cap batch size so one request cannot 504.
   const limit = Math.min(8, Math.max(1, body.limit ?? 5))
+
+  const filters: RefreshFilters = {
+    from: body.from ?? null,
+    to: body.to ?? null,
+    creatorId: body.creatorId ?? null,
+    projectId: body.projectId ?? null,
+    platform: body.platform ?? null,
+  }
 
   try {
     const result = await refreshViews(scope, {
       limit,
       offset: body.offset,
       delayMs: 60,
+      filters: scope === 'filtered' ? filters : undefined,
     })
 
     revalidatePath('/admin')

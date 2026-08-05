@@ -30,10 +30,10 @@ async function run(req: Request) {
 
   const url = new URL(req.url)
   const scopeParam = url.searchParams.get('scope')
-  // Daily cron stays cheap (today+yesterday). Pass ?scope=all for a full backfill.
+  // Default: today + yesterday (every 12h). Pass ?scope=all only for rare full backfills.
   const scope: RefreshViewsScope = scopeParam === 'all' ? 'all' : 'recent'
 
-  const result = await refreshViews(scope)
+  const result = await refreshViews(scope, { delayMs: 80, limit: 40 })
   revalidatePath('/admin')
   revalidatePath('/submit')
   return NextResponse.json(result)

@@ -6,7 +6,15 @@ import { detectPlatformFromUrl } from '@/lib/media-url'
 import { getServerToday } from '@/lib/queries'
 import { fetchViewsDetailed } from '@/lib/tikhub'
 
-export type RefreshViewsScope = 'recent' | 'all' | 'zeros'
+export type RefreshViewsScope = 'recent' | 'all' | 'zeros' | 'filtered'
+
+export type RefreshFilters = {
+  from?: string | null
+  to?: string | null
+  creatorId?: number | null
+  projectId?: number | null
+  platform?: Platform | null
+}
 
 export type RefreshFailureSample = {
   id: number
@@ -22,15 +30,10 @@ export type RefreshViewsResult = {
   updated: number
   skipped: number
   failed: number
-  /** How many rows had platform rewritten from the URL in this chunk. */
   platformsFixed: number
-  /** Next offset for chunked `all` scans; null when finished / not used for zeros. */
   nextOffset: number | null
-  /** True when another zeros/all batch should be requested. */
   hasMore: boolean
-  /** Top failure reasons in this chunk (for admin UI). */
   failures: { reason: string; count: number }[]
-  /** Per-video samples so admins can see why a link failed. */
   failureSamples: RefreshFailureSample[]
 }
 
@@ -42,6 +45,7 @@ type Row = {
 }
 
 const DEFAULT_CHUNK = 25
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 function tallyFailures(
   reasons: string[],
@@ -56,16 +60,19 @@ function tallyFailures(
 
 /**
  * Fetch view counts via TikHub.
- * - recent: today + yesterday (daily cron)
- * - all: every submission, oldest first, offset chunks
- * - zeros: only rows still at 0 (no offset — each call picks remaining zeros)
- *
- * Always repairs platform from URL before calling TikHub.
- * Writes views_error on failure; clears it on success.
+ * - recent: today + yesterday (cron)
+ * - filtered: admin Refresh using Videos date/creator/platform filters
+ * - all: every submission (legacy)
+ * - zeros: only views = 0 (legacy)
  */
 export async function refreshViews(
   scope: RefreshViewsScope = 'recent',
-  options: { delayMs?: number; limit?: number; offset?: number } = {},
+  options: {
+    delayMs?: number
+    limit?: number
+    offset?: number
+    filters?: RefreshFilters
+  } = {},
 ): Promise<RefreshViewsResult> {
   const delayMs = options.delayMs ?? 150
   const today = await getServerToday()
@@ -77,7 +84,29 @@ export async function refreshViews(
   let nextOffset: number | null = null
   let hasMore = false
 
-  if (scope === 'zeros') {
+  if (scope === 'filtered') {
+    const f = options.filters ?? {}
+    const from = f.from && DATE_RE.test(f.from) ? f.from : null
+    const to = f.to && DATE_RE.test(f.to) ? f.to : null
+    const creatorId = f.creatorId && Number.isFinite(f.creatorId) ? f.creatorId : null
+    const projectId = f.projectId && Number.isFinite(f.projectId) ? f.projectId : null
+    const platform =
+      f.platform === 'instagram' || f.platform === 'tiktok' ? f.platform : null
+
+    rows = (await sql`
+      SELECT id, platform, url, views
+      FROM submissions
+      WHERE (${from}::date IS NULL OR video_date >= ${from}::date)
+        AND (${to}::date IS NULL OR video_date <= ${to}::date)
+        AND (${creatorId}::int IS NULL OR creator_id = ${creatorId})
+        AND (${projectId}::int IS NULL OR project_id = ${projectId})
+        AND (${platform}::text IS NULL OR platform = ${platform})
+      ORDER BY video_date ASC, id ASC
+      LIMIT ${limit} OFFSET ${offset}
+    `) as Row[]
+    nextOffset = rows.length < limit ? null : offset + rows.length
+    hasMore = nextOffset != null
+  } else if (scope === 'zeros') {
     rows = (await sql`
       SELECT id, platform, url, views
       FROM submissions
@@ -118,7 +147,6 @@ export async function refreshViews(
       await new Promise((r) => setTimeout(r, delayMs))
     }
 
-    // Always trust the URL over the stored platform (heals old mislabeled submits).
     const detected = detectPlatformFromUrl(row.url)
     const platform = detected ?? row.platform
     if (detected && detected !== row.platform) {
@@ -176,9 +204,6 @@ export async function refreshViews(
       skipped += 1
     }
   }
-
-  // Zeros used to stop early when a whole chunk failed, which skipped later rows.
-  // With offset paging, continue until the offset walk is done.
 
   return {
     scope,
