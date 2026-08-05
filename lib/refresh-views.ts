@@ -2,6 +2,7 @@ import 'server-only'
 import { sql } from '@/lib/db'
 import type { Platform } from '@/lib/db'
 import { addDays } from '@/lib/campaign'
+import { detectPlatformFromUrl } from '@/lib/media-url'
 import { getServerToday } from '@/lib/queries'
 import { fetchViewsDetailed } from '@/lib/tikhub'
 
@@ -15,6 +16,8 @@ export type RefreshViewsResult = {
   updated: number
   skipped: number
   failed: number
+  /** How many rows had platform rewritten from the URL in this chunk. */
+  platformsFixed: number
   /** Next offset for chunked `all` scans; null when finished / not used for zeros. */
   nextOffset: number | null
   /** True when another zeros batch should be requested. */
@@ -93,6 +96,7 @@ export async function refreshViews(
   let updated = 0
   let skipped = 0
   let failed = 0
+  let platformsFixed = 0
   const failReasons: string[] = []
 
   for (let i = 0; i < rows.length; i++) {
@@ -101,19 +105,34 @@ export async function refreshViews(
       await new Promise((r) => setTimeout(r, delayMs))
     }
 
-    const result = await fetchViewsDetailed(row.platform, row.url)
+    // Always trust the URL over the stored platform (heals old mislabeled submits).
+    const detected = detectPlatformFromUrl(row.url)
+    const platform = detected ?? row.platform
+    if (detected && detected !== row.platform) {
+      await sql`
+        UPDATE submissions SET platform = ${detected} WHERE id = ${row.id}
+      `
+      platformsFixed += 1
+      row.platform = detected
+    }
+
+    const result = await fetchViewsDetailed(platform, row.url)
     if (!result.ok) {
       failed += 1
       failReasons.push(result.reason)
       continue
     }
 
-    if (result.views === row.views && !result.resolvedUrl) {
+    const urlChanged = Boolean(
+      result.resolvedUrl && result.resolvedUrl !== row.url,
+    )
+    const viewsChanged = result.views !== row.views
+    if (!viewsChanged && !urlChanged) {
       skipped += 1
       continue
     }
 
-    if (result.resolvedUrl && result.resolvedUrl !== row.url) {
+    if (urlChanged && result.resolvedUrl) {
       await sql`
         UPDATE submissions
         SET views = ${result.views}, url = ${result.resolvedUrl}
@@ -139,6 +158,7 @@ export async function refreshViews(
     updated,
     skipped,
     failed,
+    platformsFixed,
     nextOffset,
     hasMore,
     failures: tallyFailures(failReasons),

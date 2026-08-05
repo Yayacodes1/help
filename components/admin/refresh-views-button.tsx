@@ -2,12 +2,14 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { reclassifySubmissionPlatforms } from '@/app/actions/admin'
 
 type ChunkResult = {
   checked: number
   updated: number
   skipped: number
   failed: number
+  platformsFixed?: number
   nextOffset: number | null
   hasMore: boolean
   failures?: { reason: string; count: number }[]
@@ -26,7 +28,7 @@ export function RefreshViewsButton({ label }: { label: string }) {
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
-  async function runZeroChunks() {
+  async function runFixAndRetry() {
     setPending(true)
     setMessage(null)
 
@@ -34,13 +36,18 @@ export function RefreshViewsButton({ label }: { label: string }) {
     let updated = 0
     let skipped = 0
     let failed = 0
+    let platformsFixedInChunks = 0
     const failMap = new Map<string, number>()
-    let emptyRounds = 0
 
     try {
+      // Heal ALL old submits (every creator) — not only zero-view rows.
+      setMessage('Fixing platforms from URLs for all videos…')
+      const reclass = await reclassifySubmissionPlatforms()
+      const platformLine = `Platforms: ${reclass.updated} fixed (→IG ${reclass.toInstagram}, →TT ${reclass.toTiktok}), ${reclass.skipped} already correct`
+
       for (let round = 0; round < 80; round++) {
         setMessage(
-          `Retrying 0-view videos… ${updated} updated, ${failed} failed so far`,
+          `${platformLine} · Retrying 0-view videos… ${updated} updated, ${failed} failed so far`,
         )
 
         const res = await fetch('/api/admin/refresh-views', {
@@ -61,19 +68,12 @@ export function RefreshViewsButton({ label }: { label: string }) {
         updated += data.updated
         skipped += data.skipped
         failed += data.failed
+        platformsFixedInChunks += data.platformsFixed ?? 0
         mergeFailures(failMap, data.failures)
 
-        if (data.checked === 0) {
-          emptyRounds += 1
-          break
-        }
+        if (data.checked === 0) break
         if (!data.hasMore) break
-        if (data.updated === 0 && data.skipped === 0) {
-          emptyRounds += 1
-          if (emptyRounds >= 1) break
-        } else {
-          emptyRounds = 0
-        }
+        if (data.updated === 0 && data.skipped === 0) break
       }
 
       const topFails = [...failMap.entries()]
@@ -84,7 +84,8 @@ export function RefreshViewsButton({ label }: { label: string }) {
 
       setMessage(
         [
-          `Zeros pass done — checked ${checked}: ${updated} updated, ${skipped} unchanged, ${failed} failed`,
+          `${platformLine}${platformsFixedInChunks ? ` (+${platformsFixedInChunks} during retry)` : ''}`,
+          `Views: checked ${checked}, ${updated} updated, ${skipped} unchanged, ${failed} failed`,
           topFails ? `Top fails: ${topFails}` : null,
         ]
           .filter(Boolean)
@@ -104,10 +105,10 @@ export function RefreshViewsButton({ label }: { label: string }) {
         <button
           type="button"
           disabled={pending}
-          onClick={() => void runZeroChunks()}
+          onClick={() => void runFixAndRetry()}
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-60"
         >
-          {pending ? 'Retrying 0-view videos…' : label}
+          {pending ? 'Fixing platforms + retrying views…' : label}
         </button>
       </div>
       {message ? (
@@ -116,7 +117,8 @@ export function RefreshViewsButton({ label }: { label: string }) {
         </p>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Retries only videos still at 0. Expands TikTok short links when possible.
+          Fixes Instagram/TikTok for all old links from the URL, then fills 0-view
+          counts via TikHub.
         </p>
       )}
     </div>
