@@ -3,7 +3,7 @@ import { sql } from '@/lib/db'
 import type { Platform } from '@/lib/db'
 import { addDays } from '@/lib/campaign'
 import { getServerToday } from '@/lib/queries'
-import { fetchViewsDetailed } from '@/lib/datalikers'
+import { fetchViewsDetailed } from '@/lib/tikhub'
 
 export type RefreshViewsScope = 'recent' | 'all' | 'zeros'
 
@@ -44,7 +44,7 @@ function tallyFailures(
 }
 
 /**
- * Fetch view counts via DataLikers.
+ * Fetch view counts via TikHub.
  * - recent: today + yesterday (daily cron)
  * - all: every submission, oldest first, offset chunks
  * - zeros: only rows still at 0 (no offset — each call picks remaining zeros)

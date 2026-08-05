@@ -21,9 +21,9 @@ async function run(req: Request) {
   if (!authorize(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  if (!process.env.DATALIKERS_API_KEY?.trim()) {
+  if (!process.env.TIKHUB_API_KEY?.trim()) {
     return NextResponse.json(
-      { error: 'DATALIKERS_API_KEY is not set' },
+      { error: 'TIKHUB_API_KEY is not set' },
       { status: 500 },
     )
   }

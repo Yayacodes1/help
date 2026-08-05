@@ -627,11 +627,11 @@ export async function updateViews(id: number, views: number) {
   revalidatePath('/admin')
 }
 
-/** Pull DataLikers view counts for submissions still at 0 views. */
+/** Pull TikHub view counts for submissions still at 0 views. */
 export async function refreshRecentViews() {
   await requireAdmin()
-  if (!process.env.DATALIKERS_API_KEY?.trim()) {
-    throw new Error('DATALIKERS_API_KEY is not set')
+  if (!process.env.TIKHUB_API_KEY?.trim()) {
+    throw new Error('TIKHUB_API_KEY is not set')
   }
   const { refreshViews } = await import('@/lib/refresh-views')
   const result = await refreshViews('zeros', { limit: 30 })
