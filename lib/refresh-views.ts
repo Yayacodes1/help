@@ -83,9 +83,10 @@ export async function refreshViews(
       FROM submissions
       WHERE views = 0
       ORDER BY video_date ASC, id ASC
-      LIMIT ${limit}
+      LIMIT ${limit} OFFSET ${offset}
     `) as Row[]
-    hasMore = rows.length >= limit
+    nextOffset = rows.length < limit ? null : offset + rows.length
+    hasMore = nextOffset != null
   } else if (scope === 'all') {
     rows = (await sql`
       SELECT id, platform, url, views
@@ -176,11 +177,8 @@ export async function refreshViews(
     }
   }
 
-  // For zeros scope: if every row in the batch failed, stop looping
-  // (otherwise we'd retry the same zeros forever).
-  if (scope === 'zeros' && rows.length > 0 && updated === 0 && skipped === 0) {
-    hasMore = false
-  }
+  // Zeros used to stop early when a whole chunk failed, which skipped later rows.
+  // With offset paging, continue until the offset walk is done.
 
   return {
     scope,
