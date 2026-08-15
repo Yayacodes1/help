@@ -2,7 +2,7 @@ import 'server-only'
 
 import { randomBytes } from 'crypto'
 import { sql, type Contract } from '@/lib/db'
-import { addDays, yearRange } from '@/lib/campaign'
+import { addDays, parseFlexibleDate, yearRange } from '@/lib/campaign'
 import {
   applyPlatformsToQuotas,
   normalizePlatforms,
@@ -40,6 +40,22 @@ function daysBetweenInclusive(start: string, end: string): number {
 
 function isDateString(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
+function resolveViewRange(
+  from: unknown,
+  to: unknown,
+  today: string,
+): { from: string; to: string } {
+  const parsedFrom = parseFlexibleDate(from, today)
+  const parsedTo = parseFlexibleDate(to, today)
+  if (!parsedFrom && !parsedTo) {
+    return { from: addDays(today, -29), to: today }
+  }
+  return {
+    from: parsedFrom ?? yearRange(today).start,
+    to: parsedTo ?? today,
+  }
 }
 
 function revalidateAdmin(creatorId?: number) {
@@ -281,6 +297,8 @@ export async function getViewsSummarySnapshot(input: {
   projectId?: number
 }) {
   const { getViewsSummary } = await import('@/lib/analytics')
+  const today = await getServerToday()
+  const range = resolveViewRange(input.from, input.to, today)
   let creatorId: number | null = null
   if (input.creatorUsername) {
     const resolved = await resolveCreator(input.creatorUsername)
@@ -288,18 +306,20 @@ export async function getViewsSummarySnapshot(input: {
     creatorId = resolved.creator.id
   }
   const summary = await getViewsSummary({
-    from: input.from,
-    to: input.to,
+    from: range.from,
+    to: range.to,
     creatorId,
     projectId: input.projectId ?? null,
   })
   return {
     ok: true as const,
     ...summary,
+    from: range.from,
+    to: range.to,
     creator: input.creatorUsername?.replace(/^@+/, '') ?? null,
     advice:
       summary.videos === 0
-        ? 'No videos in this range.'
+        ? `No videos in ${range.from} → ${range.to}.`
         : summary.zero_view_videos > summary.videos * 0.3
           ? `Many videos still show 0 views (${summary.zero_view_videos}/${summary.videos}). Run Retry 0-view videos in Analytics/Videos, then revisit totals.`
           : summary.views_tiktok >= summary.views_instagram * 2
@@ -317,25 +337,31 @@ export async function getViewsLeaderboardSnapshot(input: {
   limit?: number
 }) {
   const { getViewsLeaderboard, getViewsSummary } = await import('@/lib/analytics')
+  const today = await getServerToday()
+  const range = resolveViewRange(input.from, input.to, today)
   const [rows, summary] = await Promise.all([
     getViewsLeaderboard({
-      from: input.from,
-      to: input.to,
+      from: range.from,
+      to: range.to,
       projectId: input.projectId ?? null,
-      limit: input.limit ?? 10,
+      limit: input.limit ?? 25,
     }),
     getViewsSummary({
-      from: input.from,
-      to: input.to,
+      from: range.from,
+      to: range.to,
       projectId: input.projectId ?? null,
     }),
   ])
-  const top = rows[0] ?? null
+  const withViews = rows.filter((r) => r.videos > 0)
+  const top = withViews[0] ?? null
   return {
     ok: true as const,
-    from: summary.from,
-    to: summary.to,
+    from: range.from,
+    to: range.to,
     totalViews: summary.views,
+    totalVideos: summary.videos,
+    views_instagram: summary.views_instagram,
+    views_tiktok: summary.views_tiktok,
     leaders: rows,
     topCreator: top
       ? {
@@ -347,8 +373,8 @@ export async function getViewsLeaderboardSnapshot(input: {
         }
       : null,
     advice: top
-      ? `${top.creator_name} leads with ${top.views} views across ${top.videos} videos (${summary.from} → ${summary.to}).`
-      : 'No submissions in this period.',
+      ? `${top.creator_name} leads with ${top.views} views across ${top.videos} videos (${range.from} → ${range.to}).`
+      : `No submissions in ${range.from} → ${range.to}.`,
   }
 }
 
@@ -359,6 +385,8 @@ export async function getViewsByDaySnapshot(input: {
   projectId?: number
 }) {
   const { getDailyAnalytics, getViewsSummary } = await import('@/lib/analytics')
+  const today = await getServerToday()
+  const range = resolveViewRange(input.from, input.to, today)
   let creatorId: number | null = null
   if (input.creatorUsername) {
     const resolved = await resolveCreator(input.creatorUsername)
@@ -367,14 +395,14 @@ export async function getViewsByDaySnapshot(input: {
   }
   const [daily, summary] = await Promise.all([
     getDailyAnalytics({
-      from: input.from,
-      to: input.to,
+      from: range.from,
+      to: range.to,
       creatorId,
       projectId: input.projectId ?? null,
     }),
     getViewsSummary({
-      from: input.from,
-      to: input.to,
+      from: range.from,
+      to: range.to,
       creatorId,
       projectId: input.projectId ?? null,
     }),
@@ -390,7 +418,7 @@ export async function getViewsByDaySnapshot(input: {
 
   return {
     ok: true as const,
-    summary,
+    summary: { ...summary, from: range.from, to: range.to },
     creator: input.creatorUsername?.replace(/^@+/, '') ?? null,
     days: daily.map((d) => ({
       date: d.date,

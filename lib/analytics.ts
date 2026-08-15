@@ -128,7 +128,7 @@ export async function getViewsLeaderboard(opts: {
   const today = await getServerToday()
   const { from, to } = normalizeRange(opts.from, opts.to, today)
   const projectId = opts.projectId ?? null
-  const limit = Math.min(50, Math.max(1, opts.limit ?? 10))
+  const limit = Math.min(1000, Math.max(1, opts.limit ?? 10))
 
   return (await sql`
     SELECT
@@ -141,10 +141,11 @@ export async function getViewsLeaderboard(opts: {
       COALESCE(SUM(CASE WHEN s.platform = 'instagram' THEN 1 ELSE 0 END), 0)::int AS videos_instagram,
       COALESCE(SUM(CASE WHEN s.platform = 'tiktok' THEN 1 ELSE 0 END), 0)::int AS videos_tiktok
     FROM creators c
-    JOIN submissions s ON s.creator_id = c.id
-    WHERE s.video_date >= ${from}::date
+    LEFT JOIN submissions s
+      ON s.creator_id = c.id
+      AND s.video_date >= ${from}::date
       AND s.video_date <= ${to}::date
-      AND (${projectId}::int IS NULL OR c.project_id = ${projectId})
+    WHERE (${projectId}::int IS NULL OR c.project_id = ${projectId})
     GROUP BY c.id, c.name
     ORDER BY views DESC, videos DESC, c.name ASC
     LIMIT ${limit}

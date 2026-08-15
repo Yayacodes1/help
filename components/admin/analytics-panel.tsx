@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { addDays } from '@/lib/campaign'
 import { formatNumber } from '@/lib/format'
 import type { CreatorViewsRow, DailyAnalyticsRow } from '@/lib/analytics'
 
@@ -28,18 +29,42 @@ type Labels = {
   tiktok: string
   showViews: string
   showVideos: string
-  showCreator: string
   topCreators: string
   empty: string
   from: string
   to: string
   apply: string
+  showing: string
 }
 
 function indexDaily(rows: DailyAnalyticsRow[]) {
   const map = new Map<string, DailyAnalyticsRow>()
   for (const r of rows) map.set(r.date, r)
   return map
+}
+
+function fillDays(
+  rows: DailyAnalyticsRow[],
+  from: string,
+  to: string,
+): DailyAnalyticsRow[] {
+  const map = indexDaily(rows)
+  const out: DailyAnalyticsRow[] = []
+  if (!from || !to || from > to) return rows
+  let d = from
+  while (d <= to) {
+    out.push(
+      map.get(d) ?? {
+        date: d,
+        views_instagram: 0,
+        views_tiktok: 0,
+        videos_instagram: 0,
+        videos_tiktok: 0,
+      },
+    )
+    d = addDays(d, 1)
+  }
+  return out
 }
 
 export function AnalyticsPanel({
@@ -63,38 +88,48 @@ export function AnalyticsPanel({
 }) {
   const [showViews, setShowViews] = useState(true)
   const [showVideos, setShowVideos] = useState(false)
-  const [showCreator, setShowCreator] = useState(Boolean(selectedCreatorId))
   const [creatorId, setCreatorId] = useState<number | ''>(
     selectedCreatorId ?? '',
   )
   const [from, setFrom] = useState(defaultFrom)
   const [to, setTo] = useState(defaultTo)
 
+  const sourceDaily = selectedCreatorId != null ? creatorDaily : daily
+
   const filteredDaily = useMemo(
-    () => daily.filter((d) => d.date >= from && d.date <= to),
-    [daily, from, to],
+    () =>
+      fillDays(
+        sourceDaily.filter((d) => d.date >= from && d.date <= to),
+        from,
+        to,
+      ),
+    [sourceDaily, from, to],
   )
 
-  const creatorMap = useMemo(() => indexDaily(creatorDaily), [creatorDaily])
-
   const chartData = useMemo(() => {
-    return filteredDaily.map((d) => {
-      const c = creatorMap.get(d.date)
-      return {
-        date: d.date.slice(5),
-        fullDate: d.date,
-        viewsIg: d.views_instagram,
-        viewsTt: d.views_tiktok,
-        videosIg: d.videos_instagram,
-        videosTt: d.videos_tiktok,
-        creatorViewsIg: c?.views_instagram ?? 0,
-        creatorViewsTt: c?.views_tiktok ?? 0,
-      }
-    })
-  }, [filteredDaily, creatorMap])
+    return filteredDaily.map((d) => ({
+      date: d.date.slice(5),
+      fullDate: d.date,
+      viewsIg: d.views_instagram,
+      viewsTt: d.views_tiktok,
+      videosIg: d.videos_instagram,
+      videosTt: d.videos_tiktok,
+    }))
+  }, [filteredDaily])
 
-  const selectedCreator = creators.find((c) => c.id === creatorId)
-  const top = leaderboard.slice(0, 6)
+  const selectedCreator = creators.find(
+    (c) => c.id === (selectedCreatorId ?? creatorId),
+  )
+
+  function navigate(nextFrom: string, nextTo: string, nextCreator: number | '') {
+    const params = new URLSearchParams(window.location.search)
+    params.set('panel', 'analytics')
+    params.set('aFrom', nextFrom)
+    params.set('aTo', nextTo)
+    if (nextCreator === '') params.delete('aCreator')
+    else params.set('aCreator', String(nextCreator))
+    window.location.search = params.toString()
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -103,13 +138,7 @@ export function AnalyticsPanel({
         className="flex flex-wrap items-end gap-3"
         onSubmit={(e) => {
           e.preventDefault()
-          const params = new URLSearchParams(window.location.search)
-          params.set('panel', 'analytics')
-          params.set('aFrom', from)
-          params.set('aTo', to)
-          if (creatorId === '') params.delete('aCreator')
-          else params.set('aCreator', String(creatorId))
-          window.location.search = params.toString()
+          navigate(from, to, creatorId)
         }}
       >
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -137,7 +166,7 @@ export function AnalyticsPanel({
             onChange={(e) => {
               const next = e.target.value ? Number(e.target.value) : ''
               setCreatorId(next)
-              if (next !== '') setShowCreator(true)
+              navigate(from, to, next)
             }}
             className="min-w-40 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
           >
@@ -157,6 +186,12 @@ export function AnalyticsPanel({
         </button>
       </form>
 
+      {selectedCreator ? (
+        <p className="text-sm text-muted-foreground">
+          {labels.showing} @{selectedCreator.name}
+        </p>
+      ) : null}
+
       <div className="flex flex-wrap gap-4 text-sm">
         <label className="inline-flex items-center gap-2">
           <input
@@ -173,15 +208,6 @@ export function AnalyticsPanel({
             onChange={(e) => setShowVideos(e.target.checked)}
           />
           {labels.showVideos}
-        </label>
-        <label className="inline-flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={showCreator}
-            onChange={(e) => setShowCreator(e.target.checked)}
-          />
-          {labels.showCreator}
-          {selectedCreator ? ` (${selectedCreator.name})` : ''}
         </label>
       </div>
 
@@ -262,69 +288,47 @@ export function AnalyticsPanel({
                   isAnimationActive={false}
                 />
               )}
-              {showCreator && creatorId !== '' && (
-                <Line
-                  yAxisId="left"
-                  type="monotone"
-                  dataKey="creatorViewsIg"
-                  name={`${selectedCreator?.name ?? labels.creator} · ${labels.instagram}`}
-                  stroke={IG}
-                  strokeWidth={2.5}
-                  strokeOpacity={0.45}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              )}
-              {showCreator && creatorId !== '' && (
-                <Line
-                  yAxisId="left"
-                  type="monotone"
-                  dataKey="creatorViewsTt"
-                  name={`${selectedCreator?.name ?? labels.creator} · ${labels.tiktok}`}
-                  stroke={TT}
-                  strokeWidth={2.5}
-                  strokeOpacity={0.45}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              )}
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
 
-      {showCreator && creatorId === '' && (
-        <p className="text-xs text-muted-foreground">
-          Choose a creator and tap Apply to plot their Instagram / TikTok views.
-        </p>
-      )}
-
       <div>
         <h3 className="mb-2 text-sm font-medium">{labels.topCreators}</h3>
-        {top.length === 0 ? (
+        {leaderboard.length === 0 ? (
           <p className="text-sm text-muted-foreground">{labels.empty}</p>
         ) : (
           <ul className="divide-y divide-border rounded-lg border border-border">
-            {top.map((row, i) => (
-              <li
-                key={row.creator_id}
-                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
-              >
-                <span className="font-medium">
-                  {i + 1}. {row.creator_name}
-                </span>
-                <span className="tabular-nums text-muted-foreground">
-                  {formatNumber(row.views)} {labels.views.toLowerCase()} · {row.videos}{' '}
-                  {labels.videos.toLowerCase()}
-                  <span className="ml-2" style={{ color: IG }}>
-                    IG {formatNumber(row.views_instagram)}
-                  </span>
-                  <span className="ml-2" style={{ color: TT }}>
-                    TT {formatNumber(row.views_tiktok)}
-                  </span>
-                </span>
-              </li>
-            ))}
+            {leaderboard.map((row, i) => {
+              const active = selectedCreatorId === row.creator_id
+              return (
+                <li key={row.creator_id}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate(from, to, active ? '' : row.creator_id)
+                    }
+                    className={`flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-accent/50 ${
+                      active ? 'bg-accent/40' : ''
+                    }`}
+                  >
+                    <span className="font-medium">
+                      {i + 1}. {row.creator_name}
+                    </span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {formatNumber(row.views)} {labels.views.toLowerCase()} · {row.videos}{' '}
+                      {labels.videos.toLowerCase()}
+                      <span className="ml-2" style={{ color: IG }}>
+                        IG {formatNumber(row.views_instagram)}
+                      </span>
+                      <span className="ml-2" style={{ color: TT }}>
+                        TT {formatNumber(row.views_tiktok)}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>

@@ -145,10 +145,11 @@ export const messages = {
     showViews: 'Views',
     showVideos: 'Videos posted',
     showCreator: 'Creator views',
-    topCreators: 'Top creators (views)',
+    topCreators: 'Creator views',
     analyticsEmpty: 'No videos in this range.',
     allCreators: 'All creators',
     apply: 'Apply',
+    analyticsShowing: 'Showing',
     assistantTitle: 'Assistant',
     assistantSubtitle:
       'Contracts, payments, and views advice. Writes need Build It. Undo / Redo anytime.',
@@ -171,6 +172,8 @@ export const messages = {
     assistantError: 'Error',
     assistantUndo: 'Undo',
     assistantRedo: 'Redo',
+    assistantMaximize: 'Maximize',
+    assistantMinimize: 'Minimize',
   },
   ar: {
     appName: 'تسليم المحتوى',
@@ -310,10 +313,11 @@ export const messages = {
     showViews: 'المشاهدات',
     showVideos: 'الفيديوهات المنشورة',
     showCreator: 'مشاهدات صانع',
-    topCreators: 'أعلى الصناع (مشاهدات)',
+    topCreators: 'مشاهدات الصناع',
     analyticsEmpty: 'لا فيديوهات في هذه الفترة.',
     allCreators: 'كل الصناع',
     apply: 'تطبيق',
+    analyticsShowing: 'عرض',
     assistantTitle: 'المساعد',
     assistantSubtitle:
       'عقود ومدفوعات ونصائح عن المشاهدات. الحفظ يحتاج ابنِه. تراجع / إعادة في أي وقت.',
@@ -336,6 +340,8 @@ export const messages = {
     assistantError: 'خطأ',
     assistantUndo: 'تراجع',
     assistantRedo: 'إعادة',
+    assistantMaximize: 'تكبير',
+    assistantMinimize: 'تصغير',
   },
 } as const
 

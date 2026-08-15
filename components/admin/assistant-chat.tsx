@@ -208,6 +208,9 @@ const READ_TOOL_LABELS: Record<string, string> = {
   getMissesToday: 'Checked today’s misses.',
   paymentsTotalInRange: 'Checked payments total.',
   getPaidTotals: 'Checked paid totals.',
+  getViewsSummary: 'Checked views totals.',
+  getViewsLeaderboard: 'Checked creator views.',
+  getViewsByDay: 'Checked daily views.',
 }
 
 function textFromParts(message: UIMessage): string {
@@ -569,10 +572,13 @@ function projectRecreateFromInput(input: Record<string, unknown>): ProjectRecrea
 export function AssistantChat({
   labels,
   embedded = false,
+  maximized = false,
 }: {
   labels: Labels
   /** When true, skip outer card chrome (used inside AssistantDrawer). */
   embedded?: boolean
+  /** Expand the transcript to fill a maximized drawer. */
+  maximized?: boolean
 }) {
   const router = useRouter()
   const [input, setInput] = useState('')
@@ -928,7 +934,9 @@ export function AssistantChat({
     <section
       className={
         embedded
-          ? 'flex flex-col'
+          ? maximized
+            ? 'flex min-h-0 flex-1 flex-col'
+            : 'flex flex-col'
           : 'rounded-xl border border-border bg-card'
       }
     >
@@ -992,7 +1000,9 @@ export function AssistantChat({
       <div
         className={
           embedded
-            ? 'flex max-h-[26rem] min-h-[11rem] flex-col gap-3 overflow-y-auto'
+            ? maximized
+              ? 'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto'
+              : 'flex max-h-[26rem] min-h-[11rem] flex-col gap-3 overflow-y-auto'
             : 'flex max-h-[28rem] min-h-[12rem] flex-col gap-3 overflow-y-auto px-4 py-3'
         }
       >

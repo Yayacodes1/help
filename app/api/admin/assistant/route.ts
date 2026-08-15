@@ -72,7 +72,7 @@ export async function POST(req: Request) {
   const result = streamText({
     model,
     system: `You are the admin-only assistant for a creator performance, contracts & payments dashboard.
-Today's date is ${today} (YYYY-MM-DD).
+Today's date is ${today} (YYYY-MM-DD). The current year is ${today.slice(0, 4)}. Videos are only stored in this calendar year.
 
 You can read almost anything in the dashboard (creators, projects, contracts, payments, pay-due list,
 today's misses, paid totals, AND views / video analytics) and you can write contracts, payments, creators,
@@ -88,9 +88,11 @@ Reply style (required):
 - If you propose multiple write tool calls in one turn (e.g. one contract paid + one contract started), that's fine — each gets its own Build It card.
 
 Views & analytics (read-only):
-- Use getViewsSummary for totals (views, videos, IG vs TikTok split, zero-view count) over a date range or creator.
-- Use getViewsLeaderboard for “who got the most views” / ranking creators in a period.
+- ALWAYS call getViewsSummary for any analytics / views / “how are we doing” question. Never guess 0 or invent numbers.
+- Also call getViewsLeaderboard when they ask who / ranking / which creator.
 - Use getViewsByDay for trends / best day / Instagram vs TikTok by day.
+- Date rules: when the user says a month/day with no year (e.g. "August 1", "Aug 1 to Aug 15", "since August 1"), use year ${today.slice(0, 4)}. Never use 2024 or 2025. Pass dates as YYYY-MM-DD.
+- Repeat the from/to dates AND the views/videos/IG/TT numbers from the tool result. If the tool returns 0, say the exact dates queried — do not claim a different range.
 - Default a missing date range to the last 30 days ending today when the user says “recently” / “this month” without dates.
 - When giving advice: be concrete (names, numbers, dates). Mention if many videos still show 0 views.
 
@@ -251,44 +253,35 @@ General rules:
       }),
       getViewsSummary: tool({
         description:
-          'Views + video totals for a date range (Instagram vs TikTok split, zero-view count). Use for “how many views do we have” and light advice.',
+          'Views + video totals for a date range (Instagram vs TikTok split, zero-view count). Use for analytics, “how many views”, and any date-range performance question. Always call this instead of guessing.',
         inputSchema: z.object({
-          from: z.string().optional().describe('YYYY-MM-DD; defaults to start of year if omitted with to, or last 30 days when both omitted — pass last-30 when user says recently'),
-          to: z.string().optional().describe('YYYY-MM-DD; defaults to today'),
+          from: z
+            .string()
+            .optional()
+            .describe('Start date. Prefer YYYY-MM-DD; year must be the current year.'),
+          to: z
+            .string()
+            .optional()
+            .describe('End date. Prefer YYYY-MM-DD; defaults to today.'),
           creatorUsername: z.string().optional(),
           projectId: z.number().int().optional(),
         }),
-        execute: async (input) => {
-          // If no dates, default last 30 days for “advice” style questions
-          if (!input.from && !input.to) {
-            const { addDays } = await import('@/lib/campaign')
-            const end = today
-            const start = addDays(today, -29)
-            return getViewsSummarySnapshot({ ...input, from: start, to: end })
-          }
-          return getViewsSummarySnapshot(input)
-        },
+        execute: async (input) => getViewsSummarySnapshot(input),
       }),
       getViewsLeaderboard: tool({
         description:
-          'Rank creators by total views in a period. Use for “who is making us the most views”.',
+          'Rank ALL creators by total views in a period. Use for “who is making us the most views” or a full creator views list.',
         inputSchema: z.object({
           from: z.string().optional(),
           to: z.string().optional(),
           projectId: z.number().int().optional(),
-          limit: z.number().int().min(1).max(50).optional(),
+          limit: z.number().int().min(1).max(1000).optional(),
         }),
-        execute: async (input) => {
-          if (!input.from && !input.to) {
-            const { addDays } = await import('@/lib/campaign')
-            return getViewsLeaderboardSnapshot({
-              ...input,
-              from: addDays(today, -29),
-              to: today,
-            })
-          }
-          return getViewsLeaderboardSnapshot(input)
-        },
+        execute: async (input) =>
+          getViewsLeaderboardSnapshot({
+            ...input,
+            limit: input.limit ?? 1000,
+          }),
       }),
       getViewsByDay: tool({
         description:
@@ -299,17 +292,7 @@ General rules:
           creatorUsername: z.string().optional(),
           projectId: z.number().int().optional(),
         }),
-        execute: async (input) => {
-          if (!input.from && !input.to) {
-            const { addDays } = await import('@/lib/campaign')
-            return getViewsByDaySnapshot({
-              ...input,
-              from: addDays(today, -29),
-              to: today,
-            })
-          }
-          return getViewsByDaySnapshot(input)
-        },
+        execute: async (input) => getViewsByDaySnapshot(input),
       }),
 
       // --- Write tools (Build It approval required) ---

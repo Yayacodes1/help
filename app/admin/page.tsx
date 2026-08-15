@@ -137,7 +137,7 @@ export default async function AdminPage({
       from: aFrom,
       to: aTo,
       projectId: projectId ?? null,
-      limit: 8,
+      limit: 1000,
     }),
     getViewsSummary({ from: aFrom, to: aTo, projectId: projectId ?? null }),
   ])
@@ -229,12 +229,12 @@ export default async function AdminPage({
                   tiktok: t('tiktok'),
                   showViews: t('showViews'),
                   showVideos: t('showVideos'),
-                  showCreator: t('showCreator'),
                   topCreators: t('topCreators'),
                   empty: t('analyticsEmpty'),
                   from: t('from'),
                   to: t('to'),
                   apply: t('apply'),
+                  showing: t('analyticsShowing'),
                 }}
               />
             ),
@@ -357,7 +357,12 @@ export default async function AdminPage({
       />
 
       <div className="mt-6">
-        <AssistantDrawer title={t('assistantTitle')} subtitle={t('assistantSubtitle')}>
+        <AssistantDrawer
+          title={t('assistantTitle')}
+          subtitle={t('assistantSubtitle')}
+          maximizeLabel={t('assistantMaximize')}
+          minimizeLabel={t('assistantMinimize')}
+        >
           <AssistantChat
             embedded
             labels={{
