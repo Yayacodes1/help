@@ -91,6 +91,8 @@ Views & analytics (read-only):
 - ALWAYS call getViewsSummary for any analytics / views / “how are we doing” question. Never guess 0 or invent numbers.
 - Also call getViewsLeaderboard when they ask who / ranking / which creator.
 - Use getViewsByDay for trends / best day / Instagram vs TikTok by day.
+- Overall analytics (“last 15 days”, “August 1 to 15”, “how are views”) need ONLY dates. Do NOT ask for a creator or project. Do NOT pass projectId/projectName/creatorUsername.
+- If the user names a project (e.g. “notk”), pass projectName as that string. Never guess a numeric projectId. If the tool returns a warning, still report the totals it gave.
 - Date rules: when the user says a month/day with no year (e.g. "August 1", "Aug 1 to Aug 15", "since August 1"), use year ${today.slice(0, 4)}. Never use 2024 or 2025. Pass dates as YYYY-MM-DD.
 - Repeat the from/to dates AND the views/videos/IG/TT numbers from the tool result. If the tool returns 0, say the exact dates queried — do not claim a different range.
 - Default a missing date range to the last 30 days ending today when the user says “recently” / “this month” without dates.
@@ -264,7 +266,15 @@ General rules:
             .optional()
             .describe('End date. Prefer YYYY-MM-DD; defaults to today.'),
           creatorUsername: z.string().optional(),
-          projectId: z.number().int().optional(),
+          projectName: z
+            .string()
+            .optional()
+            .describe('Dashboard project name (e.g. "notk"). Prefer this over projectId. Omit for all projects.'),
+          projectId: z
+            .number()
+            .int()
+            .optional()
+            .describe('Only an id returned by listProjects. Never guess.'),
         }),
         execute: async (input) => getViewsSummarySnapshot(input),
       }),
@@ -274,6 +284,7 @@ General rules:
         inputSchema: z.object({
           from: z.string().optional(),
           to: z.string().optional(),
+          projectName: z.string().optional(),
           projectId: z.number().int().optional(),
           limit: z.number().int().min(1).max(1000).optional(),
         }),
@@ -290,6 +301,7 @@ General rules:
           from: z.string().optional(),
           to: z.string().optional(),
           creatorUsername: z.string().optional(),
+          projectName: z.string().optional(),
           projectId: z.number().int().optional(),
         }),
         execute: async (input) => getViewsByDaySnapshot(input),

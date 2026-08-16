@@ -67,7 +67,14 @@ export async function getDailyAnalytics(opts: {
     WHERE s.video_date >= ${from}::date
       AND s.video_date <= ${to}::date
       AND (${creatorId}::int IS NULL OR s.creator_id = ${creatorId})
-      AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
+      AND (
+        ${projectId}::int IS NULL
+        OR s.project_id = ${projectId}
+        OR EXISTS (
+          SELECT 1 FROM creators c
+          WHERE c.id = s.creator_id AND c.project_id = ${projectId}
+        )
+      )
     GROUP BY s.video_date
     ORDER BY s.video_date ASC
   `) as DailyAnalyticsRow[]
@@ -99,7 +106,14 @@ export async function getViewsSummary(opts: {
     WHERE s.video_date >= ${from}::date
       AND s.video_date <= ${to}::date
       AND (${creatorId}::int IS NULL OR s.creator_id = ${creatorId})
-      AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
+      AND (
+        ${projectId}::int IS NULL
+        OR s.project_id = ${projectId}
+        OR EXISTS (
+          SELECT 1 FROM creators c
+          WHERE c.id = s.creator_id AND c.project_id = ${projectId}
+        )
+      )
   `) as Omit<ViewsSummary, 'from' | 'to' | 'creatorId' | 'projectId'>[]
 
   const r = rows[0]
@@ -145,7 +159,11 @@ export async function getViewsLeaderboard(opts: {
       ON s.creator_id = c.id
       AND s.video_date >= ${from}::date
       AND s.video_date <= ${to}::date
-    WHERE (${projectId}::int IS NULL OR c.project_id = ${projectId})
+    WHERE (
+      ${projectId}::int IS NULL
+      OR c.project_id = ${projectId}
+      OR s.project_id = ${projectId}
+    )
     GROUP BY c.id, c.name
     ORDER BY views DESC, videos DESC, c.name ASC
     LIMIT ${limit}

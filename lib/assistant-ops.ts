@@ -81,6 +81,49 @@ export async function listProjectsBrief() {
   return projects.map((p) => ({ id: p.id, name: p.name }))
 }
 
+export async function resolveProjectRef(input: {
+  projectId?: number
+  projectName?: string
+}): Promise<
+  | { ok: true; projectId: number | null; projectName: string | null }
+  | { ok: false; error: string; projects: { id: number; name: string }[] }
+> {
+  const projects = await listProjectsBrief()
+  const name = input.projectName?.trim()
+  if (name) {
+    const q = name.toLowerCase()
+    const match =
+      projects.find((p) => p.name.toLowerCase() === q) ??
+      projects.find(
+        (p) => p.name.toLowerCase().includes(q) || q.includes(p.name.toLowerCase()),
+      )
+    if (!match) {
+      return {
+        ok: false,
+        error: `No project named "${name}". Known projects: ${
+          projects.map((p) => p.name).join(', ') || '(none yet)'
+        }`,
+        projects,
+      }
+    }
+    return { ok: true, projectId: match.id, projectName: match.name }
+  }
+  if (input.projectId != null && Number.isFinite(input.projectId)) {
+    const match = projects.find((p) => p.id === input.projectId)
+    if (!match) {
+      return {
+        ok: false,
+        error: `No project id ${input.projectId}. Known projects: ${
+          projects.map((p) => p.name).join(', ') || '(none yet)'
+        }`,
+        projects,
+      }
+    }
+    return { ok: true, projectId: match.id, projectName: match.name }
+  }
+  return { ok: true, projectId: null, projectName: null }
+}
+
 export async function resolveCreator(username: string) {
   const cleaned = username.trim().replace(/^@+/, '')
   const creator = await getCreatorByName(cleaned)
@@ -295,6 +338,7 @@ export async function getViewsSummarySnapshot(input: {
   to?: string
   creatorUsername?: string
   projectId?: number
+  projectName?: string
 }) {
   const { getViewsSummary } = await import('@/lib/analytics')
   const today = await getServerToday()
@@ -305,11 +349,15 @@ export async function getViewsSummarySnapshot(input: {
     if (!resolved.ok) return resolved
     creatorId = resolved.creator.id
   }
+  const project = await resolveProjectRef(input)
+  const projectId = project.ok ? project.projectId : null
+  const projectName = project.ok ? project.projectName : null
+  const warning = project.ok ? undefined : project.error
   const summary = await getViewsSummary({
     from: range.from,
     to: range.to,
     creatorId,
-    projectId: input.projectId ?? null,
+    projectId,
   })
   return {
     ok: true as const,
@@ -317,16 +365,20 @@ export async function getViewsSummarySnapshot(input: {
     from: range.from,
     to: range.to,
     creator: input.creatorUsername?.replace(/^@+/, '') ?? null,
+    project: projectName,
+    warning,
     advice:
-      summary.videos === 0
-        ? `No videos in ${range.from} → ${range.to}.`
-        : summary.zero_view_videos > summary.videos * 0.3
-          ? `Many videos still show 0 views (${summary.zero_view_videos}/${summary.videos}). Run Retry 0-view videos in Analytics/Videos, then revisit totals.`
-          : summary.views_tiktok >= summary.views_instagram * 2
-            ? 'TikTok is carrying most of the views in this period.'
-            : summary.views_instagram >= summary.views_tiktok * 2
-              ? 'Instagram is carrying most of the views in this period.'
-              : 'Instagram and TikTok views are relatively balanced in this period.',
+      warning
+        ? `${warning} Showing all-projects totals instead.`
+        : summary.videos === 0
+          ? `No videos in ${range.from} → ${range.to}${projectName ? ` for project ${projectName}` : ''}.`
+          : summary.zero_view_videos > summary.videos * 0.3
+            ? `Many videos still show 0 views (${summary.zero_view_videos}/${summary.videos}). Run Retry 0-view videos in Analytics/Videos, then revisit totals.`
+            : summary.views_tiktok >= summary.views_instagram * 2
+              ? 'TikTok is carrying most of the views in this period.'
+              : summary.views_instagram >= summary.views_tiktok * 2
+                ? 'Instagram is carrying most of the views in this period.'
+                : 'Instagram and TikTok views are relatively balanced in this period.',
   }
 }
 
@@ -334,22 +386,27 @@ export async function getViewsLeaderboardSnapshot(input: {
   from?: string
   to?: string
   projectId?: number
+  projectName?: string
   limit?: number
 }) {
   const { getViewsLeaderboard, getViewsSummary } = await import('@/lib/analytics')
   const today = await getServerToday()
   const range = resolveViewRange(input.from, input.to, today)
+  const project = await resolveProjectRef(input)
+  const projectId = project.ok ? project.projectId : null
+  const projectName = project.ok ? project.projectName : null
+  const warning = project.ok ? undefined : project.error
   const [rows, summary] = await Promise.all([
     getViewsLeaderboard({
       from: range.from,
       to: range.to,
-      projectId: input.projectId ?? null,
+      projectId,
       limit: input.limit ?? 25,
     }),
     getViewsSummary({
       from: range.from,
       to: range.to,
-      projectId: input.projectId ?? null,
+      projectId,
     }),
   ])
   const withViews = rows.filter((r) => r.videos > 0)
@@ -358,6 +415,8 @@ export async function getViewsLeaderboardSnapshot(input: {
     ok: true as const,
     from: range.from,
     to: range.to,
+    project: projectName,
+    warning,
     totalViews: summary.views,
     totalVideos: summary.videos,
     views_instagram: summary.views_instagram,
@@ -372,9 +431,11 @@ export async function getViewsLeaderboardSnapshot(input: {
             top.videos > 0 ? Math.round(top.views / top.videos) : 0,
         }
       : null,
-    advice: top
-      ? `${top.creator_name} leads with ${top.views} views across ${top.videos} videos (${range.from} → ${range.to}).`
-      : `No submissions in ${range.from} → ${range.to}.`,
+    advice: warning
+      ? `${warning} Showing all-projects totals instead.`
+      : top
+        ? `${top.creator_name} leads with ${top.views} views across ${top.videos} videos (${range.from} → ${range.to}).`
+        : `No submissions in ${range.from} → ${range.to}.`,
   }
 }
 
@@ -383,6 +444,7 @@ export async function getViewsByDaySnapshot(input: {
   to?: string
   creatorUsername?: string
   projectId?: number
+  projectName?: string
 }) {
   const { getDailyAnalytics, getViewsSummary } = await import('@/lib/analytics')
   const today = await getServerToday()
@@ -393,18 +455,22 @@ export async function getViewsByDaySnapshot(input: {
     if (!resolved.ok) return resolved
     creatorId = resolved.creator.id
   }
+  const project = await resolveProjectRef(input)
+  const projectId = project.ok ? project.projectId : null
+  const projectName = project.ok ? project.projectName : null
+  const warning = project.ok ? undefined : project.error
   const [daily, summary] = await Promise.all([
     getDailyAnalytics({
       from: range.from,
       to: range.to,
       creatorId,
-      projectId: input.projectId ?? null,
+      projectId,
     }),
     getViewsSummary({
       from: range.from,
       to: range.to,
       creatorId,
-      projectId: input.projectId ?? null,
+      projectId,
     }),
   ])
   const peak = daily.reduce<{
@@ -420,6 +486,8 @@ export async function getViewsByDaySnapshot(input: {
     ok: true as const,
     summary: { ...summary, from: range.from, to: range.to },
     creator: input.creatorUsername?.replace(/^@+/, '') ?? null,
+    project: projectName,
+    warning,
     days: daily.map((d) => ({
       date: d.date,
       views: d.views_instagram + d.views_tiktok,
