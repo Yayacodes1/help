@@ -123,6 +123,7 @@ export const messages = {
     gateSubtitle: 'Enter your TikTok username to continue to the submission form.',
     platforms: 'Platforms',
     platformsBoth: 'Instagram + TikTok',
+    platformBoth: 'Both',
     pasteLinks: 'Paste video links',
     pasteLinksHint:
       'Paste Instagram and/or TikTok links (one per line). We detect the platform from the URL — no need to sort them.',
@@ -291,6 +292,7 @@ export const messages = {
     gateSubtitle: 'أدخل اسم مستخدمك في تيك توك للمتابعة إلى نموذج التسليم.',
     platforms: 'المنصات',
     platformsBoth: 'انستقرام + تيك توك',
+    platformBoth: 'الكل',
     pasteLinks: 'الصق روابط الفيديوهات',
     pasteLinksHint:
       'الصق روابط انستقرام و/أو تيك توك (رابط في كل سطر). نكتشف المنصة من الرابط — لا حاجة للفرز.',

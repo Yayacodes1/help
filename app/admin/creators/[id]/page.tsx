@@ -23,7 +23,7 @@ import { CreatorContractForm } from '@/components/admin/creator-contract-form'
 import { ContractsManager } from '@/components/admin/contracts-manager'
 import { PaymentsManager } from '@/components/admin/payments-manager'
 import { PanelBoard } from '@/components/admin/panel-board'
-import { SubmissionsTable } from '@/components/admin/submissions-table'
+import { CreatorVideosPanel } from '@/components/admin/creator-videos-panel'
 import { LanguageToggle } from '@/components/language-toggle'
 import { StatCard } from '@/components/stat-card'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
@@ -210,18 +210,23 @@ export default async function CreatorDetailPage({
             id: 'videos',
             title: t('videos'),
             summary: `${stats.total_videos}`,
-            hint: `${formatNumber(totalViews)} ${t('views')}`,
+            hint: `IG ${stats.instagram_videos} · TT ${stats.tiktok_videos} · ${formatNumber(totalViews)} ${t('views')}`,
             children: (
-              <SubmissionsTable
+              <CreatorVideosPanel
                 submissions={submissions.map((s) => ({
                   ...s,
                   creator_name: creator.name,
                   project_name: project?.name ?? null,
                 }))}
                 emptyLabel={t('noVideosYet')}
-                showCreator={false}
-                showProject={false}
-                editableViews={false}
+                labels={{
+                  both: t('platformBoth'),
+                  instagram: t('instagram'),
+                  tiktok: t('tiktok'),
+                  videos: t('videosWord'),
+                  views: t('views'),
+                  noMatch: t('noVideosMatch'),
+                }}
               />
             ),
           },
