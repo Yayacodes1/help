@@ -14,6 +14,7 @@ import {
 import { addDays } from '@/lib/campaign'
 import { formatNumber } from '@/lib/format'
 import type { CreatorViewsRow, DailyAnalyticsRow } from '@/lib/analytics'
+import { DateRangePresets } from '@/components/admin/date-range-presets'
 
 const IG = '#E1306C'
 const TT = '#0F766E'
@@ -73,6 +74,7 @@ export function AnalyticsPanel({
   leaderboard,
   creators,
   selectedCreatorId,
+  today,
   defaultFrom,
   defaultTo,
   labels,
@@ -82,6 +84,7 @@ export function AnalyticsPanel({
   leaderboard: CreatorViewsRow[]
   creators: CreatorOption[]
   selectedCreatorId: number | null
+  today: string
   defaultFrom: string
   defaultTo: string
   labels: Labels
@@ -133,6 +136,16 @@ export function AnalyticsPanel({
 
   return (
     <div className="flex flex-col gap-4">
+      <DateRangePresets
+        today={today}
+        from={from}
+        to={to}
+        onSelect={(nextFrom, nextTo) => {
+          setFrom(nextFrom)
+          setTo(nextTo)
+          navigate(nextFrom, nextTo, creatorId)
+        }}
+      />
       <form
         method="get"
         className="flex flex-wrap items-end gap-3"

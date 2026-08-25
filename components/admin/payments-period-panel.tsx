@@ -3,15 +3,18 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { PaymentRow } from '@/lib/queries'
 import { formatDate, formatMoney } from '@/lib/format'
+import { DateRangePresets } from '@/components/admin/date-range-presets'
 
 export function PaymentsPeriodPanel({
   payments,
   total,
+  today,
   defaultFrom,
   defaultTo,
 }: {
   payments: PaymentRow[]
   total: number
+  today: string
   defaultFrom: string
   defaultTo: string
 }) {
@@ -32,6 +35,7 @@ export function PaymentsPeriodPanel({
 
   return (
     <div className="flex flex-col gap-3">
+      <DateRangePresets today={today} from={from} to={to} onSelect={setRange} />
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           From

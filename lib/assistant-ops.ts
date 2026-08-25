@@ -2,7 +2,7 @@ import 'server-only'
 
 import { randomBytes } from 'crypto'
 import { sql, type Contract } from '@/lib/db'
-import { addDays, parseFlexibleDate, yearRange } from '@/lib/campaign'
+import { addDays, monthRange, parseFlexibleDate } from '@/lib/campaign'
 import {
   applyPlatformsToQuotas,
   normalizePlatforms,
@@ -49,11 +49,12 @@ function resolveViewRange(
 ): { from: string; to: string } {
   const parsedFrom = parseFlexibleDate(from, today)
   const parsedTo = parseFlexibleDate(to, today)
+  const month = monthRange(today)
   if (!parsedFrom && !parsedTo) {
-    return { from: addDays(today, -29), to: today }
+    return { from: month.start, to: month.end }
   }
   return {
-    from: parsedFrom ?? yearRange(today).start,
+    from: parsedFrom ?? month.start,
     to: parsedTo ?? today,
   }
 }
@@ -306,8 +307,8 @@ export async function getPaidTotalsSnapshot(input: {
   creatorUsername?: string
 }) {
   const today = await getServerToday()
-  const { start: yearStart } = yearRange(today)
-  const from = isDateString(input.from) ? input.from : yearStart
+  const { start: monthStart } = monthRange(today)
+  const from = isDateString(input.from) ? input.from : monthStart
   const to = isDateString(input.to) ? input.to : today
 
   let creatorId: number | undefined

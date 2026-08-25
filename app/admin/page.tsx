@@ -21,7 +21,7 @@ import {
   getViewsLeaderboard,
   getViewsSummary,
 } from '@/lib/analytics'
-import { yearRange } from '@/lib/campaign'
+import { monthRange } from '@/lib/campaign'
 import { StatCard } from '@/components/stat-card'
 import { FiltersBar } from '@/components/admin/filters-bar'
 import { ProjectsManager } from '@/components/admin/projects-manager'
@@ -79,7 +79,7 @@ export default async function AdminPage({
       ? (sp.platform as Platform)
       : undefined
   const today = await getServerToday()
-  const { start: yearStart, end: yearEnd } = yearRange(today)
+  const { start: monthStart, end: monthEnd } = monthRange(today)
   const analyticsDefault = defaultAnalyticsRange(today)
 
   const selectedDay = /^\d{4}-\d{2}-\d{2}$/.test(sp.day ?? '') ? sp.day! : today
@@ -91,12 +91,12 @@ export default async function AdminPage({
     projectId,
     creatorId: sp.creator ? Number(sp.creator) : undefined,
     platform,
-    from: sp.from || yearStart,
-    to: sp.to || yearEnd,
+    from: sp.from || monthStart,
+    to: sp.to || monthEnd,
   }
 
-  const payFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.payFrom ?? '') ? sp.payFrom! : yearStart
-  const payTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.payTo ?? '') ? sp.payTo! : today
+  const payFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.payFrom ?? '') ? sp.payFrom! : monthStart
+  const payTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.payTo ?? '') ? sp.payTo! : monthEnd
 
   const aFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.aFrom ?? '')
     ? sp.aFrom!
@@ -218,6 +218,7 @@ export default async function AdminPage({
                 leaderboard={leaderboard}
                 creators={creators.map((c) => ({ id: c.id, name: c.name }))}
                 selectedCreatorId={aCreatorId}
+                today={today}
                 defaultFrom={aFrom}
                 defaultTo={aTo}
                 labels={{
@@ -272,8 +273,9 @@ export default async function AdminPage({
               <div className="flex flex-col gap-3">
                 <FiltersBar
                   creators={creators}
-                  defaultFrom={yearStart}
-                  defaultTo={yearEnd}
+                  today={today}
+                  defaultFrom={monthStart}
+                  defaultTo={monthEnd}
                 />
                 <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
                   <Suspense
@@ -283,8 +285,8 @@ export default async function AdminPage({
                   >
                     <RefreshViewsButton
                       label={t('refreshViews')}
-                      defaultFrom={yearStart}
-                      defaultTo={yearEnd}
+                      defaultFrom={monthStart}
+                      defaultTo={monthEnd}
                     />
                   </Suspense>
                 </div>
@@ -318,7 +320,7 @@ export default async function AdminPage({
                   balance: t('balanceDue'),
                   videos: t('videos'),
                   complete: t('videosComplete'),
-                  reasonEnded: t('reasonEnded'),
+                  reasonVideosComplete: t('reasonVideosComplete'),
                   reasonSchedule: t('reasonSchedule'),
                   openCreator: t('backToAdmin'),
                 }}
@@ -335,6 +337,7 @@ export default async function AdminPage({
                 <PaymentsPeriodPanel
                   payments={periodPayments}
                   total={periodTotal}
+                  today={today}
                   defaultFrom={payFrom}
                   defaultTo={payTo}
                 />

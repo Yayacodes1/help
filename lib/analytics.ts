@@ -1,6 +1,6 @@
 import 'server-only'
 import { sql } from '@/lib/db'
-import { addDays, yearRange } from '@/lib/campaign'
+import { monthRange } from '@/lib/campaign'
 import { getServerToday } from '@/lib/queries'
 
 export type DailyAnalyticsRow = {
@@ -38,9 +38,9 @@ export type ViewsSummary = {
 
 function normalizeRange(from?: string | null, to?: string | null, today?: string) {
   const t = today ?? new Date().toISOString().slice(0, 10)
-  const year = yearRange(t)
-  const f = from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : year.start
-  const e = to && /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : t
+  const month = monthRange(t)
+  const f = from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : month.start
+  const e = to && /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : month.end
   return { from: f, to: e }
 }
 
@@ -171,5 +171,6 @@ export async function getViewsLeaderboard(opts: {
 }
 
 export function defaultAnalyticsRange(today: string): { from: string; to: string } {
-  return { from: addDays(today, -29), to: today }
+  const { start, end } = monthRange(today)
+  return { from: start, to: end }
 }

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import type { AdminSubmissionRow } from '@/lib/queries'
 import { ViewsCell } from '@/components/admin/views-cell'
 import { DeleteSubmission } from '@/components/admin/delete-submission'
+import { CopyLink } from '@/components/copy-link'
 import { formatDate, formatNumber } from '@/lib/format'
 import { PLATFORM_META } from '@/lib/platforms'
 
@@ -83,16 +84,8 @@ export function SubmissionsTable({
                 <td className="whitespace-nowrap px-4 py-3">
                   {PLATFORM_META[s.platform].en}
                 </td>
-                <td className="max-w-[220px] px-4 py-3">
-                  <a
-                    href={s.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block truncate font-medium underline underline-offset-4"
-                    dir="ltr"
-                  >
-                    {s.url}
-                  </a>
+                <td className="max-w-[280px] px-4 py-3">
+                  <CopyLink url={s.url} />
                 </td>
                 <td className="px-2 py-2 text-right">
                   <div className="flex flex-col items-end gap-0.5">

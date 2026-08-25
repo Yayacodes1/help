@@ -21,7 +21,7 @@ function DueTable({
     balance: string
     videos: string
     complete: string
-    reasonEnded: string
+    reasonVideosComplete: string
     reasonSchedule: string
   }
 }) {
@@ -59,8 +59,8 @@ function DueTable({
               <td className="whitespace-nowrap px-4 py-3">
                 <div className="font-medium tabular-nums">{formatDate(row.dueDate)}</div>
                 <div className="text-[11px] text-muted-foreground">
-                  {row.reason === 'contract_ended'
-                    ? labels.reasonEnded
+                  {row.reason === 'videos_complete'
+                    ? labels.reasonVideosComplete
                     : labels.reasonSchedule}
                 </div>
               </td>
@@ -139,7 +139,7 @@ export function PaymentDuePanel({
     balance: string
     videos: string
     complete: string
-    reasonEnded: string
+    reasonVideosComplete: string
     reasonSchedule: string
     openCreator: string
   }
@@ -147,8 +147,8 @@ export function PaymentDuePanel({
   return (
     <div className="flex flex-col gap-6">
       <p className="text-xs text-muted-foreground">
-        Pay due means ended contracts whose typed amounts are not yet in Total paid. Open the creator →
-        Contracts → <span className="font-medium text-foreground">Record past amounts as paid</span>.
+        Pay due when a contract hits its video target (counted from start). End date does not matter.
+        Open the creator → Contracts to record payment.
       </p>
       <DueTable rows={due} labels={labels} />
       <div>

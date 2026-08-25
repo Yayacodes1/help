@@ -39,6 +39,34 @@ type Labels = {
   redo: string
 }
 
+const CHAT_STORAGE_KEY = 'admin-assistant-chat-v1'
+const CHAT_ID = 'admin-assistant'
+
+function loadStoredMessages(): UIMessage[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(CHAT_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed as UIMessage[]
+  } catch {
+    return []
+  }
+}
+
+function markToolIdsRecorded(messages: UIMessage[], into: Set<string>) {
+  for (const message of messages) {
+    for (const part of message.parts ?? []) {
+      const type = part.type
+      if (typeof type !== 'string' || !type.startsWith('tool-')) continue
+      if ('toolCallId' in part && typeof part.toolCallId === 'string') {
+        into.add(part.toolCallId)
+      }
+    }
+  }
+}
+
 type ContractWhich = 'active' | 'past' | 'oldestPast'
 
 type ClosedContractRef = { id: number; previousEndDate: string | null }
@@ -586,6 +614,7 @@ export function AssistantChat({
   const [redoStack, setRedoStack] = useState<HistoryEntry[]>([])
   const [historyBusy, setHistoryBusy] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
+  const [chatHydrated, setChatHydrated] = useState(false)
   const recordedToolIds = useRef(new Set<string>())
 
   const transport = useMemo(
@@ -598,11 +627,36 @@ export function AssistantChat({
 
   const { messages, sendMessage, addToolApprovalResponse, status, error, setMessages } =
     useChat({
+      id: CHAT_ID,
       transport,
       sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
     })
 
   const busy = status === 'submitted' || status === 'streaming' || historyBusy
+
+  // Restore prior conversation after mount (avoids SSR/localStorage mismatch).
+  useEffect(() => {
+    const stored = loadStoredMessages()
+    if (stored.length > 0) {
+      markToolIdsRecorded(stored, recordedToolIds.current)
+      setMessages(stored)
+    }
+    setChatHydrated(true)
+  }, [setMessages])
+
+  // Persist transcript whenever it changes (after hydrate).
+  useEffect(() => {
+    if (!chatHydrated) return
+    try {
+      if (messages.length === 0) {
+        localStorage.removeItem(CHAT_STORAGE_KEY)
+      } else {
+        localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages))
+      }
+    } catch {
+      // Quota / private mode — ignore
+    }
+  }, [messages, chatHydrated])
 
   useEffect(() => {
     let added = false
@@ -928,6 +982,11 @@ export function AssistantChat({
     setMessages([])
     recordedToolIds.current.clear()
     setHistoryError(null)
+    try {
+      localStorage.removeItem(CHAT_STORAGE_KEY)
+    } catch {
+      // ignore
+    }
   }
 
   return (

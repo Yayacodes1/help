@@ -95,7 +95,7 @@ Views & analytics (read-only):
 - If the user names a project (e.g. “notk”), pass projectName as that string. Never guess a numeric projectId. If the tool returns a warning, still report the totals it gave.
 - Date rules: when the user says a month/day with no year (e.g. "August 1", "Aug 1 to Aug 15", "since August 1"), use year ${today.slice(0, 4)}. Never use 2024 or 2025. Pass dates as YYYY-MM-DD.
 - Repeat the from/to dates AND the views/videos/IG/TT numbers from the tool result. If the tool returns 0, say the exact dates queried — do not claim a different range.
-- Default a missing date range to the last 30 days ending today when the user says “recently” / “this month” without dates.
+- Default a missing date range to the start of this month through today when the user says “recently” / “this month” without dates.
 - When giving advice: be concrete (names, numbers, dates). Mention if many videos still show 0 views.
 
 Multi-step / multi-period requests (IMPORTANT):
@@ -201,7 +201,7 @@ General rules:
       }),
       getPayDue: tool({
         description:
-          'List creators/contracts with money due (ended contracts not yet fully recorded as paid) and recently settled ones.',
+          'List creators/contracts with money due (video targets finished, payment not fully recorded) and recently settled ones.',
         inputSchema: z.object({
           projectId: z.number().int().optional().describe('Optional project filter'),
         }),
@@ -247,7 +247,7 @@ General rules:
           'Paid totals for a date range AND all-time, optionally filtered by creator or project. Prefer this over paymentsTotalInRange when the admin also wants the all-time figure.',
         inputSchema: z.object({
           projectId: z.number().int().optional(),
-          from: z.string().optional().describe('YYYY-MM-DD; defaults to start of this year'),
+          from: z.string().optional().describe('YYYY-MM-DD; defaults to start of this month'),
           to: z.string().optional().describe('YYYY-MM-DD; defaults to today'),
           creatorUsername: z.string().optional(),
         }),

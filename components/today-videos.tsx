@@ -4,6 +4,7 @@ import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Trash2 } from 'lucide-react'
 import { deleteOwnSubmission } from '@/app/actions/creator'
+import { CopyLink } from '@/components/copy-link'
 import { PLATFORM_META } from '@/lib/platforms'
 import type { Submission } from '@/lib/db'
 
@@ -37,15 +38,9 @@ export function TodayVideos({
             <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
               {meta.ar}
             </span>
-            <a
-              href={s.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="min-w-0 flex-1 truncate text-sm text-foreground underline-offset-2 hover:underline"
-              dir="ltr"
-            >
-              {s.url}
-            </a>
+            <div className="min-w-0 flex-1">
+              <CopyLink url={s.url} copyLabel="نسخ" copiedLabel="تم" />
+            </div>
             <button
               type="button"
               aria-label="حذف الفيديو"

@@ -559,6 +559,31 @@ export async function getPaidForContract(
   return rows[0]?.total ?? 0
 }
 
+/** Latest payment date for a contract (linked or unlinked in the period window). */
+export async function getLastPaidOnForContract(
+  creatorId: number,
+  contractId: number,
+  start: string,
+  end: string,
+): Promise<string | null> {
+  const rows = (await sql`
+    SELECT paid_on::text AS paid_on
+    FROM payments
+    WHERE creator_id = ${creatorId}
+      AND (
+        contract_id = ${contractId}
+        OR (
+          contract_id IS NULL
+          AND paid_on >= ${start}::date
+          AND paid_on <= ${end}::date
+        )
+      )
+    ORDER BY paid_on DESC, id DESC
+    LIMIT 1
+  `) as { paid_on: string }[]
+  return rows[0]?.paid_on ?? null
+}
+
 export async function getContractComparisons(
   creator: Creator,
   today: string,
@@ -651,7 +676,7 @@ export type PaymentDueRow = {
   contractId: number | null
   contractName: string | null
   dueDate: string
-  reason: 'contract_ended' | 'pay_schedule'
+  reason: 'videos_complete' | 'pay_schedule'
   baseAmount: number
   commissionAmount: number | null
   commissionMissing: boolean
@@ -670,7 +695,7 @@ function buildDueRow(input: {
   creator: Creator
   contract: Contract | null
   dueDate: string
-  reason: 'contract_ended' | 'pay_schedule'
+  reason: 'videos_complete' | 'pay_schedule'
   paidAmount: number
   counts: { total: number; instagram: number; tiktok: number }
   settled: boolean
@@ -730,66 +755,87 @@ export async function getPaymentDueList(
     ORDER BY name ASC
   `) as Creator[]
 
-  const yearEnd = yearRange(today).end
   const due: PaymentDueRow[] = []
   const settled: PaymentDueRow[] = []
 
   for (const creator of creators) {
     const pay = await getPaySummary(creator, today)
     const contracts = await getContractsForCreator(creator.id)
-    const active = await getActiveContract(creator.id, today)
 
     for (const contract of contracts) {
+      const targets = targetVideoTotal(contract)
       const ended =
         contract.end_date != null && contract.end_date <= today
-      const scheduleDue = pay.isDue && active?.id === contract.id
-      if (!ended && !scheduleDue) continue
 
-      const end = contract.end_date ?? yearEnd
-      const windowEnd = maxDate(contract.start_date, end)
-      const counts = await getContractVideoCounts(
-        creator.id,
-        contract.start_date,
-        windowEnd,
-      )
+      // Count posts from contract start through today — end date does not gate due.
+      const windowEnd = maxDate(contract.start_date, today)
+      const counts =
+        targets > 0
+          ? await getContractVideoCounts(
+              creator.id,
+              contract.start_date,
+              windowEnd,
+            )
+          : { total: 0, instagram: 0, tiktok: 0 }
       const paidAmount = await getPaidForContract(
         creator.id,
         contract.id,
         contract.start_date,
         windowEnd,
       )
-      const baseAmount = Number(contract.base_amount) || 0
-      const commissionMissing = contract.commission_amount == null
+      const videoRate =
+        targets > 0
+          ? videoCompletionRate({
+              postedInstagram: counts.instagram,
+              postedTiktok: counts.tiktok,
+              targetInstagram: contract.target_instagram,
+              targetTiktok: contract.target_tiktok,
+              platforms: contract.platforms,
+            })
+          : null
+      const videosComplete = videoRate != null && videoRate >= 0.999
       const minDue = minimumContractDue(contract)
-      // Settled once recorded payments cover the amounts typed on the contract.
+      const commissionMissing = contract.commission_amount == null
       const fullySettled = minDue > 0 && paidAmount >= minDue - 0.009
-      const dueDate = ended
-        ? (contract.end_date as string)
-        : (pay.nextPayAt ?? today)
-      const reason = ended
-        ? ('contract_ended' as const)
-        : ('pay_schedule' as const)
 
-      const rowBase = {
-        creator,
-        contract,
-        dueDate,
-        reason,
-        paidAmount,
-        counts,
+      // Pay due: video target finished and money not fully recorded. End date ignored.
+      if (
+        videosComplete &&
+        !fullySettled &&
+        (minDue > 0 || commissionMissing)
+      ) {
+        due.push(
+          buildDueRow({
+            creator,
+            contract,
+            dueDate: today,
+            reason: 'videos_complete',
+            paidAmount,
+            counts,
+            settled: false,
+          }),
+        )
       }
 
-      // Still open: unpaid ended, or pay schedule hit
-      if (scheduleDue || (ended && !fullySettled && minDue > 0)) {
-        due.push(buildDueRow({ ...rowBase, settled: false }))
-      } else if (ended && !fullySettled && minDue <= 0 && commissionMissing) {
-        // Ended with money not filled in yet — keep visible so you don't forget
-        due.push(buildDueRow({ ...rowBase, settled: false }))
-      }
-
-      // Keep previous due dates after paying
-      if (ended && fullySettled) {
-        settled.push(buildDueRow({ ...rowBase, settled: true }))
+      // Already paid history: settled after videos complete, or ended+paid (legacy).
+      if (fullySettled && (videosComplete || ended)) {
+        const lastPaidOn = await getLastPaidOnForContract(
+          creator.id,
+          contract.id,
+          contract.start_date,
+          windowEnd,
+        )
+        settled.push(
+          buildDueRow({
+            creator,
+            contract,
+            dueDate: lastPaidOn ?? contract.end_date ?? today,
+            reason: videosComplete ? 'videos_complete' : 'pay_schedule',
+            paidAmount,
+            counts,
+            settled: true,
+          }),
+        )
       }
     }
 

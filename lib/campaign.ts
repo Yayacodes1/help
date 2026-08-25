@@ -11,6 +11,41 @@ export function addDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+/** First day of the month containing `today` through `today` itself. */
+export function monthRange(today: string): { start: string; end: string } {
+  return { start: `${today.slice(0, 7)}-01`, end: today }
+}
+
+export type DateRangePresetId =
+  | 'today'
+  | 'lastTwoDays'
+  | 'lastWeek'
+  | 'lastMonth'
+  | 'lastTwoMonths'
+
+export type DateRangePreset = {
+  id: DateRangePresetId
+  label: string
+  from: string
+  to: string
+}
+
+/** Rolling quick ranges ending on `today` (inclusive). */
+export function dateRangePresets(today: string): DateRangePreset[] {
+  return [
+    { id: 'today', label: 'Today', from: today, to: today },
+    { id: 'lastTwoDays', label: 'Last two days', from: addDays(today, -1), to: today },
+    { id: 'lastWeek', label: 'Last week', from: addDays(today, -6), to: today },
+    { id: 'lastMonth', label: 'Last month', from: addDays(today, -29), to: today },
+    {
+      id: 'lastTwoMonths',
+      label: 'Last two months',
+      from: addDays(today, -59),
+      to: today,
+    },
+  ]
+}
+
 const MONTH_INDEX: Record<string, number> = {
   january: 1,
   jan: 1,
