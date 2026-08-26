@@ -22,6 +22,14 @@ export type CreatorViewsRow = {
   videos_tiktok: number
 }
 
+export type CreatorDailyViewsRow = {
+  date: string
+  creator_id: number
+  creator_name: string
+  views: number
+  videos: number
+}
+
 export type ViewsSummary = {
   from: string
   to: string
@@ -130,6 +138,37 @@ export async function getViewsSummary(opts: {
     views_tiktok: r?.views_tiktok ?? 0,
     zero_view_videos: r?.zero_view_videos ?? 0,
   }
+}
+
+/** Daily total views per creator (Instagram + TikTok combined). */
+export async function getDailyViewsByCreator(opts: {
+  from?: string | null
+  to?: string | null
+  projectId?: number | null
+} = {}): Promise<CreatorDailyViewsRow[]> {
+  const today = await getServerToday()
+  const { from, to } = normalizeRange(opts.from, opts.to, today)
+  const projectId = opts.projectId ?? null
+
+  return (await sql`
+    SELECT
+      s.video_date::text AS date,
+      c.id AS creator_id,
+      c.name AS creator_name,
+      COALESCE(SUM(s.views), 0)::int AS views,
+      COUNT(s.id)::int AS videos
+    FROM submissions s
+    JOIN creators c ON c.id = s.creator_id
+    WHERE s.video_date >= ${from}::date
+      AND s.video_date <= ${to}::date
+      AND (
+        ${projectId}::int IS NULL
+        OR s.project_id = ${projectId}
+        OR c.project_id = ${projectId}
+      )
+    GROUP BY s.video_date, c.id, c.name
+    ORDER BY s.video_date ASC, c.name ASC
+  `) as CreatorDailyViewsRow[]
 }
 
 /** Creators ranked by total views in range. */

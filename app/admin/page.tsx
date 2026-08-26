@@ -18,6 +18,7 @@ import {
 import {
   defaultAnalyticsRange,
   getDailyAnalytics,
+  getDailyViewsByCreator,
   getViewsLeaderboard,
   getViewsSummary,
 } from '@/lib/analytics'
@@ -114,6 +115,7 @@ export default async function AdminPage({
     payDueRows,
     dailyAnalytics,
     creatorDaily,
+    byCreatorDaily,
     leaderboard,
     viewsSummary,
   ] = await Promise.all([
@@ -133,6 +135,11 @@ export default async function AdminPage({
           creatorId: aCreatorId,
         })
       : Promise.resolve([]),
+    getDailyViewsByCreator({
+      from: aFrom,
+      to: aTo,
+      projectId: projectId ?? null,
+    }),
     getViewsLeaderboard({
       from: aFrom,
       to: aTo,
@@ -215,6 +222,7 @@ export default async function AdminPage({
               <AnalyticsPanel
                 daily={dailyAnalytics}
                 creatorDaily={creatorDaily}
+                byCreatorDaily={byCreatorDaily}
                 leaderboard={leaderboard}
                 creators={creators.map((c) => ({ id: c.id, name: c.name }))}
                 selectedCreatorId={aCreatorId}
@@ -236,6 +244,8 @@ export default async function AdminPage({
                   to: t('to'),
                   apply: t('apply'),
                   showing: t('analyticsShowing'),
+                  chartLine: t('chartLine'),
+                  chartBar: t('chartBar'),
                 }}
               />
             ),

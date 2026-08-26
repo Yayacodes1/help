@@ -151,6 +151,8 @@ export const messages = {
     allCreators: 'All creators',
     apply: 'Apply',
     analyticsShowing: 'Showing',
+    chartLine: 'Lines',
+    chartBar: 'Bars',
     assistantTitle: 'Assistant',
     assistantSubtitle:
       'Contracts, payments, and views advice. Writes need Build It. Undo / Redo anytime.',
@@ -320,6 +322,8 @@ export const messages = {
     allCreators: 'كل الصناع',
     apply: 'تطبيق',
     analyticsShowing: 'عرض',
+    chartLine: 'خطوط',
+    chartBar: 'أعمدة',
     assistantTitle: 'المساعد',
     assistantSubtitle:
       'عقود ومدفوعات ونصائح عن المشاهدات. الحفظ يحتاج ابنِه. تراجع / إعادة في أي وقت.',
