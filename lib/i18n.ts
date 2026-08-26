@@ -153,6 +153,8 @@ export const messages = {
     analyticsShowing: 'Showing',
     chartLine: 'Lines',
     chartBar: 'Bars',
+    chartLog: 'Log',
+    chartLinear: 'Linear',
     assistantTitle: 'Assistant',
     assistantSubtitle:
       'Contracts, payments, and views advice. Writes need Build It. Undo / Redo anytime.',
@@ -324,6 +326,8 @@ export const messages = {
     analyticsShowing: 'عرض',
     chartLine: 'خطوط',
     chartBar: 'أعمدة',
+    chartLog: 'لوغاريتمي',
+    chartLinear: 'خطي',
     assistantTitle: 'المساعد',
     assistantSubtitle:
       'عقود ومدفوعات ونصائح عن المشاهدات. الحفظ يحتاج ابنِه. تراجع / إعادة في أي وقت.',

@@ -246,6 +246,8 @@ export default async function AdminPage({
                   showing: t('analyticsShowing'),
                   chartLine: t('chartLine'),
                   chartBar: t('chartBar'),
+                  chartLog: t('chartLog'),
+                  chartLinear: t('chartLinear'),
                 }}
               />
             ),

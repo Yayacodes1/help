@@ -25,9 +25,11 @@ import { DateRangePresets } from '@/components/admin/date-range-presets'
 
 const IG = '#E1306C'
 const TT = '#0F766E'
+const LOG_TICKS = [1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000]
 
 type CreatorOption = { id: number; name: string }
 type ChartType = 'line' | 'bar'
+type YScale = 'log' | 'linear'
 
 type Labels = {
   views: string
@@ -46,6 +48,8 @@ type Labels = {
   showing: string
   chartLine: string
   chartBar: string
+  chartLog: string
+  chartLinear: string
 }
 
 function indexDaily(rows: DailyAnalyticsRow[]) {
@@ -93,6 +97,43 @@ function seriesKey(creatorId: number) {
   return `c${creatorId}`
 }
 
+/** Log scale cannot plot 0; skip those points so small values stay readable. */
+function plotValue(n: number, yScale: YScale): number | null {
+  if (yScale === 'linear') return n
+  if (n <= 0) return null
+  return n
+}
+
+function applyYScale(
+  rows: Array<Record<string, string | number>>,
+  numericKeys: string[],
+  yScale: YScale,
+): Array<Record<string, string | number | null>> {
+  if (yScale === 'linear') return rows
+  return rows.map((row) => {
+    const next: Record<string, string | number | null> = { ...row }
+    for (const key of numericKeys) {
+      const v = row[key]
+      next[key] = typeof v === 'number' ? plotValue(v, yScale) : v
+    }
+    return next
+  })
+}
+
+function maxNumeric(
+  rows: Array<Record<string, string | number | null>>,
+  keys: string[],
+): number {
+  let max = 0
+  for (const row of rows) {
+    for (const key of keys) {
+      const v = row[key]
+      if (typeof v === 'number' && v > max) max = v
+    }
+  }
+  return max
+}
+
 export function AnalyticsPanel({
   daily,
   creatorDaily,
@@ -119,6 +160,7 @@ export function AnalyticsPanel({
   const [showViews, setShowViews] = useState(true)
   const [showVideos, setShowVideos] = useState(false)
   const [chartType, setChartType] = useState<ChartType>('line')
+  const [yScale, setYScale] = useState<YScale>('log')
   const [creatorId, setCreatorId] = useState<number | ''>(
     selectedCreatorId ?? '',
   )
@@ -183,7 +225,29 @@ export function AnalyticsPanel({
     (c) => c.id === (selectedCreatorId ?? creatorId),
   )
 
-  const chartData = multiCreator ? multiChartData : platformChartData
+  const numericKeys = useMemo(() => {
+    if (multiCreator) return creatorSeries.map((c) => seriesKey(c.id))
+    const keys: string[] = []
+    if (showViews) keys.push('viewsIg', 'viewsTt')
+    if (showVideos) keys.push('videosIg', 'videosTt')
+    return keys
+  }, [multiCreator, creatorSeries, showViews, showVideos])
+
+  const chartData = useMemo(() => {
+    const base = multiCreator ? multiChartData : platformChartData
+    return applyYScale(base, numericKeys, yScale)
+  }, [multiCreator, multiChartData, platformChartData, numericKeys, yScale])
+
+  const dataMax = useMemo(
+    () => maxNumeric(chartData, numericKeys),
+    [chartData, numericKeys],
+  )
+
+  const logTicks = useMemo(
+    () => LOG_TICKS.filter((t) => t <= Math.max(dataMax, 1) * 1.05),
+    [dataMax],
+  )
+
   const hasChart = multiCreator
     ? multiChartData.length > 0 && creatorSeries.length > 0
     : platformChartData.length > 0
@@ -198,21 +262,35 @@ export function AnalyticsPanel({
     window.location.search = params.toString()
   }
 
+  const toggleClass = (active: boolean) =>
+    `rounded-md px-3 py-1 text-sm font-medium transition-colors ${
+      active
+        ? 'bg-primary text-primary-foreground shadow-sm'
+        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+    }`
+
   const axisShared = (
     <>
       <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
       <XAxis dataKey="date" tick={{ fontSize: 11 }} />
       <YAxis
         yAxisId="left"
+        scale={yScale === 'log' ? 'log' : 'auto'}
+        domain={yScale === 'log' ? [1, dataMax > 1 ? dataMax : 10] : [0, 'auto']}
+        allowDataOverflow
+        ticks={yScale === 'log' ? logTicks : undefined}
         tick={{ fontSize: 11 }}
-        width={52}
+        width={56}
         tickFormatter={(v) => formatNumber(Number(v))}
       />
       {!multiCreator && showVideos ? (
         <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={36} />
       ) : null}
       <Tooltip
-        formatter={(value, name) => [formatNumber(Number(value ?? 0)), String(name)]}
+        formatter={(value, name) => {
+          if (value == null) return ['—', String(name)]
+          return [formatNumber(Number(value)), String(name)]
+        }}
         labelFormatter={(_, payload) => (payload?.[0]?.payload?.fullDate as string) ?? ''}
       />
       <Legend />
@@ -296,27 +374,23 @@ export function AnalyticsPanel({
           role="group"
           aria-label="Chart type"
         >
-          <button
-            type="button"
-            onClick={() => setChartType('line')}
-            className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
-              chartType === 'line'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            }`}
-          >
+          <button type="button" onClick={() => setChartType('line')} className={toggleClass(chartType === 'line')}>
             {labels.chartLine}
           </button>
-          <button
-            type="button"
-            onClick={() => setChartType('bar')}
-            className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
-              chartType === 'bar'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            }`}
-          >
+          <button type="button" onClick={() => setChartType('bar')} className={toggleClass(chartType === 'bar')}>
             {labels.chartBar}
+          </button>
+        </div>
+        <div
+          className="inline-flex gap-1 rounded-lg border border-border bg-muted/30 p-1"
+          role="group"
+          aria-label="Y axis scale"
+        >
+          <button type="button" onClick={() => setYScale('log')} className={toggleClass(yScale === 'log')}>
+            {labels.chartLog}
+          </button>
+          <button type="button" onClick={() => setYScale('linear')} className={toggleClass(yScale === 'linear')}>
+            {labels.chartLinear}
           </button>
         </div>
         {!multiCreator ? (
@@ -347,7 +421,12 @@ export function AnalyticsPanel({
         <div className="h-80 w-full">
           <ResponsiveContainer width="100%" height="100%">
             {chartType === 'bar' ? (
-              <BarChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+              <BarChart
+                data={chartData}
+                margin={{ top: 8, right: 12, left: 4, bottom: 0 }}
+                barCategoryGap="18%"
+                barGap={2}
+              >
                 {axisShared}
                 {multiCreator
                   ? creatorSeries.map((c) => (
@@ -357,6 +436,7 @@ export function AnalyticsPanel({
                         dataKey={seriesKey(c.id)}
                         name={c.name}
                         fill={colorForCreator(c.id)}
+                        maxBarSize={18}
                         isAnimationActive={false}
                       />
                     ))
@@ -368,6 +448,7 @@ export function AnalyticsPanel({
                             dataKey="viewsIg"
                             name={`${labels.views} · ${labels.instagram}`}
                             fill={IG}
+                            maxBarSize={28}
                             isAnimationActive={false}
                           />
                         ) : null}
@@ -377,6 +458,7 @@ export function AnalyticsPanel({
                             dataKey="viewsTt"
                             name={`${labels.views} · ${labels.tiktok}`}
                             fill={TT}
+                            maxBarSize={28}
                             isAnimationActive={false}
                           />
                         ) : null}
@@ -387,6 +469,7 @@ export function AnalyticsPanel({
                             name={`${labels.videos} · ${labels.instagram}`}
                             fill={IG}
                             opacity={0.55}
+                            maxBarSize={28}
                             isAnimationActive={false}
                           />
                         ) : null}
@@ -397,6 +480,7 @@ export function AnalyticsPanel({
                             name={`${labels.videos} · ${labels.tiktok}`}
                             fill={TT}
                             opacity={0.55}
+                            maxBarSize={28}
                             isAnimationActive={false}
                           />
                         ) : null}
@@ -404,7 +488,7 @@ export function AnalyticsPanel({
                     )}
               </BarChart>
             ) : (
-              <LineChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+              <LineChart data={chartData} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
                 {axisShared}
                 {multiCreator
                   ? creatorSeries.map((c) => (
@@ -415,8 +499,9 @@ export function AnalyticsPanel({
                         dataKey={seriesKey(c.id)}
                         name={c.name}
                         stroke={colorForCreator(c.id)}
-                        strokeWidth={2}
+                        strokeWidth={2.25}
                         dot={false}
+                        connectNulls={false}
                         isAnimationActive={false}
                       />
                     ))
@@ -429,8 +514,9 @@ export function AnalyticsPanel({
                             dataKey="viewsIg"
                             name={`${labels.views} · ${labels.instagram}`}
                             stroke={IG}
-                            strokeWidth={2}
+                            strokeWidth={2.25}
                             dot={false}
+                            connectNulls={false}
                             isAnimationActive={false}
                           />
                         ) : null}
@@ -441,8 +527,9 @@ export function AnalyticsPanel({
                             dataKey="viewsTt"
                             name={`${labels.views} · ${labels.tiktok}`}
                             stroke={TT}
-                            strokeWidth={2}
+                            strokeWidth={2.25}
                             dot={false}
+                            connectNulls={false}
                             isAnimationActive={false}
                           />
                         ) : null}
@@ -456,6 +543,7 @@ export function AnalyticsPanel({
                             strokeWidth={1.5}
                             strokeDasharray="5 4"
                             dot={false}
+                            connectNulls={false}
                             isAnimationActive={false}
                           />
                         ) : null}
@@ -469,6 +557,7 @@ export function AnalyticsPanel({
                             strokeWidth={1.5}
                             strokeDasharray="5 4"
                             dot={false}
+                            connectNulls={false}
                             isAnimationActive={false}
                           />
                         ) : null}
