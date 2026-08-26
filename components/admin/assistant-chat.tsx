@@ -16,6 +16,7 @@ import {
 import { Loader2, Redo2, Sparkles, Undo2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { formatMoney } from '@/lib/format'
+import { AssistantMarkdown } from '@/components/admin/assistant-markdown'
 
 type Labels = {
   title: string
@@ -1100,9 +1101,11 @@ export function AssistantChat({
               const partKey = `${message.id}-part-${i}`
               if (part.type === 'text' && part.text) {
                 return (
-                  <p key={partKey} className="whitespace-pre-wrap">
-                    {part.text}
-                  </p>
+                  <AssistantMarkdown
+                    key={partKey}
+                    text={part.text}
+                    tone={message.role === 'user' ? 'user' : 'assistant'}
+                  />
                 )
               }
 
