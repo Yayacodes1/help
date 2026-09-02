@@ -28,6 +28,7 @@ import { FiltersBar } from '@/components/admin/filters-bar'
 import { ProjectsManager } from '@/components/admin/projects-manager'
 import { CreatorsManager } from '@/components/admin/creators-manager'
 import { ProjectSelector } from '@/components/admin/project-selector'
+import { RoleSelector } from '@/components/admin/role-selector'
 import { TodayProgress } from '@/components/admin/today-progress'
 import { DayNavigator } from '@/components/admin/day-navigator'
 import { LogoutButton } from '@/components/admin/logout-button'
@@ -45,6 +46,7 @@ import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 import type { Platform } from '@/lib/db'
+import { parseRoleFilter, roleFilterToSql } from '@/lib/participant-role'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,6 +57,7 @@ export default async function AdminPage({
 }: {
   searchParams: Promise<{
     project?: string
+    role?: string
     creator?: string
     platform?: string
     from?: string
@@ -87,9 +90,12 @@ export default async function AdminPage({
   const isToday = selectedDay === today
 
   const projectId = sp.project ? Number(sp.project) : undefined
+  const roleFilter = parseRoleFilter(sp.role)
+  const roleSql = roleFilterToSql(roleFilter)
 
   const filters: AdminFilters = {
     projectId,
+    role: roleSql,
     creatorId: sp.creator ? Number(sp.creator) : undefined,
     platform,
     from: sp.from || monthStart,
@@ -121,32 +127,35 @@ export default async function AdminPage({
   ] = await Promise.all([
     getAdminSubmissions(filters),
     getAllProjects(),
-    getCreatorsWithProgressOnDate(selectedDay, projectId),
-    getPaymentsInRange(payFrom, payTo),
-    getPaymentsTotalInRange(payFrom, payTo),
-    getAllPaidTotal(projectId),
-    getPaymentDueList(today, projectId),
-    getDailyAnalytics({ from: aFrom, to: aTo, projectId: projectId ?? null }),
+    getCreatorsWithProgressOnDate(selectedDay, projectId, roleSql),
+    getPaymentsInRange(payFrom, payTo, undefined, roleSql),
+    getPaymentsTotalInRange(payFrom, payTo, undefined, roleSql),
+    getAllPaidTotal(projectId, roleSql),
+    getPaymentDueList(today, projectId, roleSql),
+    getDailyAnalytics({ from: aFrom, to: aTo, projectId: projectId ?? null, role: roleSql }),
     aCreatorId
       ? getDailyAnalytics({
           from: aFrom,
           to: aTo,
           projectId: projectId ?? null,
           creatorId: aCreatorId,
+          role: roleSql,
         })
       : Promise.resolve([]),
     getDailyViewsByCreator({
       from: aFrom,
       to: aTo,
       projectId: projectId ?? null,
+      role: roleSql,
     }),
     getViewsLeaderboard({
       from: aFrom,
       to: aTo,
       projectId: projectId ?? null,
+      role: roleSql,
       limit: 1000,
     }),
-    getViewsSummary({ from: aFrom, to: aTo, projectId: projectId ?? null }),
+    getViewsSummary({ from: aFrom, to: aTo, projectId: projectId ?? null, role: roleSql }),
   ])
   const creators = await attachTracking(creatorsBase, today)
   const misses = getMissesFromProgress(creators)
@@ -166,6 +175,25 @@ export default async function AdminPage({
     (c) => c.today_instagram + c.today_tiktok > 0,
   ).length
   const payDueCount = payDueRows.due.length
+
+  const peopleNoun =
+    roleFilter === 'reposter'
+      ? t('reposters')
+      : roleFilter === 'all'
+        ? t('people')
+        : t('creators')
+  const activeTodayLabel =
+    roleFilter === 'reposter'
+      ? isToday
+        ? t('repostersActiveToday')
+        : t('repostersActiveThatDay')
+      : roleFilter === 'all'
+        ? isToday
+          ? t('peopleActiveToday')
+          : t('peopleActiveThatDay')
+        : isToday
+          ? t('creatorsActiveToday')
+          : t('creatorsActiveThatDay')
 
   const defaultPanel =
     sp.panel &&
@@ -188,6 +216,13 @@ export default async function AdminPage({
             locale={locale}
             labels={{ english: t('english'), arabic: t('arabic') }}
           />
+          <RoleSelector
+            labels={{
+              creators: t('roleFilterCreators'),
+              reposters: t('roleFilterReposters'),
+              all: t('roleFilterAll'),
+            }}
+          />
           <ProjectSelector projects={projects} />
           <LogoutButton label={t('logOut')} />
         </div>
@@ -199,7 +234,7 @@ export default async function AdminPage({
           value={`${postedTodayTotal} / ${goalTotal}`}
         />
         <StatCard
-          label={isToday ? t('creatorsActiveToday') : t('creatorsActiveThatDay')}
+          label={activeTodayLabel}
           value={`${creatorsPostedToday} / ${creators.length}`}
         />
         <StatCard label={t('totalViews')} value={formatNumber(totalViews)} />
@@ -232,13 +267,14 @@ export default async function AdminPage({
                 labels={{
                   views: t('views'),
                   videos: t('videos'),
-                  creator: t('creators'),
-                  allCreators: t('allCreators'),
+                  creator: peopleNoun,
+                  allCreators: roleFilter === 'reposter' ? t('allReposters') : t('allCreators'),
                   instagram: t('instagram'),
                   tiktok: t('tiktok'),
                   showViews: t('showViews'),
                   showVideos: t('showVideos'),
-                  topCreators: t('topCreators'),
+                  topCreators:
+                    roleFilter === 'reposter' ? t('topReposters') : t('topCreators'),
                   empty: t('analyticsEmpty'),
                   from: t('from'),
                   to: t('to'),
@@ -323,7 +359,7 @@ export default async function AdminPage({
                   settledEmpty: t('payDueSettledEmpty'),
                   settledTitle: t('payDueSettledTitle'),
                   due: t('due'),
-                  creator: t('creators'),
+                  creator: peopleNoun,
                   contract: t('contracts'),
                   base: 'Base',
                   commission: 'Commission',
@@ -359,11 +395,16 @@ export default async function AdminPage({
           {
             id: 'manage',
             title: t('manage'),
-            summary: `${creators.length} ${t('creators')}`,
+            summary: `${creators.length} ${peopleNoun}`,
             hint: `${projects.length} ${t('projects')}`,
             children: (
               <div key="manage-grid" className="grid gap-4 lg:grid-cols-2">
-                <CreatorsManager key="creators-manager" creators={creators} projects={projects} />
+                <CreatorsManager
+                  key="creators-manager"
+                  creators={creators}
+                  projects={projects}
+                  roleFilter={roleFilter}
+                />
                 <ProjectsManager key="projects-manager" projects={projects} />
               </div>
             ),

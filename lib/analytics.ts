@@ -35,6 +35,7 @@ export type ViewsSummary = {
   to: string
   creatorId: number | null
   projectId: number | null
+  role: string | null
   videos: number
   views: number
   videos_instagram: number
@@ -58,11 +59,13 @@ export async function getDailyAnalytics(opts: {
   to?: string | null
   creatorId?: number | null
   projectId?: number | null
+  role?: string | null
 } = {}): Promise<DailyAnalyticsRow[]> {
   const today = await getServerToday()
   const { from, to } = normalizeRange(opts.from, opts.to, today)
   const creatorId = opts.creatorId ?? null
   const projectId = opts.projectId ?? null
+  const role = opts.role ?? null
 
   const rows = (await sql`
     SELECT
@@ -72,16 +75,15 @@ export async function getDailyAnalytics(opts: {
       COALESCE(SUM(CASE WHEN s.platform = 'instagram' THEN 1 ELSE 0 END), 0)::int AS videos_instagram,
       COALESCE(SUM(CASE WHEN s.platform = 'tiktok' THEN 1 ELSE 0 END), 0)::int AS videos_tiktok
     FROM submissions s
+    JOIN creators c ON c.id = s.creator_id
     WHERE s.video_date >= ${from}::date
       AND s.video_date <= ${to}::date
       AND (${creatorId}::int IS NULL OR s.creator_id = ${creatorId})
+      AND (${role}::text IS NULL OR c.role = ${role})
       AND (
         ${projectId}::int IS NULL
         OR s.project_id = ${projectId}
-        OR EXISTS (
-          SELECT 1 FROM creators c
-          WHERE c.id = s.creator_id AND c.project_id = ${projectId}
-        )
+        OR c.project_id = ${projectId}
       )
     GROUP BY s.video_date
     ORDER BY s.video_date ASC
@@ -95,11 +97,13 @@ export async function getViewsSummary(opts: {
   to?: string | null
   creatorId?: number | null
   projectId?: number | null
+  role?: string | null
 } = {}): Promise<ViewsSummary> {
   const today = await getServerToday()
   const { from, to } = normalizeRange(opts.from, opts.to, today)
   const creatorId = opts.creatorId ?? null
   const projectId = opts.projectId ?? null
+  const role = opts.role ?? null
 
   const rows = (await sql`
     SELECT
@@ -111,18 +115,17 @@ export async function getViewsSummary(opts: {
       COALESCE(SUM(CASE WHEN s.platform = 'tiktok' THEN s.views ELSE 0 END), 0)::int AS views_tiktok,
       COALESCE(SUM(CASE WHEN s.views = 0 THEN 1 ELSE 0 END), 0)::int AS zero_view_videos
     FROM submissions s
+    JOIN creators c ON c.id = s.creator_id
     WHERE s.video_date >= ${from}::date
       AND s.video_date <= ${to}::date
       AND (${creatorId}::int IS NULL OR s.creator_id = ${creatorId})
+      AND (${role}::text IS NULL OR c.role = ${role})
       AND (
         ${projectId}::int IS NULL
         OR s.project_id = ${projectId}
-        OR EXISTS (
-          SELECT 1 FROM creators c
-          WHERE c.id = s.creator_id AND c.project_id = ${projectId}
-        )
+        OR c.project_id = ${projectId}
       )
-  `) as Omit<ViewsSummary, 'from' | 'to' | 'creatorId' | 'projectId'>[]
+  `) as Omit<ViewsSummary, 'from' | 'to' | 'creatorId' | 'projectId' | 'role'>[]
 
   const r = rows[0]
   return {
@@ -130,6 +133,7 @@ export async function getViewsSummary(opts: {
     to,
     creatorId,
     projectId,
+    role,
     videos: r?.videos ?? 0,
     views: r?.views ?? 0,
     videos_instagram: r?.videos_instagram ?? 0,
@@ -145,10 +149,12 @@ export async function getDailyViewsByCreator(opts: {
   from?: string | null
   to?: string | null
   projectId?: number | null
+  role?: string | null
 } = {}): Promise<CreatorDailyViewsRow[]> {
   const today = await getServerToday()
   const { from, to } = normalizeRange(opts.from, opts.to, today)
   const projectId = opts.projectId ?? null
+  const role = opts.role ?? null
 
   return (await sql`
     SELECT
@@ -161,6 +167,7 @@ export async function getDailyViewsByCreator(opts: {
     JOIN creators c ON c.id = s.creator_id
     WHERE s.video_date >= ${from}::date
       AND s.video_date <= ${to}::date
+      AND (${role}::text IS NULL OR c.role = ${role})
       AND (
         ${projectId}::int IS NULL
         OR s.project_id = ${projectId}
@@ -176,11 +183,13 @@ export async function getViewsLeaderboard(opts: {
   from?: string | null
   to?: string | null
   projectId?: number | null
+  role?: string | null
   limit?: number
 } = {}): Promise<CreatorViewsRow[]> {
   const today = await getServerToday()
   const { from, to } = normalizeRange(opts.from, opts.to, today)
   const projectId = opts.projectId ?? null
+  const role = opts.role ?? null
   const limit = Math.min(1000, Math.max(1, opts.limit ?? 10))
 
   return (await sql`
@@ -198,11 +207,12 @@ export async function getViewsLeaderboard(opts: {
       ON s.creator_id = c.id
       AND s.video_date >= ${from}::date
       AND s.video_date <= ${to}::date
-    WHERE (
-      ${projectId}::int IS NULL
-      OR c.project_id = ${projectId}
-      OR s.project_id = ${projectId}
-    )
+    WHERE (${role}::text IS NULL OR c.role = ${role})
+      AND (
+        ${projectId}::int IS NULL
+        OR c.project_id = ${projectId}
+        OR s.project_id = ${projectId}
+      )
     GROUP BY c.id, c.name
     ORDER BY views DESC, videos DESC, c.name ASC
     LIMIT ${limit}

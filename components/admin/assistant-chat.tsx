@@ -88,6 +88,7 @@ type ContractSnapshot = {
 type CreatorSnapshot = {
   name: string
   project_id: number | null
+  role: string
   platforms: string
   goal_instagram: number
   goal_tiktok: number
@@ -145,6 +146,7 @@ type PaymentRecreate = {
 type CreatorRecreate = {
   username: string
   projectId?: number | null
+  role?: string
   platforms?: string
   goalInstagram?: number
   goalTiktok?: number
@@ -159,6 +161,7 @@ type UpdateCreatorRecreate = {
   username: string
   newUsername?: string
   projectId?: number | null
+  role?: string
   platforms?: string
   goalInstagram?: number
   goalTiktok?: number
@@ -568,6 +571,7 @@ function creatorRecreateFromInput(input: Record<string, unknown>): CreatorRecrea
   return {
     username: String(input.username ?? ''),
     projectId: input.projectId == null ? (input.projectId as null | undefined) : Number(input.projectId),
+    role: input.role != null ? String(input.role) : undefined,
     platforms: input.platforms != null ? String(input.platforms) : undefined,
     goalInstagram: input.goalInstagram != null ? Number(input.goalInstagram) : undefined,
     goalTiktok: input.goalTiktok != null ? Number(input.goalTiktok) : undefined,
@@ -585,6 +589,7 @@ function updateCreatorRecreateFromInput(input: Record<string, unknown>): UpdateC
     username: String(input.username ?? ''),
     newUsername: input.newUsername != null ? String(input.newUsername) : undefined,
     projectId: input.projectId == null ? (input.projectId as null | undefined) : Number(input.projectId),
+    role: input.role != null ? String(input.role) : undefined,
     platforms: input.platforms != null ? String(input.platforms) : undefined,
     goalInstagram: input.goalInstagram != null ? Number(input.goalInstagram) : undefined,
     goalTiktok: input.goalTiktok != null ? Number(input.goalTiktok) : undefined,

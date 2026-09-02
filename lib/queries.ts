@@ -1,5 +1,6 @@
 import 'server-only'
 import { sql, type Contract, type Creator, type Payment, type Platform, type Project, type Submission } from '@/lib/db'
+import type { ParticipantRole } from '@/lib/participant-role'
 import { addDays, maxDate, yearRange } from '@/lib/campaign'
 import {
   buildConsistency,
@@ -19,7 +20,7 @@ export async function getServerToday(): Promise<string> {
 
 export async function getCreatorByToken(token: string): Promise<Creator | null> {
   const rows = (await sql`
-    SELECT id, name, token, project_id, created_at,
+    SELECT id, name, token, project_id, created_at, role,
            goal_instagram, goal_tiktok, platforms,
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
@@ -34,7 +35,7 @@ export async function getCreatorByToken(token: string): Promise<Creator | null> 
 
 export async function getCreatorById(id: number): Promise<Creator | null> {
   const rows = (await sql`
-    SELECT id, name, token, project_id, created_at,
+    SELECT id, name, token, project_id, created_at, role,
            goal_instagram, goal_tiktok, platforms,
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
@@ -49,7 +50,7 @@ export async function getCreatorById(id: number): Promise<Creator | null> {
 
 export async function getCreatorByName(name: string): Promise<Creator | null> {
   const rows = (await sql`
-    SELECT id, name, token, project_id, created_at,
+    SELECT id, name, token, project_id, created_at, role,
            goal_instagram, goal_tiktok, platforms,
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
@@ -118,6 +119,8 @@ export type AdminSubmissionRow = Submission & {
 
 export type AdminFilters = {
   projectId?: number
+  /** null / omitted = all roles; otherwise filter by participant role */
+  role?: ParticipantRole | null
   creatorId?: number
   platform?: Platform
   from?: string
@@ -126,6 +129,7 @@ export type AdminFilters = {
 
 export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<AdminSubmissionRow[]> {
   const projectId = filters.projectId ?? null
+  const role = filters.role ?? null
   const creatorId = filters.creatorId ?? null
   const platform = filters.platform ?? null
   const from = filters.from ?? null
@@ -148,6 +152,7 @@ export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<A
     JOIN creators c ON c.id = s.creator_id
     LEFT JOIN projects p ON p.id = s.project_id
     WHERE (${projectId}::int IS NULL OR s.project_id = ${projectId})
+      AND (${role}::text IS NULL OR c.role = ${role})
       AND (${creatorId}::int IS NULL OR s.creator_id = ${creatorId})
       AND (${platform}::text IS NULL OR s.platform = ${platform})
       AND (${from}::date IS NULL OR s.video_date >= ${from})
@@ -166,7 +171,7 @@ export type CreatorWithProject = Creator & { project_name: string | null }
 
 export async function getAllCreators(): Promise<CreatorWithProject[]> {
   return (await sql`
-    SELECT c.id, c.name, c.token, c.project_id, c.created_at,
+    SELECT c.id, c.name, c.token, c.project_id, c.created_at, c.role,
            c.goal_instagram, c.goal_tiktok, c.platforms,
            c.contract_start::text AS contract_start,
            c.contract_end::text AS contract_end,
@@ -188,11 +193,13 @@ export type CreatorProgress = CreatorWithProject & {
 export async function getCreatorsWithProgressOnDate(
   date: string,
   projectId?: number,
+  role?: ParticipantRole | null,
 ): Promise<CreatorProgress[]> {
   const pid = projectId ?? null
+  const roleFilter = role ?? null
   return (await sql`
     SELECT
-      c.id, c.name, c.token, c.project_id, c.created_at,
+      c.id, c.name, c.token, c.project_id, c.created_at, c.role,
       c.goal_instagram, c.goal_tiktok, c.platforms,
       c.contract_start::text AS contract_start,
       c.contract_end::text AS contract_end,
@@ -206,6 +213,7 @@ export async function getCreatorsWithProgressOnDate(
     LEFT JOIN projects p ON p.id = c.project_id
     LEFT JOIN submissions s ON s.creator_id = c.id
     WHERE (${pid}::int IS NULL OR c.project_id = ${pid})
+      AND (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
     GROUP BY c.id, p.name
     ORDER BY c.name ASC
   `) as CreatorProgress[]
@@ -525,13 +533,18 @@ export async function getCreatorPaidTotal(creatorId: number): Promise<number> {
   return rows[0]?.total ?? 0
 }
 
-export async function getAllPaidTotal(projectId?: number): Promise<number> {
+export async function getAllPaidTotal(
+  projectId?: number,
+  role?: ParticipantRole | null,
+): Promise<number> {
   const pid = projectId ?? null
+  const roleFilter = role ?? null
   const rows = (await sql`
     SELECT COALESCE(SUM(p.amount), 0)::float AS total
     FROM payments p
     JOIN creators c ON c.id = p.creator_id
     WHERE (${pid}::int IS NULL OR c.project_id = ${pid})
+      AND (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
   `) as { total: number }[]
   return rows[0]?.total ?? 0
 }
@@ -741,10 +754,12 @@ function buildDueRow(input: {
 export async function getPaymentDueList(
   today: string,
   projectId?: number,
+  role?: ParticipantRole | null,
 ): Promise<{ due: PaymentDueRow[]; settled: PaymentDueRow[] }> {
   const pid = projectId ?? null
+  const roleFilter = role ?? null
   const creators = (await sql`
-    SELECT id, name, token, project_id, created_at,
+    SELECT id, name, token, project_id, created_at, role,
            goal_instagram, goal_tiktok, platforms,
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
@@ -752,6 +767,7 @@ export async function getPaymentDueList(
            pay_every_days, notes
     FROM creators
     WHERE (${pid}::int IS NULL OR project_id = ${pid})
+      AND (${roleFilter}::text IS NULL OR role = ${roleFilter})
     ORDER BY name ASC
   `) as Creator[]
 
@@ -902,8 +918,10 @@ export async function getPaymentsInRange(
   from: string,
   to: string,
   creatorId?: number,
+  role?: ParticipantRole | null,
 ): Promise<PaymentRow[]> {
   const cid = creatorId ?? null
+  const roleFilter = role ?? null
   return (await sql`
     SELECT p.id, p.creator_id, p.contract_id,
            p.paid_on::text AS paid_on,
@@ -917,6 +935,7 @@ export async function getPaymentsInRange(
     WHERE p.paid_on >= ${from}::date
       AND p.paid_on <= ${to}::date
       AND (${cid}::int IS NULL OR p.creator_id = ${cid})
+      AND (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
     ORDER BY p.paid_on DESC, p.id DESC
   `) as PaymentRow[]
 }
@@ -925,14 +944,18 @@ export async function getPaymentsTotalInRange(
   from: string,
   to: string,
   creatorId?: number,
+  role?: ParticipantRole | null,
 ): Promise<number> {
   const cid = creatorId ?? null
+  const roleFilter = role ?? null
   const rows = (await sql`
-    SELECT COALESCE(SUM(amount), 0)::float AS total
-    FROM payments
-    WHERE paid_on >= ${from}::date
-      AND paid_on <= ${to}::date
-      AND (${cid}::int IS NULL OR creator_id = ${cid})
+    SELECT COALESCE(SUM(p.amount), 0)::float AS total
+    FROM payments p
+    JOIN creators c ON c.id = p.creator_id
+    WHERE p.paid_on >= ${from}::date
+      AND p.paid_on <= ${to}::date
+      AND (${cid}::int IS NULL OR p.creator_id = ${cid})
+      AND (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
   `) as { total: number }[]
   return rows[0]?.total ?? 0
 }

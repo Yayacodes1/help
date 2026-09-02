@@ -39,6 +39,7 @@ const contractSnapshotSchema = z.object({
 const creatorSnapshotSchema = z.object({
   name: z.string(),
   project_id: z.number().nullable(),
+  role: z.string().default('creator'),
   platforms: z.string(),
   goal_instagram: z.number(),
   goal_tiktok: z.number(),
@@ -96,6 +97,7 @@ const paymentRecreateSchema = z.object({
 const creatorRecreateSchema = z.object({
   username: z.string(),
   projectId: z.number().nullable().optional(),
+  role: z.enum(['creator', 'reposter']).optional(),
   platforms: z.string().optional(),
   goalInstagram: z.number().optional(),
   goalTiktok: z.number().optional(),
@@ -110,6 +112,7 @@ const updateCreatorRecreateSchema = z.object({
   username: z.string(),
   newUsername: z.string().optional(),
   projectId: z.number().nullable().optional(),
+  role: z.enum(['creator', 'reposter']).optional(),
   platforms: z.string().optional(),
   goalInstagram: z.number().optional(),
   goalTiktok: z.number().optional(),

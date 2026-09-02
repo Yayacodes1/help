@@ -436,10 +436,15 @@ General rules:
         execute: async ({ creatorUsername }) => recordPastAsPaidFromAssistant(creatorUsername),
       }),
       createCreator: tool({
-        description: 'Add a new creator (TikTok username) to the dashboard. Requires admin approval in the UI.',
+        description:
+          'Add a new creator or reposter (TikTok username) to the dashboard. Requires admin approval in the UI.',
         inputSchema: z.object({
           username: z.string(),
           projectId: z.number().int().nullable().optional(),
+          role: z
+            .enum(['creator', 'reposter'])
+            .optional()
+            .describe('creator (default) or reposter'),
           platforms: z.enum(['both', 'instagram', 'tiktok']).optional(),
           goalInstagram: z.number().int().min(0).optional(),
           goalTiktok: z.number().int().min(0).optional(),
@@ -453,11 +458,12 @@ General rules:
       }),
       updateCreator: tool({
         description:
-          'Update a creator profile (rename, move project, change goals/platforms/notes/pay schedule). Requires admin approval in the UI.',
+          'Update a creator/reposter profile (rename, move project, change role/goals/platforms/notes/pay schedule). Requires admin approval in the UI.',
         inputSchema: z.object({
           username: z.string(),
           newUsername: z.string().optional(),
           projectId: z.number().int().nullable().optional(),
+          role: z.enum(['creator', 'reposter']).optional(),
           platforms: z.enum(['both', 'instagram', 'tiktok']).optional(),
           goalInstagram: z.number().int().min(0).optional(),
           goalTiktok: z.number().int().min(0).optional(),

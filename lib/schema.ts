@@ -28,6 +28,12 @@ export async function ensureCreatorTrackingColumns() {
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS commission_amount numeric(12, 2)`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS platforms text NOT NULL DEFAULT 'both'`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS platforms text NOT NULL DEFAULT 'both'`
+  await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'creator'`
+  await sql`
+    UPDATE creators
+    SET role = 'creator'
+    WHERE role IS NULL OR role NOT IN ('creator', 'reposter')
+  `
 
   // Infer platform mode from existing quotas (TikTok-only / IG-only contracts).
   await sql`

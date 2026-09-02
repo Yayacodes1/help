@@ -13,6 +13,7 @@ export type RefreshFilters = {
   to?: string | null
   creatorId?: number | null
   projectId?: number | null
+  role?: string | null
   platform?: Platform | null
 }
 
@@ -90,18 +91,21 @@ export async function refreshViews(
     const to = f.to && DATE_RE.test(f.to) ? f.to : null
     const creatorId = f.creatorId && Number.isFinite(f.creatorId) ? f.creatorId : null
     const projectId = f.projectId && Number.isFinite(f.projectId) ? f.projectId : null
+    const role = f.role === 'creator' || f.role === 'reposter' ? f.role : null
     const platform =
       f.platform === 'instagram' || f.platform === 'tiktok' ? f.platform : null
 
     rows = (await sql`
-      SELECT id, platform, url, views
-      FROM submissions
-      WHERE (${from}::date IS NULL OR video_date >= ${from}::date)
-        AND (${to}::date IS NULL OR video_date <= ${to}::date)
-        AND (${creatorId}::int IS NULL OR creator_id = ${creatorId})
-        AND (${projectId}::int IS NULL OR project_id = ${projectId})
-        AND (${platform}::text IS NULL OR platform = ${platform})
-      ORDER BY video_date ASC, id ASC
+      SELECT s.id, s.platform, s.url, s.views
+      FROM submissions s
+      JOIN creators c ON c.id = s.creator_id
+      WHERE (${from}::date IS NULL OR s.video_date >= ${from}::date)
+        AND (${to}::date IS NULL OR s.video_date <= ${to}::date)
+        AND (${creatorId}::int IS NULL OR s.creator_id = ${creatorId})
+        AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
+        AND (${role}::text IS NULL OR c.role = ${role})
+        AND (${platform}::text IS NULL OR s.platform = ${platform})
+      ORDER BY s.video_date ASC, s.id ASC
       LIMIT ${limit} OFFSET ${offset}
     `) as Row[]
     nextOffset = rows.length < limit ? null : offset + rows.length

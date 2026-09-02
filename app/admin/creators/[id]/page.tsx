@@ -88,7 +88,12 @@ export default async function CreatorDetailPage({
           >
             {t('backToAdmin')}
           </Link>
-          <h1 className="mt-2 text-xl font-semibold tracking-tight">{creator.name}</h1>
+          <h1 className="mt-2 text-xl font-semibold tracking-tight">
+            {creator.name}
+            <span className="ml-2 align-middle rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary-foreground">
+              {creator.role === 'reposter' ? t('reposterRole') : t('creatorRole')}
+            </span>
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {project?.name ?? t('noProject')}
             {active

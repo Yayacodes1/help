@@ -1,7 +1,8 @@
 import { neon } from '@neondatabase/serverless'
 import type { PlatformsMode } from '@/lib/platforms-mode'
+import type { ParticipantRole } from '@/lib/participant-role'
 
-export type { PlatformsMode }
+export type { PlatformsMode, ParticipantRole }
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL is not set')
@@ -26,6 +27,8 @@ export type Creator = {
   token: string
   project_id: number | null
   created_at: string
+  /** creator = content creators; reposter = repost / share accounts */
+  role: ParticipantRole
   goal_instagram: number
   goal_tiktok: number
   /** Default platforms when a contract does not override */

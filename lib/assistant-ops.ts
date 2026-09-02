@@ -8,6 +8,7 @@ import {
   normalizePlatforms,
   type PlatformsMode,
 } from '@/lib/platforms-mode'
+import { normalizeParticipantRole } from '@/lib/participant-role'
 import {
   attachTracking,
   getActiveContract,
@@ -69,11 +70,11 @@ function revalidateAdmin(creatorId?: number) {
 
 export async function listCreatorsBrief() {
   const rows = (await sql`
-    SELECT c.id, c.name, p.name AS project_name
+    SELECT c.id, c.name, c.role, p.name AS project_name
     FROM creators c
     LEFT JOIN projects p ON p.id = c.project_id
     ORDER BY c.name ASC
-  `) as { id: number; name: string; project_name: string | null }[]
+  `) as { id: number; name: string; role: string; project_name: string | null }[]
   return rows
 }
 
@@ -1205,6 +1206,7 @@ export async function undoPaymentCreate(input: { paymentId: number; creatorId: n
 export type CreateCreatorInput = {
   username: string
   projectId?: number | null
+  role?: string
   platforms?: PlatformsMode | string
   goalInstagram?: number
   goalTiktok?: number
@@ -1218,6 +1220,7 @@ export type CreateCreatorInput = {
 export type CreatorSnapshot = {
   name: string
   project_id: number | null
+  role: string
   platforms: string
   goal_instagram: number
   goal_tiktok: number
@@ -1239,6 +1242,7 @@ export async function createCreatorFromAssistant(input: CreateCreatorInput) {
   }
 
   const platforms = normalizePlatforms(input.platforms)
+  const role = normalizeParticipantRole(input.role)
   const goals = applyPlatformsToQuotas(platforms, {
     goalInstagram: Math.max(0, Math.floor(input.goalInstagram ?? 0)),
     goalTiktok: Math.max(0, Math.floor(input.goalTiktok ?? 0)),
@@ -1254,11 +1258,11 @@ export async function createCreatorFromAssistant(input: CreateCreatorInput) {
 
   const rows = (await sql`
     INSERT INTO creators (
-      name, token, project_id, goal_instagram, goal_tiktok, platforms,
+      name, token, project_id, role, goal_instagram, goal_tiktok, platforms,
       last_paid_at, pay_every_days, notes
     )
     VALUES (
-      ${name}, ${token}, ${projectId}, ${goals.goalInstagram}, ${goals.goalTiktok}, ${platforms},
+      ${name}, ${token}, ${projectId}, ${role}, ${goals.goalInstagram}, ${goals.goalTiktok}, ${platforms},
       ${lastPaidAt}, ${payEveryDays}, ${notes}
     )
     RETURNING id
@@ -1291,6 +1295,7 @@ export async function createCreatorFromAssistant(input: CreateCreatorInput) {
     creatorId,
     name,
     projectId,
+    role,
     platforms,
     goal_instagram: goals.goalInstagram,
     goal_tiktok: goals.goalTiktok,
@@ -1311,6 +1316,7 @@ export type UpdateCreatorInput = {
   username: string
   newUsername?: string
   projectId?: number | null
+  role?: string
   platforms?: PlatformsMode | string
   goalInstagram?: number
   goalTiktok?: number
@@ -1335,6 +1341,7 @@ export async function updateCreatorFromAssistant(input: UpdateCreatorInput) {
   const previous: CreatorSnapshot = {
     name: creator.name,
     project_id: creator.project_id,
+    role: creator.role,
     platforms: creator.platforms,
     goal_instagram: creator.goal_instagram,
     goal_tiktok: creator.goal_tiktok,
@@ -1345,6 +1352,8 @@ export async function updateCreatorFromAssistant(input: UpdateCreatorInput) {
 
   const name = (input.newUsername ?? '').trim() || creator.name
   const projectId = input.projectId !== undefined ? input.projectId : creator.project_id
+  const role =
+    input.role != null ? normalizeParticipantRole(input.role) : normalizeParticipantRole(creator.role)
   const platforms =
     input.platforms != null ? normalizePlatforms(input.platforms) : normalizePlatforms(creator.platforms)
   const goalIg =
@@ -1376,7 +1385,7 @@ export async function updateCreatorFromAssistant(input: UpdateCreatorInput) {
 
   await sql`
     UPDATE creators
-    SET name = ${name}, project_id = ${projectId},
+    SET name = ${name}, project_id = ${projectId}, role = ${role},
         goal_instagram = ${goals.goalInstagram}, goal_tiktok = ${goals.goalTiktok},
         platforms = ${platforms},
         last_paid_at = ${lastPaidAt}, pay_every_days = ${payEveryDays},
@@ -1391,6 +1400,7 @@ export async function updateCreatorFromAssistant(input: UpdateCreatorInput) {
     creatorId: creator.id,
     name,
     projectId,
+    role,
     platforms,
     goal_instagram: goals.goalInstagram,
     goal_tiktok: goals.goalTiktok,
@@ -1406,6 +1416,7 @@ export async function undoCreatorUpdate(input: { creatorId: number; previous: Cr
   await sql`
     UPDATE creators
     SET name = ${previous.name}, project_id = ${previous.project_id},
+        role = ${previous.role},
         platforms = ${previous.platforms},
         goal_instagram = ${previous.goal_instagram}, goal_tiktok = ${previous.goal_tiktok},
         pay_every_days = ${previous.pay_every_days}, notes = ${previous.notes},

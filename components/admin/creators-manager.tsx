@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from 'react'
 import { Pencil, Trash2, X } from 'lucide-react'
 import type { Project } from '@/lib/db'
 import type { CreatorTrackingRow } from '@/lib/queries'
+import type { ParticipantRole, RoleFilter } from '@/lib/participant-role'
 import { createCreator, deleteCreator, updateCreator } from '@/app/actions/admin'
 import Link from 'next/link'
 
@@ -29,16 +30,43 @@ function GoalPill({
   )
 }
 
+function roleLabel(role: ParticipantRole | string | undefined) {
+  return role === 'reposter' ? 'Reposter' : 'Creator'
+}
+
 export function CreatorsManager({
   creators,
   projects,
+  roleFilter = 'creator',
 }: {
   creators: CreatorTrackingRow[]
   projects: Project[]
+  roleFilter?: RoleFilter
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [pending, startTransition] = useTransition()
+
+  const defaultRole: ParticipantRole =
+    roleFilter === 'reposter' ? 'reposter' : 'creator'
+  const heading =
+    roleFilter === 'reposter'
+      ? 'Reposters'
+      : roleFilter === 'all'
+        ? 'Creators & reposters'
+        : 'Creators'
+  const addLabel =
+    roleFilter === 'reposter'
+      ? 'Add reposter'
+      : roleFilter === 'all'
+        ? 'Add person'
+        : 'Add creator'
+  const emptyLabel =
+    roleFilter === 'reposter'
+      ? 'No reposters yet.'
+      : roleFilter === 'all'
+        ? 'No people yet.'
+        : 'No creators yet.'
 
   const selectClass =
     'h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -66,12 +94,22 @@ export function CreatorsManager({
     )
   }
 
+  function RoleSelect({ defaultValue }: { defaultValue: ParticipantRole }) {
+    return (
+      <select name="role" defaultValue={defaultValue} className={selectClass}>
+        <option value="creator">Creator</option>
+        <option value="reposter">Reposter</option>
+      </select>
+    )
+  }
+
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <h2 className="text-sm font-semibold">Creators</h2>
+      <h2 className="text-sm font-semibold">{heading}</h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Creators submit at the shared <span className="font-medium">/submit</span> link using their
-        TikTok username. Only usernames added here can submit.
+        They submit at the shared <span className="font-medium">/submit</span> link using their
+        TikTok username. Only usernames added here can submit. Reposters use the same tracking,
+        payments, and analytics as creators.
       </p>
 
       <form
@@ -99,6 +137,7 @@ export function CreatorsManager({
               </option>
             ))}
           </select>
+          <RoleSelect defaultValue={defaultRole} />
         </div>
         <select name="platforms" defaultValue="both" className={selectClass}>
           <option value="both">Instagram + TikTok</option>
@@ -111,13 +150,13 @@ export function CreatorsManager({
           disabled={pending}
           className="h-10 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
         >
-          Add creator
+          {addLabel}
         </button>
       </form>
 
       <ul className="mt-3 flex flex-col divide-y divide-border">
         {creators.length === 0 ? (
-          <li className="py-2 text-sm text-muted-foreground">No creators yet.</li>
+          <li className="py-2 text-sm text-muted-foreground">{emptyLabel}</li>
         ) : (
           creators.map((c) => (
             <li key={c.id} className="py-3">
@@ -146,6 +185,7 @@ export function CreatorsManager({
                         </option>
                       ))}
                     </select>
+                    <RoleSelect defaultValue={c.role === 'reposter' ? 'reposter' : 'creator'} />
                   </div>
                   <select name="platforms" defaultValue={c.platforms || 'both'} className={selectClass}>
                     <option value="both">Instagram + TikTok</option>
@@ -173,12 +213,17 @@ export function CreatorsManager({
                 <div className="flex flex-col gap-2">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <Link
-                        href={`/admin/creators/${c.id}`}
-                        className="font-medium underline-offset-4 hover:underline"
-                      >
-                        {c.name}
-                      </Link>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                          href={`/admin/creators/${c.id}`}
+                          className="font-medium underline-offset-4 hover:underline"
+                        >
+                          {c.name}
+                        </Link>
+                        <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary-foreground">
+                          {roleLabel(c.role)}
+                        </span>
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         {c.project_name ?? 'No project'} · {c.total_videos} total · streak{' '}
                         {c.current_streak}
@@ -190,7 +235,7 @@ export function CreatorsManager({
                         type="button"
                         onClick={() => setEditingId(c.id)}
                         className="rounded-md border border-border p-1.5 hover:bg-accent"
-                        title="Edit creator"
+                        title="Edit"
                       >
                         <Pencil className="size-3.5" />
                       </button>
@@ -201,7 +246,7 @@ export function CreatorsManager({
                             startTransition(() => deleteCreator(c.id))
                         }}
                         className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-destructive"
-                        title="Delete creator"
+                        title="Delete"
                       >
                         <Trash2 className="size-3.5" />
                       </button>

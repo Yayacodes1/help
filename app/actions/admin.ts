@@ -8,6 +8,7 @@ import {
   normalizePlatforms,
   type PlatformsMode,
 } from '@/lib/platforms-mode'
+import { normalizeParticipantRole } from '@/lib/participant-role'
 import {
   createAdminSession,
   destroyAdminSession,
@@ -145,6 +146,7 @@ export async function createCreator(formData: FormData) {
   const projectIdRaw = (formData.get('project_id') ?? '').toString()
   const projectId = projectIdRaw ? Number(projectIdRaw) : null
   if (!name) return
+  const role = normalizeParticipantRole((formData.get('role') ?? '').toString())
   const platforms = parsePlatforms(formData.get('platforms'))
   const goals = applyPlatformsToQuotas(platforms, {
     goalInstagram: parseGoal(formData.get('goal_instagram')),
@@ -158,11 +160,11 @@ export async function createCreator(formData: FormData) {
   const token = randomBytes(12).toString('hex')
   const rows = (await sql`
     INSERT INTO creators (
-      name, token, project_id, goal_instagram, goal_tiktok, platforms,
+      name, token, project_id, role, goal_instagram, goal_tiktok, platforms,
       last_paid_at, pay_every_days, notes
     )
     VALUES (
-      ${name}, ${token}, ${projectId}, ${goals.goalInstagram}, ${goals.goalTiktok}, ${platforms},
+      ${name}, ${token}, ${projectId}, ${role}, ${goals.goalInstagram}, ${goals.goalTiktok}, ${platforms},
       ${lastPaidAt}, ${payEveryDays}, ${notes}
     )
     RETURNING id
@@ -193,6 +195,7 @@ export async function updateCreator(id: number, formData: FormData) {
   const projectIdRaw = (formData.get('project_id') ?? '').toString()
   const projectId = projectIdRaw ? Number(projectIdRaw) : null
   if (!name) return
+  const role = normalizeParticipantRole((formData.get('role') ?? '').toString())
   const platforms = parsePlatforms(formData.get('platforms'))
   const goals = applyPlatformsToQuotas(platforms, {
     goalInstagram: parseGoal(formData.get('goal_instagram')),
@@ -205,7 +208,7 @@ export async function updateCreator(id: number, formData: FormData) {
   const notes = parseNotes(formData.get('notes'))
   await sql`
     UPDATE creators
-    SET name = ${name}, project_id = ${projectId},
+    SET name = ${name}, project_id = ${projectId}, role = ${role},
         goal_instagram = ${goals.goalInstagram}, goal_tiktok = ${goals.goalTiktok},
         platforms = ${platforms},
         last_paid_at = ${lastPaidAt}, pay_every_days = ${payEveryDays},

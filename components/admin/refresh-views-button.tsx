@@ -43,9 +43,12 @@ function readFilters(params: URLSearchParams, defaults: { from: string; to: stri
   const to = params.get('to') || defaults.to
   const creatorRaw = params.get('creator')
   const projectRaw = params.get('project')
+  const roleRaw = params.get('role')
   const platformRaw = params.get('platform')
   const creatorId = creatorRaw ? Number(creatorRaw) : undefined
   const projectId = projectRaw ? Number(projectRaw) : undefined
+  const role =
+    roleRaw === 'creator' || roleRaw === 'reposter' ? roleRaw : undefined
   const platform =
     platformRaw === 'instagram' || platformRaw === 'tiktok'
       ? (platformRaw as Platform)
@@ -56,6 +59,7 @@ function readFilters(params: URLSearchParams, defaults: { from: string; to: stri
     to,
     creatorId: Number.isFinite(creatorId) ? creatorId : undefined,
     projectId: Number.isFinite(projectId) ? projectId : undefined,
+    role,
     platform,
   }
 }
@@ -76,6 +80,7 @@ async function fetchChunk(
       to: filters.to,
       creatorId: filters.creatorId,
       projectId: filters.projectId,
+      role: filters.role,
       platform: filters.platform,
     }),
   })
