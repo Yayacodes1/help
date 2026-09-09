@@ -23,7 +23,7 @@ import {
   getViewsLeaderboard,
   getViewsSummary,
 } from '@/lib/analytics'
-import { monthRange, addDays } from '@/lib/campaign'
+import { monthRange } from '@/lib/campaign'
 import {
   ensureMarketingTables,
   getMarketingBalances,
@@ -127,8 +127,8 @@ export default async function AdminPage({
 
   const tvFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.tvFrom ?? '')
     ? sp.tvFrom!
-    : addDays(today, -6)
-  const tvTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.tvTo ?? '') ? sp.tvTo! : today
+    : monthStart
+  const tvTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.tvTo ?? '') ? sp.tvTo! : monthEnd
   const tvPlatform =
     sp.tvPlatform === 'instagram' || sp.tvPlatform === 'tiktok' ? sp.tvPlatform : null
 

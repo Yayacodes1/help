@@ -20,6 +20,7 @@ export type DateRangePresetId =
   | 'today'
   | 'lastTwoDays'
   | 'lastWeek'
+  | 'thisMonth'
   | 'lastMonth'
   | 'lastTwoMonths'
 
@@ -32,11 +33,13 @@ export type DateRangePreset = {
 
 /** Rolling quick ranges ending on `today` (inclusive). */
 export function dateRangePresets(today: string): DateRangePreset[] {
+  const month = monthRange(today)
   return [
     { id: 'today', label: 'Today', from: today, to: today },
     { id: 'lastTwoDays', label: 'Last two days', from: addDays(today, -1), to: today },
     { id: 'lastWeek', label: 'Last week', from: addDays(today, -6), to: today },
-    { id: 'lastMonth', label: 'Last month', from: addDays(today, -29), to: today },
+    { id: 'thisMonth', label: 'This month', from: month.start, to: month.end },
+    { id: 'lastMonth', label: 'Last 30 days', from: addDays(today, -29), to: today },
     {
       id: 'lastTwoMonths',
       label: 'Last two months',
