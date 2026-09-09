@@ -220,6 +220,15 @@ export async function updateCreator(id: number, formData: FormData) {
   revalidatePath('/submit')
 }
 
+export async function setCreatorRole(id: number, roleRaw: string) {
+  await requireAdmin()
+  const role = normalizeParticipantRole(roleRaw)
+  await sql`UPDATE creators SET role = ${role} WHERE id = ${id}`
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${id}`)
+  revalidatePath('/submit')
+}
+
 export async function markCreatorPaid(id: number, formData: FormData) {
   await requireAdmin()
   const paidOn = parseOptionalDate(formData.get('paid_on'))

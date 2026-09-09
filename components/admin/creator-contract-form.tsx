@@ -31,17 +31,30 @@ export function CreatorContractForm({
           Username
           <input name="name" required defaultValue={creator.name} className={inputClass} />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Project
-          <select name="project_id" defaultValue={creator.project_id ?? ''} className={inputClass}>
-            <option value="">No project</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Project
+            <select name="project_id" defaultValue={creator.project_id ?? ''} className={inputClass}>
+              <option value="">No project</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Role
+            <select
+              name="role"
+              defaultValue={creator.role === 'reposter' ? 'reposter' : 'creator'}
+              className={inputClass}
+            >
+              <option value="creator">Creator</option>
+              <option value="reposter">Reposter</option>
+            </select>
+          </label>
+        </div>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Platforms
           <select

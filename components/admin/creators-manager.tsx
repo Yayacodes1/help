@@ -6,6 +6,7 @@ import type { Project } from '@/lib/db'
 import type { CreatorTrackingRow } from '@/lib/queries'
 import type { ParticipantRole, RoleFilter } from '@/lib/participant-role'
 import { createCreator, deleteCreator, updateCreator } from '@/app/actions/admin'
+import { RoleQuickSelect } from '@/components/admin/role-quick-select'
 import Link from 'next/link'
 
 function GoalPill({
@@ -28,10 +29,6 @@ function GoalPill({
       {label} {today}/{goal}
     </span>
   )
-}
-
-function roleLabel(role: ParticipantRole | string | undefined) {
-  return role === 'reposter' ? 'Reposter' : 'Creator'
 }
 
 export function CreatorsManager({
@@ -220,9 +217,7 @@ export function CreatorsManager({
                         >
                           {c.name}
                         </Link>
-                        <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary-foreground">
-                          {roleLabel(c.role)}
-                        </span>
+                        <RoleQuickSelect creatorId={c.id} role={c.role} />
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {c.project_name ?? 'No project'} · {c.total_videos} total · streak{' '}

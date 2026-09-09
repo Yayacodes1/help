@@ -219,6 +219,60 @@ export async function getViewsLeaderboard(opts: {
   `) as CreatorViewsRow[]
 }
 
+export type TopVideoRow = {
+  id: number
+  creator_id: number
+  creator_name: string
+  project_name: string | null
+  platform: string
+  url: string
+  video_date: string
+  views: number
+}
+
+/** Individual submissions ranked by views. */
+export async function getTopVideos(opts: {
+  from?: string | null
+  to?: string | null
+  projectId?: number | null
+  role?: string | null
+  platform?: string | null
+  limit?: number
+} = {}): Promise<TopVideoRow[]> {
+  const today = await getServerToday()
+  const { from, to } = normalizeRange(opts.from, opts.to, today)
+  const projectId = opts.projectId ?? null
+  const role = opts.role ?? null
+  const platform = opts.platform === 'instagram' || opts.platform === 'tiktok' ? opts.platform : null
+  const limit = Math.min(200, Math.max(1, opts.limit ?? 25))
+
+  return (await sql`
+    SELECT
+      s.id,
+      s.creator_id,
+      c.name AS creator_name,
+      p.name AS project_name,
+      s.platform,
+      s.url,
+      s.video_date::text AS video_date,
+      s.views
+    FROM submissions s
+    JOIN creators c ON c.id = s.creator_id
+    LEFT JOIN projects p ON p.id = s.project_id
+    WHERE s.video_date >= ${from}::date
+      AND s.video_date <= ${to}::date
+      AND (${role}::text IS NULL OR c.role = ${role})
+      AND (${platform}::text IS NULL OR s.platform = ${platform})
+      AND (
+        ${projectId}::int IS NULL
+        OR s.project_id = ${projectId}
+        OR c.project_id = ${projectId}
+      )
+    ORDER BY s.views DESC, s.video_date DESC, s.id DESC
+    LIMIT ${limit}
+  `) as TopVideoRow[]
+}
+
 export function defaultAnalyticsRange(today: string): { from: string; to: string } {
   const { start, end } = monthRange(today)
   return { from: start, to: end }

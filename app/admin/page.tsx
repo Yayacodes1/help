@@ -19,10 +19,18 @@ import {
   defaultAnalyticsRange,
   getDailyAnalytics,
   getDailyViewsByCreator,
+  getTopVideos,
   getViewsLeaderboard,
   getViewsSummary,
 } from '@/lib/analytics'
-import { monthRange } from '@/lib/campaign'
+import { monthRange, addDays } from '@/lib/campaign'
+import {
+  ensureMarketingTables,
+  getMarketingBalances,
+  listMarketingExpenses,
+  listMarketingRequests,
+  listMarketingTransfers,
+} from '@/lib/marketing'
 import { StatCard } from '@/components/stat-card'
 import { FiltersBar } from '@/components/admin/filters-bar'
 import { ProjectsManager } from '@/components/admin/projects-manager'
@@ -40,6 +48,8 @@ import { PaymentDuePanel } from '@/components/admin/payment-due-panel'
 import { AssistantChat } from '@/components/admin/assistant-chat'
 import { AssistantDrawer } from '@/components/admin/assistant-drawer'
 import { AnalyticsPanel } from '@/components/admin/analytics-panel'
+import { TopVideosPanel } from '@/components/admin/top-videos-panel'
+import { MarketingBudgetBoard } from '@/components/marketing/marketing-budget-board'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { LanguageToggle } from '@/components/language-toggle'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
@@ -69,10 +79,14 @@ export default async function AdminPage({
     aFrom?: string
     aTo?: string
     aCreator?: string
+    tvFrom?: string
+    tvTo?: string
+    tvPlatform?: string
   }>
 }) {
   if (!(await isAdmin())) redirect('/login')
   await ensureCreatorTrackingColumns()
+  await ensureMarketingTables()
 
   const locale = await getLocale()
   const t = createT(locale)
@@ -111,6 +125,13 @@ export default async function AdminPage({
   const aTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.aTo ?? '') ? sp.aTo! : analyticsDefault.to
   const aCreatorId = sp.aCreator ? Number(sp.aCreator) : null
 
+  const tvFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.tvFrom ?? '')
+    ? sp.tvFrom!
+    : addDays(today, -6)
+  const tvTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.tvTo ?? '') ? sp.tvTo! : today
+  const tvPlatform =
+    sp.tvPlatform === 'instagram' || sp.tvPlatform === 'tiktok' ? sp.tvPlatform : null
+
   const [
     submissions,
     projects,
@@ -124,6 +145,11 @@ export default async function AdminPage({
     byCreatorDaily,
     leaderboard,
     viewsSummary,
+    topVideos,
+    marketingBalances,
+    marketingTransfers,
+    marketingExpenses,
+    marketingRequests,
   ] = await Promise.all([
     getAdminSubmissions(filters),
     getAllProjects(),
@@ -156,9 +182,23 @@ export default async function AdminPage({
       limit: 1000,
     }),
     getViewsSummary({ from: aFrom, to: aTo, projectId: projectId ?? null, role: roleSql }),
+    getTopVideos({
+      from: tvFrom,
+      to: tvTo,
+      projectId: projectId ?? null,
+      role: roleSql,
+      platform: tvPlatform,
+      limit: 50,
+    }),
+    getMarketingBalances(),
+    listMarketingTransfers(),
+    listMarketingExpenses(),
+    listMarketingRequests(),
   ])
   const creators = await attachTracking(creatorsBase, today)
   const misses = getMissesFromProgress(creators)
+  const openMarketingRequests = marketingRequests.filter((r) => r.status === 'open').length
+  const marketingLeft = marketingBalances.reduce((sum, b) => sum + b.left, 0)
 
   const totalViews = submissions.reduce((sum, s) => sum + (s.views ?? 0), 0)
   const totalVideos = submissions.length
@@ -197,15 +237,25 @@ export default async function AdminPage({
 
   const defaultPanel =
     sp.panel &&
-    ['analytics', 'progress', 'attention', 'videos', 'paydue', 'payments', 'manage'].includes(
-      sp.panel,
-    )
+    [
+      'analytics',
+      'topvideos',
+      'progress',
+      'attention',
+      'videos',
+      'paydue',
+      'payments',
+      'marketing',
+      'manage',
+    ].includes(sp.panel)
       ? sp.panel
-      : payDueCount > 0
-        ? 'paydue'
-        : misses.length > 0
-          ? 'attention'
-          : 'analytics'
+      : openMarketingRequests > 0
+        ? 'marketing'
+        : payDueCount > 0
+          ? 'paydue'
+          : misses.length > 0
+            ? 'attention'
+            : 'analytics'
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 py-8">
@@ -286,6 +336,22 @@ export default async function AdminPage({
                   chartLinear: t('chartLinear'),
                 }}
               />
+            ),
+          },
+          {
+            id: 'topvideos',
+            title: 'Top videos',
+            summary: topVideos[0] ? formatNumber(topVideos[0].views) : '0',
+            hint: `${topVideos.length} ranked · ${tvFrom.slice(5)}→${tvTo.slice(5)}`,
+            children: (
+              <Suspense fallback={<p className="text-sm text-muted-foreground">…</p>}>
+                <TopVideosPanel
+                  videos={topVideos}
+                  today={today}
+                  defaultFrom={tvFrom}
+                  defaultTo={tvTo}
+                />
+              </Suspense>
             ),
           },
           {
@@ -390,6 +456,27 @@ export default async function AdminPage({
                   defaultTo={payTo}
                 />
               </Suspense>
+            ),
+          },
+          {
+            id: 'marketing',
+            title: 'Marketing budget',
+            summary:
+              openMarketingRequests > 0
+                ? `${openMarketingRequests} requests`
+                : formatMoney(marketingLeft),
+            hint:
+              openMarketingRequests > 0
+                ? 'Open money requests'
+                : 'Sent − spent left',
+            children: (
+              <MarketingBudgetBoard
+                today={today}
+                balances={marketingBalances}
+                transfers={marketingTransfers}
+                expenses={marketingExpenses}
+                requests={marketingRequests}
+              />
             ),
           },
           {
