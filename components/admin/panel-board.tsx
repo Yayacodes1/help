@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ChevronDown } from 'lucide-react'
 
 export type PanelItem = {
@@ -22,7 +23,27 @@ export function PanelBoard({
   columns?: 2 | 3 | 4
   closeLabel?: string
 }) {
-  const [open, setOpen] = useState<string | null>(defaultOpen)
+  const router = useRouter()
+  const params = useSearchParams()
+  const panelIds = new Set(panels.map((p) => p.id))
+  const urlPanel = params.get('panel')
+  const fromUrl =
+    urlPanel && panelIds.has(urlPanel) ? urlPanel : null
+
+  const [open, setOpen] = useState<string | null>(fromUrl ?? defaultOpen)
+
+  useEffect(() => {
+    if (fromUrl) setOpen(fromUrl)
+  }, [fromUrl])
+
+  function selectPanel(id: string | null) {
+    setOpen(id)
+    const next = new URLSearchParams(params.toString())
+    if (id) next.set('panel', id)
+    else next.delete('panel')
+    router.replace(`/admin?${next.toString()}`, { scroll: false })
+  }
+
   const active = panels.find((p) => p.id === open) ?? null
 
   const gridClass =
@@ -41,7 +62,7 @@ export function PanelBoard({
             <button
               key={panel.id}
               type="button"
-              onClick={() => setOpen(isOpen ? null : panel.id)}
+              onClick={() => selectPanel(isOpen ? null : panel.id)}
               aria-expanded={isOpen}
               className={`rounded-xl border p-4 text-left transition-colors ${
                 isOpen
@@ -89,7 +110,7 @@ export function PanelBoard({
             <h2 className="text-sm font-semibold tracking-tight">{active.title}</h2>
             <button
               type="button"
-              onClick={() => setOpen(null)}
+              onClick={() => selectPanel(null)}
               className="text-xs font-medium text-muted-foreground underline-offset-4 hover:underline"
             >
               {closeLabel}

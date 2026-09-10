@@ -50,9 +50,12 @@ import { AssistantDrawer } from '@/components/admin/assistant-drawer'
 import { AnalyticsPanel } from '@/components/admin/analytics-panel'
 import { TopVideosPanel } from '@/components/admin/top-videos-panel'
 import { MarketingBudgetBoard } from '@/components/marketing/marketing-budget-board'
+import { OutflowPanel } from '@/components/admin/outflow-panel'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { LanguageToggle } from '@/components/language-toggle'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { getOutflowSnapshot, type OutflowView } from '@/lib/outflow'
+import { usdToSar } from '@/lib/fx'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 import type { Platform } from '@/lib/db'
@@ -82,6 +85,9 @@ export default async function AdminPage({
     tvFrom?: string
     tvTo?: string
     tvPlatform?: string
+    ofFrom?: string
+    ofTo?: string
+    ofView?: string
   }>
 }) {
   if (!(await isAdmin())) redirect('/login')
@@ -132,6 +138,13 @@ export default async function AdminPage({
   const tvPlatform =
     sp.tvPlatform === 'instagram' || sp.tvPlatform === 'tiktok' ? sp.tvPlatform : null
 
+  const ofFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.ofFrom ?? '') ? sp.ofFrom! : monthStart
+  const ofTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.ofTo ?? '') ? sp.ofTo! : monthEnd
+  const ofView: OutflowView =
+    sp.ofView === 'creators' || sp.ofView === 'reposters' || sp.ofView === 'total'
+      ? sp.ofView
+      : 'total'
+
   const [
     submissions,
     projects,
@@ -150,6 +163,7 @@ export default async function AdminPage({
     marketingTransfers,
     marketingExpenses,
     marketingRequests,
+    outflow,
   ] = await Promise.all([
     getAdminSubmissions(filters),
     getAllProjects(),
@@ -194,6 +208,7 @@ export default async function AdminPage({
     listMarketingTransfers(),
     listMarketingExpenses(),
     listMarketingRequests(),
+    getOutflowSnapshot({ from: ofFrom, to: ofTo, view: ofView, countMode: 'base' }),
   ])
   const creators = await attachTracking(creatorsBase, today)
   const misses = getMissesFromProgress(creators)
@@ -246,6 +261,7 @@ export default async function AdminPage({
       'paydue',
       'payments',
       'marketing',
+      'outflow',
       'manage',
     ].includes(sp.panel)
       ? sp.panel
@@ -278,7 +294,7 @@ export default async function AdminPage({
         </div>
       </header>
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <StatCard
           label={isToday ? t('postedToday') : t('postedThatDay')}
           value={`${postedTodayTotal} / ${goalTotal}`}
@@ -288,11 +304,11 @@ export default async function AdminPage({
           value={`${creatorsPostedToday} / ${creators.length}`}
         />
         <StatCard label={t('totalViews')} value={formatNumber(totalViews)} />
-        <StatCard label={t('paidTotal')} value={formatMoney(paidAllTime)} />
       </section>
 
       <p className="mt-6 mb-3 text-xs text-muted-foreground">{t('tapSection')}</p>
 
+      <Suspense fallback={<p className="text-sm text-muted-foreground">…</p>}>
       <PanelBoard
         defaultOpen={defaultPanel}
         columns={3}
@@ -480,6 +496,22 @@ export default async function AdminPage({
             ),
           },
           {
+            id: 'outflow',
+            title: 'Marketing by month',
+            summary: formatMoney(usdToSar(outflow.plannedTotal), 'SAR'),
+            hint: `Biweekly ${formatMoney(outflow.plannedBiweekly)} · monthly ${formatMoney(outflow.plannedTotal)}`,
+            children: (
+              <Suspense fallback={<p className="text-sm text-muted-foreground">…</p>}>
+                <OutflowPanel
+                  snapshot={outflow}
+                  today={today}
+                  defaultFrom={ofFrom}
+                  defaultTo={ofTo}
+                />
+              </Suspense>
+            ),
+          },
+          {
             id: 'manage',
             title: t('manage'),
             summary: `${creators.length} ${peopleNoun}`,
@@ -491,6 +523,7 @@ export default async function AdminPage({
                   creators={creators}
                   projects={projects}
                   roleFilter={roleFilter}
+                  today={today}
                 />
                 <ProjectsManager key="projects-manager" projects={projects} />
               </div>
@@ -498,6 +531,7 @@ export default async function AdminPage({
           },
         ]}
       />
+      </Suspense>
 
       <div className="mt-6">
         <AssistantDrawer

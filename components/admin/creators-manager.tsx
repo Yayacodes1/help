@@ -7,6 +7,7 @@ import type { CreatorTrackingRow } from '@/lib/queries'
 import type { ParticipantRole, RoleFilter } from '@/lib/participant-role'
 import { createCreator, deleteCreator, updateCreator } from '@/app/actions/admin'
 import { RoleQuickSelect } from '@/components/admin/role-quick-select'
+import { BulkReposterPay } from '@/components/admin/bulk-reposter-pay'
 import Link from 'next/link'
 
 function GoalPill({
@@ -35,10 +36,12 @@ export function CreatorsManager({
   creators,
   projects,
   roleFilter = 'creator',
+  today,
 }: {
   creators: CreatorTrackingRow[]
   projects: Project[]
   roleFilter?: RoleFilter
+  today?: string
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -108,6 +111,10 @@ export function CreatorsManager({
         TikTok username. Only usernames added here can submit. Reposters use the same tracking,
         payments, and analytics as creators.
       </p>
+
+      {roleFilter === 'reposter' && today ? (
+        <BulkReposterPay today={today} reposterCount={creators.length} />
+      ) : null}
 
       <form
         ref={formRef}
