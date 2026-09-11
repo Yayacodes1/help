@@ -33,9 +33,29 @@ export function CreatorContractForm({
         </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Project
+            TikTok username
+            <input
+              name="tiktok_username"
+              defaultValue={creator.tiktok_username ?? ''}
+              placeholder="@tiktok"
+              className={inputClass}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Instagram username
+            <input
+              name="instagram_username"
+              defaultValue={creator.instagram_username ?? ''}
+              placeholder="@instagram"
+              className={inputClass}
+            />
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Project (default)
             <select name="project_id" defaultValue={creator.project_id ?? ''} className={inputClass}>
-              <option value="">No project</option>
+              <option value="">No default — pick on submit</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}

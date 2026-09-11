@@ -13,7 +13,7 @@ export function TodayVideos({
   submissions,
 }: {
   username: string
-  submissions: Submission[]
+  submissions: Array<Submission & { project_name?: string | null }>
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -38,6 +38,11 @@ export function TodayVideos({
             <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
               {meta.ar}
             </span>
+            {s.project_name ? (
+              <span className="shrink-0 rounded-full border border-border px-2 py-1 text-[11px] text-muted-foreground">
+                {s.project_name}
+              </span>
+            ) : null}
             <div className="min-w-0 flex-1">
               <CopyLink url={s.url} copyLabel="نسخ" copiedLabel="تم" />
             </div>

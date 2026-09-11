@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ChevronDown } from 'lucide-react'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
+import { PayCadences } from '@/components/admin/pay-cadence'
 import { formatDate, formatMoney } from '@/lib/format'
-import { SAR_PER_USD, usdToSar } from '@/lib/fx'
+import { usdToSar } from '@/lib/fx'
 import {
   calendarMonthBounds,
   lastCalendarMonthsRange,
@@ -22,15 +23,35 @@ import type {
 
 type AmountMode = 'planned' | 'paid'
 
-function DualMoney({ usd, emphasize }: { usd: number; emphasize?: boolean }) {
+function DualMoney({
+  usd,
+  emphasize,
+}: {
+  usd: number
+  emphasize?: boolean
+}) {
   const sar = usdToSar(usd)
   return (
     <span className={emphasize ? 'font-semibold' : undefined}>
       <span className="tabular-nums">{formatMoney(sar, 'SAR')}</span>
-      <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">
-        {formatMoney(usd)}
-      </span>
+      <span className="mx-1 text-muted-foreground">/</span>
+      <span className="tabular-nums">{formatMoney(usd, 'USD')}</span>
     </span>
+  )
+}
+
+function MoneyCell({ usd, emphasize }: { usd: number; emphasize?: boolean }) {
+  const sar = usdToSar(usd)
+  const cls = (emphasize ? 'font-semibold ' : '') + 'tabular-nums'
+  return (
+    <>
+      <td className="px-3 py-2 text-right">
+        <span className={cls}>{formatMoney(sar, 'SAR')}</span>
+      </td>
+      <td className="px-3 py-2 text-right">
+        <span className={cls}>{formatMoney(usd, 'USD')}</span>
+      </td>
+    </>
   )
 }
 
@@ -106,13 +127,16 @@ function MonthByMonthLine({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] text-left text-sm">
+      <table className="w-full min-w-[760px] text-left text-sm">
         <thead className="border-b border-border bg-secondary/30 text-[11px] uppercase tracking-wide text-muted-foreground">
           <tr>
             <th className="px-3 py-2 font-medium">Month</th>
-            <th className="px-3 py-2 font-medium text-right">Creators</th>
-            <th className="px-3 py-2 font-medium text-right">Reposters</th>
-            <th className="px-3 py-2 font-medium text-right">Total</th>
+            <th className="px-3 py-2 font-medium text-right">Creators SAR</th>
+            <th className="px-3 py-2 font-medium text-right">Creators USD</th>
+            <th className="px-3 py-2 font-medium text-right">Reposters SAR</th>
+            <th className="px-3 py-2 font-medium text-right">Reposters USD</th>
+            <th className="px-3 py-2 font-medium text-right">Total SAR</th>
+            <th className="px-3 py-2 font-medium text-right">Total USD</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -123,15 +147,9 @@ function MonthByMonthLine({
             return (
               <tr key={m.key}>
                 <td className="px-3 py-2 font-medium">{m.label}</td>
-                <td className="px-3 py-2 text-right">
-                  <DualMoney usd={creators} />
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <DualMoney usd={reposters} />
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <DualMoney usd={total} emphasize />
-                </td>
+                <MoneyCell usd={creators} />
+                <MoneyCell usd={reposters} />
+                <MoneyCell usd={total} emphasize />
               </tr>
             )
           })}
@@ -139,15 +157,9 @@ function MonthByMonthLine({
             <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-sky-950">
               All months
             </td>
-            <td className="px-3 py-2.5 text-right">
-              <DualMoney usd={creatorsSum} emphasize />
-            </td>
-            <td className="px-3 py-2.5 text-right">
-              <DualMoney usd={repostersSum} emphasize />
-            </td>
-            <td className="px-3 py-2.5 text-right">
-              <DualMoney usd={totalSum} emphasize />
-            </td>
+            <MoneyCell usd={creatorsSum} emphasize />
+            <MoneyCell usd={repostersSum} emphasize />
+            <MoneyCell usd={totalSum} emphasize />
           </tr>
         </tbody>
       </table>
@@ -160,48 +172,99 @@ function MonthByMonthLine({
   )
 }
 
-function PeopleTotals({
+function sumField(people: OutflowPersonTotal[], key: 'biweekly' | 'monthly'): number {
+  return Math.round(people.reduce((s, p) => s + p[key], 0) * 100) / 100
+}
+
+function PersonPayList({
+  title,
   people,
-  mode,
 }: {
+  title: string
   people: OutflowPersonTotal[]
-  mode: AmountMode
 }) {
-  if (people.length === 0) {
+  const biweekly = sumField(people, 'biweekly')
+  const monthly = sumField(people, 'monthly')
+  return (
+    <div>
+      <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-sky-950">
+        {title}
+        <span className="ml-1.5 font-normal text-muted-foreground">
+          {people.length} {people.length === 1 ? 'person' : 'people'}
+        </span>
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left text-sm">
+          <thead className="border-y border-border bg-secondary/30 text-[11px] uppercase tracking-wide text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 font-medium">Person</th>
+              <th className="px-3 py-2 font-medium text-right">Biweekly SAR</th>
+              <th className="px-3 py-2 font-medium text-right">Biweekly USD</th>
+              <th className="px-3 py-2 font-medium text-right">Monthly SAR</th>
+              <th className="px-3 py-2 font-medium text-right">Monthly USD</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {people.map((p) => (
+              <tr key={p.creator_id}>
+                <td className="px-3 py-2 font-medium">{p.creator_name}</td>
+                <MoneyCell usd={p.biweekly} />
+                <MoneyCell usd={p.monthly} emphasize />
+              </tr>
+            ))}
+            <tr className="bg-sky-50/80">
+              <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-sky-950">
+                {title} total
+              </td>
+              <MoneyCell usd={biweekly} emphasize />
+              <MoneyCell usd={monthly} emphasize />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function PeopleTotals({ people }: { people: OutflowPersonTotal[] }) {
+  const creators = people.filter((p) => p.role !== 'reposter')
+  const reposters = people.filter((p) => p.role === 'reposter' && p.biweekly > 0)
+  if (creators.length === 0 && reposters.length === 0) {
     return <p className="px-3 py-6 text-sm text-muted-foreground">No people in this range.</p>
   }
+  const showBoth = creators.length > 0 && reposters.length > 0
+  const allBiweekly = sumField([...creators, ...reposters], 'biweekly')
+  const allMonthly = sumField([...creators, ...reposters], 'monthly')
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] text-left text-sm">
-        <thead className="border-b border-border bg-secondary/30 text-[11px] uppercase tracking-wide text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 font-medium">Person</th>
-            <th className="px-3 py-2 font-medium text-right">Contract base</th>
-            <th className="px-3 py-2 font-medium text-right">
-              {mode === 'planned' ? 'Planned in range' : 'Paid in range'}
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {people.map((p) => (
-            <tr key={p.creator_id}>
-              <td className="px-3 py-2">
-                <span className="font-medium">{p.creator_name}</span>
-                <span className="ml-1 text-[11px] capitalize text-muted-foreground">{p.role}</span>
-              </td>
-              <td className="px-3 py-2 text-right">
-                <DualMoney usd={p.baseContract} />
-              </td>
-              <td className="px-3 py-2 text-right">
-                <DualMoney usd={mode === 'planned' ? p.planned : p.paid} emphasize />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="px-3 py-2 text-[11px] text-muted-foreground">
-        Contract base is without commission. Switch to Paid to see what you actually recorded that
-        month (commission included if paid).
+    <div className="flex flex-col gap-4 pb-3">
+      {creators.length > 0 ? <PersonPayList title="Creators" people={creators} /> : null}
+      {reposters.length > 0 ? <PersonPayList title="Reposters" people={reposters} /> : null}
+      {showBoth ? (
+        <div className="mx-3 overflow-hidden rounded-lg bg-slate-900 px-3 py-3 text-sm text-white">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
+            Creators + reposters
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[11px] text-white/70">Biweekly total</p>
+              <p className="font-semibold tabular-nums">{formatMoney(usdToSar(allBiweekly), 'SAR')}</p>
+              <p className="text-sm font-medium tabular-nums text-white/90">
+                {formatMoney(allBiweekly, 'USD')}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] text-white/70">Monthly total</p>
+              <p className="font-semibold tabular-nums">{formatMoney(usdToSar(allMonthly), 'SAR')}</p>
+              <p className="text-sm font-medium tabular-nums text-white/90">
+                {formatMoney(allMonthly, 'USD')}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <p className="px-3 text-[11px] text-muted-foreground">
+        Monthly is always double the biweekly amount for each person. Base only · no commission.
       </p>
     </div>
   )
@@ -234,7 +297,8 @@ function ScheduleTable({
             <th className="px-3 py-2 font-medium">Term</th>
             <th className="px-3 py-2 font-medium">Names</th>
             <th className="px-3 py-2 font-medium text-right">#</th>
-            <th className="px-3 py-2 font-medium text-right">Amount</th>
+            <th className="px-3 py-2 font-medium text-right">SAR</th>
+            <th className="px-3 py-2 font-medium text-right">USD</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -254,9 +318,7 @@ function ScheduleTable({
             >
               Schedule total
             </td>
-            <td className="px-3 py-2.5 text-right">
-              <DualMoney usd={grand} emphasize />
-            </td>
+            <MoneyCell usd={grand} emphasize />
           </tr>
         </tbody>
       </table>
@@ -283,18 +345,14 @@ function FragmentMonth({
           </td>
           <td className="px-3 py-2 text-muted-foreground">{row.names.join(', ')}</td>
           <td className="px-3 py-2 text-right tabular-nums">{row.count}</td>
-          <td className="px-3 py-2 text-right">
-            <DualMoney usd={row.total} />
-          </td>
+          <MoneyCell usd={row.total} />
         </tr>
       ))}
       <tr className="bg-secondary/20">
         <td colSpan={4} className="px-3 py-2 text-xs font-medium text-sky-800">
           {label}
         </td>
-        <td className="px-3 py-2 text-right">
-          <DualMoney usd={monthTotal} emphasize />
-        </td>
+        <MoneyCell usd={monthTotal} emphasize />
       </tr>
     </>
   )
@@ -332,35 +390,37 @@ function MarketingMonths({ months }: { months: MarketingMonthBucket[] }) {
                   <tr>
                     <th className="py-1 pr-2 font-medium">Person</th>
                     <th className="py-1 pr-2 font-medium">In-month payments</th>
-                    <th className="py-1 font-medium text-right">Amount</th>
+                    <th className="py-1 pr-2 font-medium text-right">SAR</th>
+                    <th className="py-1 font-medium text-right">USD</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
-                  {m.people
-                    .filter((p) => p.planned > 0 || p.paid > 0)
-                    .map((p) => (
-                      <tr key={p.creator_id}>
-                        <td className="py-1.5 pr-2">
-                          <span className="font-medium">{p.creator_name}</span>
-                          <span className="ml-1 text-[11px] capitalize text-muted-foreground">
-                            {p.role}
-                          </span>
-                        </td>
-                        <td className="py-1.5 pr-2 text-xs text-muted-foreground">
-                          {p.installments.length === 0
-                            ? '—'
-                            : p.installments
-                                .map(
-                                  (i) =>
-                                    `${formatDate(i.dueOn)} ${formatMoney(usdToSar(i.amount), 'SAR')}`,
-                                )
-                                .join(' · ')}
-                        </td>
-                        <td className="py-1.5 text-right">
-                          <DualMoney usd={p.planned || p.paid} emphasize />
-                        </td>
-                      </tr>
-                    ))}
+                  {m.people.map((p) => (
+                    <tr key={p.creator_id}>
+                      <td className="py-1.5 pr-2">
+                        <span className="font-medium">{p.creator_name}</span>
+                        <span className="ml-1 text-[11px] capitalize text-muted-foreground">
+                          {p.role}
+                        </span>
+                      </td>
+                      <td className="py-1.5 pr-2 text-xs text-muted-foreground">
+                        {p.installments.length === 0
+                          ? '—'
+                          : p.installments
+                              .map(
+                                (i) =>
+                                  `${formatDate(i.dueOn)} ${formatMoney(usdToSar(i.amount), 'SAR')} / ${formatMoney(i.amount, 'USD')}`,
+                              )
+                              .join(' · ')}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {formatMoney(usdToSar(p.planned || p.paid), 'SAR')}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                        {formatMoney(p.planned || p.paid, 'USD')}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -425,21 +485,12 @@ export function OutflowPanel({
   }
 
   const monthInputValue = from.slice(0, 7)
-  const monthlyShown =
-    amountMode === 'planned'
-      ? snapshot.plannedTotal
-      : snapshot.grandTotal
   const biweeklyShown = snapshot.plannedBiweekly
+  const monthlyShown = snapshot.plannedMonthly
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="text-sm font-semibold tracking-tight">How much are you paying?</p>
-          <p className="text-xs text-muted-foreground">
-            Month-to-month marketing · USD @ {SAR_PER_USD} SAR
-          </p>
-        </div>
         <div className="flex flex-wrap gap-2">
           <div className="inline-flex rounded-lg border border-border bg-background p-0.5">
             {VIEWS.map((v) => (
@@ -478,22 +529,8 @@ export function OutflowPanel({
         </div>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2">
-        <SummaryCard
-          label="Paying biweekly"
-          usd={biweeklyShown}
-          hint="Typical one 2-week wave (base, no commission)"
-        />
-        <SummaryCard
-          label="Paying monthly"
-          usd={monthlyShown}
-          hint={
-            amountMode === 'planned'
-              ? 'Month-to-month for this range · base, no commission'
-              : 'Recorded payments in this range'
-          }
-          emphasize
-        />
+      <div className="rounded-xl border border-border px-4 py-4">
+        <PayCadences monthlyUsd={monthlyShown} biweeklyUsd={biweeklyShown} />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -574,7 +611,7 @@ export function OutflowPanel({
         defaultOpen
       >
         {snapshot.peopleTotals.length > 0 ? (
-          <PeopleTotals people={snapshot.peopleTotals} mode={amountMode} />
+          <PeopleTotals people={snapshot.peopleTotals} />
         ) : null}
       </CollapsibleSection>
 
@@ -597,36 +634,6 @@ export function OutflowPanel({
           <ScheduleTable rows={snapshot.schedule} months={snapshot.months} />
         ) : null}
       </CollapsibleSection>
-    </div>
-  )
-}
-
-function SummaryCard({
-  label,
-  usd,
-  hint,
-  emphasize,
-}: {
-  label: string
-  usd: number
-  hint?: string
-  emphasize?: boolean
-}) {
-  return (
-    <div
-      className={
-        (emphasize ? 'bg-sky-50 ring-sky-200 ' : 'bg-card ring-border ') +
-        'rounded-xl px-4 py-4 ring-1'
-      }
-    >
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
-        {formatMoney(usdToSar(usd), 'SAR')}
-      </p>
-      <p className="text-sm text-muted-foreground tabular-nums">{formatMoney(usd)}</p>
-      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   )
 }

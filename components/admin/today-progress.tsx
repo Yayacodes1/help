@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import type { CreatorTrackingRow } from '@/lib/queries'
+import { adminPersonHref } from '@/lib/admin-href'
+import { PersonHandlesLine } from '@/components/person-handles'
 
 function Cell({ today, goal }: { today: number; goal: number }) {
   if (goal <= 0) {
@@ -17,7 +19,15 @@ function Cell({ today, goal }: { today: number; goal: number }) {
   )
 }
 
-export function TodayProgress({ creators }: { creators: CreatorTrackingRow[] }) {
+export function TodayProgress({
+  creators,
+  linkRole,
+  projectId,
+}: {
+  creators: CreatorTrackingRow[]
+  linkRole?: string | null
+  projectId?: number | string | null
+}) {
   if (creators.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -49,19 +59,22 @@ export function TodayProgress({ creators }: { creators: CreatorTrackingRow[] }) 
               c.today_tiktok >= c.goal_tiktok
             return (
               <tr key={c.id} className="border-b border-border last:border-0">
-                <td className="whitespace-nowrap px-4 py-3">
-                  <Link
-                    href={`/admin/creators/${c.id}`}
-                    className="font-medium underline-offset-4 hover:underline"
-                  >
-                    {c.name}
-                  </Link>
-                  {allMet && (
-                    <span className="ml-2 text-xs font-medium text-primary">done</span>
-                  )}
-                  {c.pay_due && (
-                    <span className="ml-2 text-xs font-medium text-amber-700">pay due</span>
-                  )}
+                <td className="px-4 py-3">
+                  <div>
+                    <Link
+                      href={adminPersonHref(c.id, { role: linkRole ?? c.role, projectId })}
+                      className="font-medium underline-offset-4 hover:underline"
+                    >
+                      {c.name}
+                    </Link>
+                    {allMet && (
+                      <span className="ml-2 text-xs font-medium text-primary">done</span>
+                    )}
+                    {c.pay_due && (
+                      <span className="ml-2 text-xs font-medium text-amber-700">pay due</span>
+                    )}
+                    <PersonHandlesLine person={c} />
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-center">
                   <Cell today={c.today_instagram} goal={c.goal_instagram} />

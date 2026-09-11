@@ -5,10 +5,7 @@ import { getCreatorByName } from '@/lib/queries'
 import { classifyMediaLinks } from '@/lib/media-url'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-
-function normalizeUsername(raw: string): string {
-  return raw.trim().replace(/^@+/, '')
-}
+import { normalizeHandle } from '@/lib/usernames'
 
 function isValidDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -45,9 +42,9 @@ async function fillViewsForNewSubmission(
 // Public gate: verify the TikTok username belongs to a registered creator,
 // then unlock the submission form for them.
 export async function startSubmission(_prev: unknown, formData: FormData) {
-  const username = normalizeUsername((formData.get('username') ?? '').toString())
+  const username = normalizeHandle((formData.get('username') ?? '').toString())
   if (!username) {
-    return { ok: false, message: 'أدخل اسم مستخدم تيك توك.' }
+    return { ok: false, message: 'أدخل اسم مستخدم تيك توك أو انستقرام.' }
   }
   const creator = await getCreatorByName(username)
   if (!creator) {
@@ -63,6 +60,14 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   const dateRaw = (formData.get('video_date') ?? '').toString()
   const videoDate = isValidDate(dateRaw) ? dateRaw : null
   if (!videoDate) return { ok: false, message: 'Please choose a valid date.' }
+
+  const projectRaw = (formData.get('project_id') ?? '').toString()
+  const projectId = projectRaw ? Number(projectRaw) : NaN
+  if (!Number.isFinite(projectId) || projectId <= 0) {
+    return { ok: false, message: 'Choose Notek or Miqat before posting.' }
+  }
+  const projects = (await sql`SELECT id FROM projects WHERE id = ${projectId} LIMIT 1`) as { id: number }[]
+  if (!projects[0]) return { ok: false, message: 'That project is not available.' }
 
   // Prefer unified "links" field; fall back to legacy per-platform fields.
   const unified = (formData.get('links') ?? '').toString()
@@ -88,7 +93,7 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   for (const row of rows) {
     const inserted = (await sql`
       INSERT INTO submissions (creator_id, project_id, platform, url, video_date)
-      VALUES (${creator.id}, ${creator.project_id}, ${row.platform}, ${row.url}, ${videoDate})
+      VALUES (${creator.id}, ${projectId}, ${row.platform}, ${row.url}, ${videoDate})
       RETURNING id
     `) as { id: number }[]
     const id = inserted[0]?.id
@@ -110,7 +115,7 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
 }
 
 export async function deleteOwnSubmission(username: string, submissionId: number) {
-  const creator = await getCreatorByName(username)
+  const creator = await getCreatorByName(normalizeHandle(username))
   if (!creator) return
   await sql`
     DELETE FROM submissions

@@ -4,6 +4,10 @@ import type { ParticipantRole } from '@/lib/participant-role'
 import {
   buildBiweeklySchedule,
   inferBiweeklyInstallments,
+  monthlyFromBiweekly,
+  typicalBiweeklyAmount,
+  yearMonthsInRange,
+  type ContractPeriod,
 } from '@/lib/biweekly'
 
 export type OutflowView = 'creators' | 'reposters' | 'total'
@@ -94,6 +98,10 @@ export type OutflowPersonTotal = {
   paid: number
   /** Contract base for overlapping contracts (no commission). */
   baseContract: number
+  /** One biweekly wave for this person (avg of the two halves). */
+  biweekly: number
+  /** Always 2× biweekly. */
+  monthly: number
 }
 
 export type OutflowSnapshot = {
@@ -107,6 +115,8 @@ export type OutflowSnapshot = {
   contractsSpendTotal: number
   /** Typical one biweekly wave (avg of the two halves per contract). */
   plannedBiweekly: number
+  /** Two biweekly waves — monthly pay is always double the biweekly amount. */
+  plannedMonthly: number
   /** All planned dues in the selected range (month-to-month). */
   plannedTotal: number
   plannedCreators: number
@@ -172,7 +182,19 @@ export async function getOutflowSnapshot(opts: {
     ORDER BY p.paid_on ASC, c.name ASC, p.id ASC
   `) as OutflowPaymentRow[]
 
-  const contracts = (await sql`
+  const peopleRows = (await sql`
+    SELECT id AS creator_id, name AS creator_name, role
+    FROM creators
+    WHERE (${roleFilter}::text IS NULL OR role = ${roleFilter})
+    ORDER BY name ASC
+  `) as { creator_id: number; creator_name: string; role: string }[]
+
+  type ContractQueryRow = Omit<
+    OutflowContractRow,
+    'upfront' | 'midterm' | 'full' | 'installment_source'
+  > & { pay_every_days: number }
+
+  const allContracts = (await sql`
     SELECT c.id AS creator_id, c.name AS creator_name, c.role,
            COALESCE(c.pay_every_days, 14)::int AS pay_every_days,
            ct.id AS contract_id, ct.name AS contract_name,
@@ -182,13 +204,13 @@ export async function getOutflowSnapshot(opts: {
            ct.commission_amount::float AS commission_amount
     FROM contracts ct
     JOIN creators c ON c.id = ct.creator_id
-    WHERE ct.start_date <= ${to}::date
-      AND (ct.end_date IS NULL OR ct.end_date >= ${from}::date)
-      AND (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
-    ORDER BY c.role ASC, c.name ASC, ct.start_date DESC
-  `) as (Omit<OutflowContractRow, 'upfront' | 'midterm' | 'full' | 'installment_source'> & {
-    pay_every_days: number
-  })[]
+    WHERE (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
+    ORDER BY c.id ASC, ct.start_date DESC, ct.id DESC
+  `) as ContractQueryRow[]
+
+  const contracts = allContracts.filter(
+    (row) => row.start_date <= to && (row.end_date == null || row.end_date >= from),
+  )
 
   const historyRows = (await sql`
     SELECT p.contract_id, p.paid_on::text AS paid_on, p.amount::float AS amount
@@ -209,18 +231,62 @@ export async function getOutflowSnapshot(opts: {
     historyByContract.set(row.contract_id, list)
   }
 
+  type PersonRate = {
+    creator_id: number
+    creator_name: string
+    role: string
+    baseContract: number
+    biweekly: number
+    monthly: number
+  }
+  const rateByCreator = new Map<number, PersonRate>()
+  const contractsByCreator = new Map<number, ContractQueryRow[]>()
+  for (const row of allContracts) {
+    const list = contractsByCreator.get(row.creator_id) ?? []
+    list.push(row)
+    contractsByCreator.set(row.creator_id, list)
+  }
+  for (const rows of contractsByCreator.values()) {
+    const source = rows[0]
+    if (!source) continue
+    const prior: ContractPeriod[] = rows
+      .filter((r) => r.contract_id !== source.contract_id)
+      .map((r) => ({
+        startDate: r.start_date,
+        endDate: r.end_date,
+        baseAmount: Number(r.base_amount) || 0,
+      }))
+    const biweekly = typicalBiweeklyAmount({
+      baseAmount: Number(source.base_amount) || 0,
+      startDate: source.start_date,
+      endDate: source.end_date,
+      payEveryDays: source.pay_every_days,
+      prior,
+    })
+    rateByCreator.set(source.creator_id, {
+      creator_id: source.creator_id,
+      creator_name: source.creator_name,
+      role: source.role,
+      baseContract: Number(source.base_amount) || 0,
+      biweekly,
+      monthly: monthlyFromBiweekly(biweekly),
+    })
+  }
+
   const contractRows: OutflowContractRow[] = contracts.map((row) => {
     const base = Number(row.base_amount) || 0
     const commission = Number(row.commission_amount) || 0
     const full = countMode === 'all' ? base + commission : base
+    const typical = rateByCreator.get(row.creator_id)?.biweekly
     const inferred = inferBiweeklyInstallments(full, historyByContract.get(row.contract_id) ?? [])
+    const wave = typical != null && typical > 0 ? typical : (inferred.first + inferred.second) / 2
     return {
       ...row,
       base_amount: base,
       commission_amount: row.commission_amount == null ? null : commission,
       pay_every_days: row.pay_every_days > 0 ? row.pay_every_days : 14,
-      upfront: inferred.first,
-      midterm: inferred.second,
+      upfront: wave,
+      midterm: wave,
       full,
       installment_source: inferred.source,
     }
@@ -265,51 +331,57 @@ export async function getOutflowSnapshot(opts: {
   const plannedReposters = plannedHits
     .filter((h) => h.role === 'reposter')
     .reduce((s, h) => s + h.amount, 0)
-  const plannedBiweekly =
-    Math.round(
-      contractRows.reduce((s, r) => s + (r.upfront + r.midterm) / 2, 0) * 100,
-    ) / 100
-
   const peopleMap = new Map<number, OutflowPersonTotal>()
-  for (const row of contractRows) {
-    const existing = peopleMap.get(row.creator_id) ?? {
-      creator_id: row.creator_id,
-      creator_name: row.creator_name,
-      role: row.role,
+
+  function emptyPerson(input: {
+    creator_id: number
+    creator_name: string
+    role: string
+  }): OutflowPersonTotal {
+    return {
+      creator_id: input.creator_id,
+      creator_name: input.creator_name,
+      role: input.role,
       planned: 0,
       paid: 0,
       baseContract: 0,
+      biweekly: 0,
+      monthly: 0,
     }
-    existing.baseContract += Number(row.base_amount) || 0
-    peopleMap.set(row.creator_id, existing)
+  }
+
+  function touchPerson(input: {
+    creator_id: number
+    creator_name: string
+    role: string
+  }): OutflowPersonTotal {
+    const existing = peopleMap.get(input.creator_id) ?? emptyPerson(input)
+    peopleMap.set(input.creator_id, existing)
+    return existing
+  }
+
+  for (const person of peopleRows) {
+    touchPerson(person)
+  }
+  for (const rate of rateByCreator.values()) {
+    const existing = touchPerson(rate)
+    existing.baseContract = rate.baseContract
+    existing.biweekly = rate.biweekly
+    existing.monthly = rate.monthly
   }
   for (const hit of plannedHits) {
-    const existing = peopleMap.get(hit.creator_id) ?? {
-      creator_id: hit.creator_id,
-      creator_name: hit.creator_name,
-      role: hit.role,
-      planned: 0,
-      paid: 0,
-      baseContract: 0,
-    }
-    existing.planned += hit.amount
-    peopleMap.set(hit.creator_id, existing)
+    touchPerson(hit).planned += hit.amount
   }
   for (const p of payments) {
-    const existing = peopleMap.get(p.creator_id) ?? {
-      creator_id: p.creator_id,
-      creator_name: p.creator_name,
-      role: p.role,
-      planned: 0,
-      paid: 0,
-      baseContract: 0,
-    }
-    existing.paid += Number(p.amount) || 0
-    peopleMap.set(p.creator_id, existing)
+    touchPerson(p).paid += Number(p.amount) || 0
   }
   const peopleTotals = [...peopleMap.values()].sort((a, b) =>
     a.creator_name.localeCompare(b.creator_name),
   )
+  const plannedBiweekly =
+    Math.round(peopleTotals.reduce((s, p) => s + p.biweekly, 0) * 100) / 100
+  const plannedMonthly =
+    Math.round(peopleTotals.reduce((s, p) => s + p.monthly, 0) * 100) / 100
 
   const marketingMap = new Map<string, MarketingMonthBucket>()
 
@@ -356,6 +428,13 @@ export async function getOutflowSnapshot(opts: {
       byId.set(hit.creator_id, person)
     }
     return person
+  }
+
+  for (const key of yearMonthsInRange(from, to)) {
+    ensureMonth(key)
+    for (const person of peopleRows) {
+      ensurePerson(key, person)
+    }
   }
 
   for (const hit of plannedHits) {
@@ -489,6 +568,7 @@ export async function getOutflowSnapshot(opts: {
     grandTotal: creatorsTotal + repostersTotal,
     contractsSpendTotal,
     plannedBiweekly,
+    plannedMonthly,
     plannedTotal,
     plannedCreators,
     plannedReposters,

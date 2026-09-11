@@ -124,4 +124,45 @@ export async function ensureCreatorTrackingColumns() {
 
   // Why a views lookup failed (cleared on success).
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS views_error text`
+
+  await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS tiktok_username text`
+  await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS instagram_username text`
+  await sql`
+    UPDATE creators
+    SET tiktok_username = name
+    WHERE (tiktok_username IS NULL OR btrim(tiktok_username) = '')
+      AND name IS NOT NULL AND btrim(name) <> ''
+  `
+  try {
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS creators_tiktok_username_lower_idx
+      ON creators (lower(tiktok_username))
+      WHERE tiktok_username IS NOT NULL AND btrim(tiktok_username) <> ''
+    `
+  } catch {
+    /* skip if duplicate handles already exist */
+  }
+  try {
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS creators_instagram_username_lower_idx
+      ON creators (lower(instagram_username))
+      WHERE instagram_username IS NOT NULL AND btrim(instagram_username) <> ''
+    `
+  } catch {
+    /* skip if duplicate handles already exist */
+  }
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS schedule_breaks (
+      id SERIAL PRIMARY KEY,
+      creator_id INTEGER NOT NULL REFERENCES creators(id) ON DELETE CASCADE,
+      start_date DATE NOT NULL,
+      end_date DATE NOT NULL,
+      reason TEXT,
+      days_added INTEGER NOT NULL DEFAULT 0,
+      extended_contract_id INTEGER REFERENCES contracts(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS schedule_breaks_creator_id_idx ON schedule_breaks (creator_id)`
 }

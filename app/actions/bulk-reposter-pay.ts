@@ -19,7 +19,17 @@ function parseOptionalDate(value: FormDataEntryValue | null): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null
 }
 
-/** Record the same payment amount for every reposter (flat roster pay). */
+function parseSelectedIds(formData: FormData): number[] {
+  const raw = formData.getAll('ids')
+  const ids = new Set<number>()
+  for (const value of raw) {
+    const n = Number(value.toString())
+    if (Number.isFinite(n) && n > 0) ids.add(Math.floor(n))
+  }
+  return [...ids]
+}
+
+/** Record the same payment amount for the selected reposters. */
 export async function recordBulkReposterPayment(formData: FormData) {
   await requireAdmin()
   const paidOn = parseOptionalDate(formData.get('paid_on'))
@@ -28,13 +38,19 @@ export async function recordBulkReposterPayment(formData: FormData) {
   if (amount <= 0) return { ok: false as const, error: 'Enter an amount greater than 0.' }
   const noteRaw = (formData.get('note') ?? '').toString().trim()
   const note = noteRaw ? noteRaw.slice(0, 500) : `Bulk reposter pay ${amount}`
+  const selectedIds = parseSelectedIds(formData)
+  if (selectedIds.length === 0) {
+    return { ok: false as const, error: 'Select at least one reposter to pay.' }
+  }
 
-  const reposters = (await sql`
-    SELECT id FROM creators WHERE role = 'reposter' ORDER BY name ASC, id ASC
+  const allReposters = (await sql`
+    SELECT id FROM creators WHERE role = 'reposter'
   `) as { id: number }[]
+  const allowed = new Set(allReposters.map((r) => r.id))
+  const reposters = selectedIds.filter((id) => allowed.has(id)).map((id) => ({ id }))
 
   if (reposters.length === 0) {
-    return { ok: false as const, error: 'No reposters to pay.' }
+    return { ok: false as const, error: 'No matching reposters to pay.' }
   }
 
   for (const r of reposters) {

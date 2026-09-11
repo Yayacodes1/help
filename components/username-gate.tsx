@@ -45,7 +45,7 @@ export function UsernameGate({
 
         <form action={formAction} className="mt-6 flex flex-col gap-3">
           <label htmlFor="username" className="text-sm font-semibold text-foreground">
-            {t('tiktokUsername')}
+            {t('igOrTtUsername')}
           </label>
           <div className="relative">
             <Music2

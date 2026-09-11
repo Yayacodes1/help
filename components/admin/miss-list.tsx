@@ -1,12 +1,17 @@
 import Link from 'next/link'
 import type { MissRow } from '@/lib/queries'
+import { adminPersonHref } from '@/lib/admin-href'
 
 export function MissList({
   misses,
   dayLabel,
+  linkRole,
+  projectId,
 }: {
   misses: MissRow[]
   dayLabel: string
+  linkRole?: string | null
+  projectId?: number | string | null
 }) {
   if (misses.length === 0) {
     return (
@@ -29,7 +34,7 @@ export function MissList({
           >
             <div className="min-w-0">
               <Link
-                href={`/admin/creators/${m.id}`}
+                href={adminPersonHref(m.id, { role: linkRole, projectId })}
                 className="font-medium underline-offset-4 hover:underline"
               >
                 {m.name}

@@ -25,6 +25,9 @@ type Labels = {
   pasteHint: string
   send: string
   sending: string
+  project: string
+  projectHint: string
+  pickProject: string
 }
 
 export function SubmitForm({
@@ -32,11 +35,15 @@ export function SubmitForm({
   date,
   fields,
   labels,
+  projects,
+  defaultProjectId,
 }: {
   username: string
   date: string
   fields: PlatformField[]
   labels: Labels
+  projects: { id: number; name: string }[]
+  defaultProjectId?: number | null
 }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
@@ -45,7 +52,10 @@ export function SubmitForm({
 
   useEffect(() => {
     if (state?.ok) {
+      const select = formRef.current?.querySelector<HTMLSelectElement>('select[name="project_id"]')
+      const keep = select?.value
       formRef.current?.reset()
+      if (select && keep) select.value = keep
       router.refresh()
     }
   }, [state, router])
@@ -53,6 +63,32 @@ export function SubmitForm({
   return (
     <form ref={formRef} action={formAction} className="flex flex-col gap-5">
       <input type="hidden" name="video_date" value={date} />
+
+      {projects.length === 0 ? (
+        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          No projects are set up yet. Ask admin to add Notek and Miqat.
+        </p>
+      ) : (
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="font-semibold text-foreground">{labels.project}</span>
+        <span className="text-xs text-muted-foreground">{labels.projectHint}</span>
+        <select
+          name="project_id"
+          required
+          defaultValue={defaultProjectId ?? ''}
+          className="mt-1 h-11 rounded-xl border border-border bg-card px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-ring"
+        >
+          <option value="" disabled>
+            {labels.pickProject}
+          </option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         {fields.map(({ platform, goal, todayCount }) => {

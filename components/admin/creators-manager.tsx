@@ -8,6 +8,8 @@ import type { ParticipantRole, RoleFilter } from '@/lib/participant-role'
 import { createCreator, deleteCreator, updateCreator } from '@/app/actions/admin'
 import { RoleQuickSelect } from '@/components/admin/role-quick-select'
 import { BulkReposterPay } from '@/components/admin/bulk-reposter-pay'
+import { PersonHandlesLine } from '@/components/person-handles'
+import { adminPersonHref } from '@/lib/admin-href'
 import Link from 'next/link'
 
 function GoalPill({
@@ -46,6 +48,7 @@ export function CreatorsManager({
   const formRef = useRef<HTMLFormElement>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [pending, startTransition] = useTransition()
+  const [selected, setSelected] = useState<number[]>([])
 
   const defaultRole: ParticipantRole =
     roleFilter === 'reposter' ? 'reposter' : 'creator'
@@ -72,6 +75,12 @@ export function CreatorsManager({
     'h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
   const goalInputClass =
     'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
+  const ids = creators.map((c) => c.id)
+  const allSelected = ids.length > 0 && ids.every((id) => selected.includes(id))
+
+  function toggle(id: number) {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
 
   function GoalInputs({
     ig = 0,
@@ -103,17 +112,71 @@ export function CreatorsManager({
     )
   }
 
+  function HandleFields({
+    name,
+    tiktok,
+    instagram,
+  }: {
+    name?: string
+    tiktok?: string | null
+    instagram?: string | null
+  }) {
+    return (
+      <div className="grid w-full gap-2 sm:grid-cols-3">
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Display name
+          <input
+            name="name"
+            defaultValue={name ?? ''}
+            placeholder="Optional if a handle is set"
+            className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          TikTok username
+          <input
+            name="tiktok_username"
+            defaultValue={tiktok ?? ''}
+            placeholder="@tiktok"
+            className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Instagram username
+          <input
+            name="instagram_username"
+            defaultValue={instagram ?? ''}
+            placeholder="@instagram"
+            className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </label>
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <h2 className="text-sm font-semibold">{heading}</h2>
       <p className="mt-1 text-xs text-muted-foreground">
         They submit at the shared <span className="font-medium">/submit</span> link using their
-        TikTok username. Only usernames added here can submit. Reposters use the same tracking,
-        payments, and analytics as creators.
+        TikTok or Instagram username. One person can post for more than one project. Default
+        project is only a pre-select on submit.
       </p>
 
       {roleFilter === 'reposter' && today ? (
-        <BulkReposterPay today={today} reposterCount={creators.length} />
+        <>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setSelected(allSelected ? [] : ids)}
+              className="rounded-md border border-border px-2 py-1 hover:bg-accent"
+            >
+              {allSelected ? 'Clear selection' : 'Select all visible'}
+            </button>
+            <span className="text-muted-foreground">{selected.length} selected</span>
+          </div>
+          <BulkReposterPay today={today} selectedIds={selected} />
+        </>
       ) : null}
 
       <form
@@ -126,15 +189,10 @@ export function CreatorsManager({
         }
         className="mt-3 flex flex-col gap-2"
       >
+        <HandleFields />
         <div className="flex flex-wrap gap-2">
-          <input
-            name="name"
-            required
-            placeholder="TikTok username"
-            className="h-10 min-w-40 flex-1 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
           <select name="project_id" defaultValue="" className={selectClass}>
-            <option value="">No project</option>
+            <option value="">Default project (optional)</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -174,15 +232,14 @@ export function CreatorsManager({
                   }
                   className="flex flex-col gap-2"
                 >
+                  <HandleFields
+                    name={c.name}
+                    tiktok={c.tiktok_username}
+                    instagram={c.instagram_username}
+                  />
                   <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      name="name"
-                      required
-                      defaultValue={c.name}
-                      className="h-10 min-w-40 flex-1 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    />
                     <select name="project_id" defaultValue={c.project_id ?? ''} className={selectClass}>
-                      <option value="">No project</option>
+                      <option value="">Default project (optional)</option>
                       {projects.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}
@@ -216,20 +273,32 @@ export function CreatorsManager({
               ) : (
                 <div className="flex flex-col gap-2">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Link
-                          href={`/admin/creators/${c.id}`}
-                          className="font-medium underline-offset-4 hover:underline"
-                        >
-                          {c.name}
-                        </Link>
-                        <RoleQuickSelect creatorId={c.id} role={c.role} />
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {c.project_name ?? 'No project'} · {c.total_videos} total · streak{' '}
-                        {c.current_streak}
-                        {c.pay_due ? ' · pay due' : ''}
+                    <div className="flex min-w-0 items-start gap-2">
+                      {roleFilter === 'reposter' ? (
+                        <input
+                          type="checkbox"
+                          className="mt-1.5"
+                          checked={selected.includes(c.id)}
+                          onChange={() => toggle(c.id)}
+                          aria-label={`Select ${c.name}`}
+                        />
+                      ) : null}
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            href={adminPersonHref(c.id, { role: roleFilter, projectId: c.project_id })}
+                            className="font-medium underline-offset-4 hover:underline"
+                          >
+                            {c.name}
+                          </Link>
+                          <RoleQuickSelect creatorId={c.id} role={c.role} />
+                        </div>
+                        <PersonHandlesLine person={c} />
+                        <div className="text-xs text-muted-foreground">
+                          {c.project_name ?? 'No default project'} · {c.total_videos} total · streak{' '}
+                          {c.current_streak}
+                          {c.pay_due ? ' · pay due' : ''}
+                        </div>
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">

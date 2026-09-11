@@ -1,14 +1,16 @@
 'use client'
 
 import { useEffect, useState, type ReactNode } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronDown } from 'lucide-react'
 
 export type PanelItem = {
   id: string
   title: string
-  summary: string
-  hint?: string
+  summary: ReactNode
+  hint?: ReactNode
+  /** Labeled amounts instead of a giant stat number. */
+  copy?: boolean
   children: ReactNode
 }
 
@@ -24,6 +26,7 @@ export function PanelBoard({
   closeLabel?: string
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const params = useSearchParams()
   const panelIds = new Set(panels.map((p) => p.id))
   const urlPanel = params.get('panel')
@@ -41,7 +44,8 @@ export function PanelBoard({
     const next = new URLSearchParams(params.toString())
     if (id) next.set('panel', id)
     else next.delete('panel')
-    router.replace(`/admin?${next.toString()}`, { scroll: false })
+    const qs = next.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
 
   const active = panels.find((p) => p.id === open) ?? null
@@ -74,17 +78,29 @@ export function PanelBoard({
                 <div className="min-w-0">
                   <div className="text-sm font-semibold tracking-tight">{panel.title}</div>
                   <div
-                    className={`mt-1 text-lg font-semibold tabular-nums leading-tight ${
-                      isOpen ? 'text-primary-foreground' : 'text-foreground'
-                    }`}
+                    className={
+                      panel.copy
+                        ? `mt-2 text-sm font-normal leading-snug ${
+                            isOpen ? 'text-primary-foreground' : 'text-foreground'
+                          }`
+                        : `mt-1 text-lg font-semibold tabular-nums leading-tight ${
+                            isOpen ? 'text-primary-foreground' : 'text-foreground'
+                          }`
+                    }
                   >
                     {panel.summary}
                   </div>
                   {panel.hint && (
                     <div
-                      className={`mt-1 text-xs ${
-                        isOpen ? 'text-primary-foreground/80' : 'text-muted-foreground'
-                      }`}
+                      className={
+                        panel.copy
+                          ? `mt-2.5 text-sm font-normal leading-snug ${
+                              isOpen ? 'text-primary-foreground/90' : 'text-muted-foreground'
+                            }`
+                          : `mt-1 text-xs ${
+                              isOpen ? 'text-primary-foreground/80' : 'text-muted-foreground'
+                            }`
+                      }
                     >
                       {panel.hint}
                     </div>

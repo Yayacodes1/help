@@ -6,6 +6,7 @@ const STATUS_CLASS: Record<DayStatus, string> = {
   miss: 'bg-rose-500/80 text-white',
   none: 'bg-muted text-muted-foreground',
   future: 'bg-transparent border border-dashed border-border text-muted-foreground',
+  break: 'bg-sky-400/90 text-sky-950',
 }
 
 const STATUS_LABEL: Record<DayStatus, string> = {
@@ -14,6 +15,7 @@ const STATUS_LABEL: Record<DayStatus, string> = {
   miss: 'Missed',
   none: 'No goal',
   future: 'Upcoming',
+  break: 'Break',
 }
 
 export function ConsistencyCalendar({ days }: { days: DayProgress[] }) {

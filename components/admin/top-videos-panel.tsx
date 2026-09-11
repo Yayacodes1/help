@@ -5,6 +5,7 @@ import Link from 'next/link'
 import type { TopVideoRow } from '@/lib/analytics'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
 import { formatDate, formatNumber } from '@/lib/format'
+import { adminPersonHref } from '@/lib/admin-href'
 
 export function TopVideosPanel({
   videos,
@@ -96,7 +97,10 @@ export function TopVideosPanel({
                   <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
                   <td className="px-3 py-2">
                     <Link
-                      href={`/admin/creators/${v.creator_id}`}
+                      href={adminPersonHref(v.creator_id, {
+                        role: params.get('role'),
+                        projectId: params.get('project'),
+                      })}
                       className="font-medium underline-offset-4 hover:underline"
                     >
                       {v.creator_name}

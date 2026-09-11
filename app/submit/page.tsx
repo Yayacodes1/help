@@ -9,6 +9,7 @@ import { LanguageToggle } from '@/components/language-toggle'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import {
   getActiveContract,
+  getAllProjects,
   getContractComparisons,
   getCreatorByName,
   getServerToday,
@@ -22,6 +23,9 @@ import {
   getCreatorPaidTotal,
   goalsForContract,
 } from '@/lib/queries'
+import { getLeagueBoard } from '@/lib/ranking'
+import { RankingBoard } from '@/components/ranking-board'
+import { PersonHandlesLine } from '@/components/person-handles'
 import { PLATFORMS } from '@/lib/db'
 import { goalFor } from '@/lib/platforms'
 import { yearRange } from '@/lib/campaign'
@@ -70,6 +74,8 @@ export default async function SubmitPage({
     pay,
     payments,
     paidTotal,
+    projects,
+    league,
   ] = await Promise.all([
     getCreatorCountsByPlatformOnDate(creator.id, date),
     getSubmissionsForCreatorOnDate(creator.id, date),
@@ -81,6 +87,10 @@ export default async function SubmitPage({
     getPaySummary(creator, today),
     getPaymentsForCreator(creator.id),
     getCreatorPaidTotal(creator.id),
+    getAllProjects(),
+    creator.role === 'reposter'
+      ? getLeagueBoard({ role: 'reposter' })
+      : Promise.resolve(null),
   ])
 
   const dailyGoals = goalsForContract(creator, active)
@@ -122,6 +132,10 @@ export default async function SubmitPage({
               <p className="text-sm text-[#a05a55]">
                 {t('welcome')} {creator.name}
               </p>
+              <PersonHandlesLine
+                person={creator}
+                className="mt-0.5 text-xs text-[#a05a55]"
+              />
               <h1 className="mt-1 text-balance text-2xl font-bold tracking-tight text-[#9a0d18]">
                 {t('submitHeading')}
               </h1>
@@ -139,6 +153,25 @@ export default async function SubmitPage({
           </p>
           <p className="mt-1 text-xs text-[#a05a55]">{t('platformsBoth')}</p>
         </header>
+
+        {league ? (
+          <RankingBoard
+            board={league}
+            highlightId={creator.id}
+            collapsedLimit={5}
+            showSearch={false}
+            labels={{
+              title: t('rankingTitle'),
+              empty: t('rankingEmpty'),
+              expand: t('rankingExpand'),
+              collapse: t('rankingCollapse'),
+              search: t('rankingSearch'),
+              rank: t('rankingRank'),
+              views: t('views'),
+              videos: t('videosWord'),
+            }}
+          />
+        ) : null}
 
         <p className="text-xs text-muted-foreground">{t('creatorTapHint')}</p>
 
@@ -185,11 +218,16 @@ export default async function SubmitPage({
                       username={username}
                       date={date}
                       fields={fields}
+                      projects={projects}
+                      defaultProjectId={creator.project_id}
                       labels={{
                         pasteLinks: t('pasteLinks'),
                         pasteHint: t('pasteLinksHint'),
                         send: t('submitVideos'),
                         sending: '…',
+                        project: t('submitProject'),
+                        projectHint: t('submitProjectHint'),
+                        pickProject: t('pickProject'),
                       }}
                     />
                   </section>

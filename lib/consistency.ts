@@ -1,6 +1,6 @@
 import { addDays } from '@/lib/campaign'
 
-export type DayStatus = 'hit' | 'partial' | 'miss' | 'none' | 'future'
+export type DayStatus = 'hit' | 'partial' | 'miss' | 'none' | 'future' | 'break'
 
 export type DayProgress = {
   date: string
@@ -27,7 +27,7 @@ function dayStatus(
   tiktok: number,
   goalInstagram: number,
   goalTiktok: number,
-): Exclude<DayStatus, 'future'> {
+): Exclude<DayStatus, 'future' | 'break'> {
   const hasGoal = goalInstagram > 0 || goalTiktok > 0
   if (!hasGoal) return 'none'
 
@@ -74,13 +74,27 @@ export function buildConsistency(options: {
   goalInstagram: number
   goalTiktok: number
   countsByDate: Record<string, { instagram: number; tiktok: number }>
+  breakDates?: Set<string> | string[]
 }): ConsistencySummary {
   const { start, end, today, goalInstagram, goalTiktok, countsByDate } = options
+  const breaks = options.breakDates instanceof Set
+    ? options.breakDates
+    : new Set(options.breakDates ?? [])
   const cappedEnd = end < today ? end : today
   const dates = eachDate(start, end)
 
   const days: DayProgress[] = dates.map((date) => {
     const counts = countsByDate[date] ?? { instagram: 0, tiktok: 0 }
+    if (breaks.has(date)) {
+      return {
+        date,
+        instagram: counts.instagram,
+        tiktok: counts.tiktok,
+        goalInstagram,
+        goalTiktok,
+        status: 'break' as const,
+      }
+    }
     if (date > today) {
       return {
         date,
@@ -110,10 +124,13 @@ export function buildConsistency(options: {
   const requiredDays = pastRequired.length
   const hitRate = requiredDays > 0 ? hitDays / requiredDays : 0
 
-  // Current streak: consecutive hits ending at today (or most recent past day).
+  // Current streak: consecutive hits ending at today. Break days are skipped, not a reset.
   let currentStreak = 0
-  const streakDays = days.filter((d) => d.date <= today && d.status !== 'none' && d.status !== 'future')
+  const streakDays = days.filter(
+    (d) => d.date <= today && d.status !== 'none' && d.status !== 'future',
+  )
   for (let i = streakDays.length - 1; i >= 0; i--) {
+    if (streakDays[i].status === 'break') continue
     if (streakDays[i].status === 'hit') currentStreak++
     else break
   }
@@ -121,6 +138,7 @@ export function buildConsistency(options: {
   let bestStreak = 0
   let run = 0
   for (const d of streakDays) {
+    if (d.status === 'break') continue
     if (d.status === 'hit') {
       run++
       if (run > bestStreak) bestStreak = run

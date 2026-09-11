@@ -39,11 +39,13 @@ export function FiltersBar({
     router.push(`/admin?${next.toString()}`)
   }
 
-  // Clearing keeps the selected project (owned by the top-level selector).
+  // Clearing keeps the selected project and role (owned by the top-level selectors).
   function clearFilters() {
     const next = new URLSearchParams()
     const project = params.get('project')
+    const role = params.get('role')
     if (project) next.set('project', project)
+    if (role) next.set('role', role)
     next.set('panel', 'videos')
     router.push(`/admin?${next.toString()}`)
   }

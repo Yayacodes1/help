@@ -1,5 +1,59 @@
 import { addDays } from '@/lib/campaign'
 
+function roundMoney(n: number): number {
+  return Math.round((Number(n) || 0) * 100) / 100
+}
+
+/** Inclusive day count between YYYY-MM-DD dates. */
+export function daysBetweenInclusive(start: string, end: string): number {
+  const a = Date.parse(`${start}T00:00:00Z`)
+  const b = Date.parse(`${end}T00:00:00Z`)
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return 0
+  return Math.round((b - a) / 86_400_000) + 1
+}
+
+export type ContractPeriod = {
+  startDate: string
+  endDate: string | null
+  baseAmount: number
+}
+
+/**
+ * One biweekly pay from a contract's base.
+ * A ~2-week contract stores the biweekly amount as base; a ~month contract stores
+ * two waves, so biweekly is half. Open contracts follow the person's prior
+ * 2-week history, otherwise base is treated as monthly.
+ */
+export function typicalBiweeklyAmount(opts: {
+  baseAmount: number
+  startDate: string
+  endDate: string | null
+  payEveryDays?: number
+  prior?: ContractPeriod[]
+}): number {
+  const base = roundMoney(opts.baseAmount)
+  if (base <= 0) return 0
+  const every = opts.payEveryDays && opts.payEveryDays > 0 ? Math.floor(opts.payEveryDays) : 14
+  const onePeriod = every + 3
+  const span = opts.endDate ? daysBetweenInclusive(opts.startDate, opts.endDate) : null
+
+  if (span != null && span > 0) {
+    if (span <= onePeriod) return base
+    const waves = Math.max(2, Math.round(span / every))
+    return roundMoney(base / waves)
+  }
+
+  const shortPrior = (opts.prior ?? []).filter(
+    (p) => p.endDate && daysBetweenInclusive(p.startDate, p.endDate) <= onePeriod,
+  )
+  if (shortPrior.length > 0) return base
+  return roundMoney(base / 2)
+}
+
+export function monthlyFromBiweekly(biweekly: number): number {
+  return roundMoney(biweekly * 2)
+}
+
 /**
  * Default biweekly split: first half rounds up (39 → 20 + 19).
  * Prefers recorded payment amounts when available.
@@ -98,4 +152,17 @@ export function lastCalendarMonthsRange(
   const endMonth = calendarMonthBounds(keys[keys.length - 1])
   const end = today < endMonth.end ? today : endMonth.end
   return { start, end: endMonth.end, keys }
+}
+
+/** Calendar YYYY-MM keys covering an inclusive date range. */
+export function yearMonthsInRange(from: string, to: string): string[] {
+  if (!from || !to || to < from) return []
+  const keys: string[] = []
+  let key = from.slice(0, 7)
+  const end = to.slice(0, 7)
+  while (key <= end) {
+    keys.push(key)
+    key = shiftYearMonth(key, 1)
+  }
+  return keys
 }

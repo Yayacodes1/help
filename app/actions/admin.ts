@@ -18,6 +18,7 @@ import {
 import { getPaidForContract, getServerToday } from '@/lib/queries'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { normalizeHandle, parseOptionalHandle } from '@/lib/usernames'
 
 async function requireAdmin() {
   if (!(await isAdmin())) throw new Error('Unauthorized')
@@ -138,14 +139,57 @@ export async function deleteProject(id: number) {
   revalidatePath('/admin')
 }
 
+function parsePersonHandles(formData: FormData, fallbackName: string) {
+  const tiktok = parseOptionalHandle(formData.get('tiktok_username'))
+  const instagram = parseOptionalHandle(formData.get('instagram_username'))
+  const nameRaw = normalizeHandle((formData.get('name') ?? '').toString())
+  const name = nameRaw || tiktok || instagram || fallbackName
+  return { name, tiktok, instagram }
+}
+
+async function handleIsTaken(
+  handle: string | null,
+  column: 'tiktok_username' | 'instagram_username' | 'name',
+  excludeId?: number,
+): Promise<boolean> {
+  if (!handle) return false
+  const exclude = excludeId ?? 0
+  if (column === 'tiktok_username') {
+    const rows = (await sql`
+      SELECT id FROM creators
+      WHERE lower(tiktok_username) = lower(${handle})
+        AND id <> ${exclude}
+      LIMIT 1
+    `) as { id: number }[]
+    return rows.length > 0
+  }
+  if (column === 'instagram_username') {
+    const rows = (await sql`
+      SELECT id FROM creators
+      WHERE lower(instagram_username) = lower(${handle})
+        AND id <> ${exclude}
+      LIMIT 1
+    `) as { id: number }[]
+    return rows.length > 0
+  }
+  const rows = (await sql`
+    SELECT id FROM creators
+    WHERE lower(name) = lower(${handle}) AND id <> ${exclude}
+    LIMIT 1
+  `) as { id: number }[]
+  return rows.length > 0
+}
+
 // --- Creators ---
 
 export async function createCreator(formData: FormData) {
   await requireAdmin()
-  const name = (formData.get('name') ?? '').toString().trim()
+  const { name, tiktok, instagram } = parsePersonHandles(formData, '')
   const projectIdRaw = (formData.get('project_id') ?? '').toString()
   const projectId = projectIdRaw ? Number(projectIdRaw) : null
-  if (!name) return
+  if (!name || (!tiktok && !instagram)) return
+  if (await handleIsTaken(tiktok, 'tiktok_username')) return
+  if (await handleIsTaken(instagram, 'instagram_username')) return
   const role = normalizeParticipantRole((formData.get('role') ?? '').toString())
   const platforms = parsePlatforms(formData.get('platforms'))
   const goals = applyPlatformsToQuotas(platforms, {
@@ -161,11 +205,11 @@ export async function createCreator(formData: FormData) {
   const rows = (await sql`
     INSERT INTO creators (
       name, token, project_id, role, goal_instagram, goal_tiktok, platforms,
-      last_paid_at, pay_every_days, notes
+      last_paid_at, pay_every_days, notes, tiktok_username, instagram_username
     )
     VALUES (
       ${name}, ${token}, ${projectId}, ${role}, ${goals.goalInstagram}, ${goals.goalTiktok}, ${platforms},
-      ${lastPaidAt}, ${payEveryDays}, ${notes}
+      ${lastPaidAt}, ${payEveryDays}, ${notes}, ${tiktok}, ${instagram}
     )
     RETURNING id
   `) as { id: number }[]
@@ -191,10 +235,12 @@ export async function createCreator(formData: FormData) {
 
 export async function updateCreator(id: number, formData: FormData) {
   await requireAdmin()
-  const name = (formData.get('name') ?? '').toString().trim()
+  const { name, tiktok, instagram } = parsePersonHandles(formData, '')
   const projectIdRaw = (formData.get('project_id') ?? '').toString()
   const projectId = projectIdRaw ? Number(projectIdRaw) : null
-  if (!name) return
+  if (!name || (!tiktok && !instagram)) return
+  if (await handleIsTaken(tiktok, 'tiktok_username', id)) return
+  if (await handleIsTaken(instagram, 'instagram_username', id)) return
   const role = normalizeParticipantRole((formData.get('role') ?? '').toString())
   const platforms = parsePlatforms(formData.get('platforms'))
   const goals = applyPlatformsToQuotas(platforms, {
@@ -212,7 +258,9 @@ export async function updateCreator(id: number, formData: FormData) {
         goal_instagram = ${goals.goalInstagram}, goal_tiktok = ${goals.goalTiktok},
         platforms = ${platforms},
         last_paid_at = ${lastPaidAt}, pay_every_days = ${payEveryDays},
-        notes = ${notes}
+        notes = ${notes},
+        tiktok_username = ${tiktok},
+        instagram_username = ${instagram}
     WHERE id = ${id}
   `
   revalidatePath('/admin')
@@ -695,4 +743,81 @@ export async function deleteSubmission(id: number) {
   await requireAdmin()
   await sql`DELETE FROM submissions WHERE id = ${id}`
   revalidatePath('/admin')
+}
+
+function inclusiveDayCount(start: string, end: string): number {
+  if (start > end) return 0
+  const a = new Date(`${start}T00:00:00Z`).getTime()
+  const b = new Date(`${end}T00:00:00Z`).getTime()
+  return Math.round((b - a) / 86_400_000) + 1
+}
+
+export async function createScheduleBreak(creatorId: number, formData: FormData) {
+  await requireAdmin()
+  const start = parseOptionalDate(formData.get('start_date'))
+  const end = parseOptionalDate(formData.get('end_date'))
+  if (!start || !end || end < start) return
+  const reasonRaw = (formData.get('reason') ?? '').toString().trim()
+  const reason = reasonRaw ? reasonRaw.slice(0, 500) : null
+  const days = inclusiveDayCount(start, end)
+  const today = await getServerToday()
+
+  const active = (await sql`
+    SELECT id, end_date::text AS end_date
+    FROM contracts
+    WHERE creator_id = ${creatorId}
+      AND start_date <= ${today}::date
+      AND (end_date IS NULL OR end_date >= ${today}::date)
+    ORDER BY start_date DESC, id DESC
+    LIMIT 1
+  `) as { id: number; end_date: string | null }[]
+  const contract = active[0]
+  let daysAdded = 0
+  let extendedContractId: number | null = null
+  if (contract?.end_date) {
+    const nextEnd = addDays(contract.end_date, days)
+    await sql`UPDATE contracts SET end_date = ${nextEnd}::date WHERE id = ${contract.id}`
+    daysAdded = days
+    extendedContractId = contract.id
+  }
+
+  await sql`
+    INSERT INTO schedule_breaks (
+      creator_id, start_date, end_date, reason, days_added, extended_contract_id
+    )
+    VALUES (
+      ${creatorId}, ${start}, ${end}, ${reason}, ${daysAdded}, ${extendedContractId}
+    )
+  `
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  revalidatePath('/submit')
+}
+
+export async function deleteScheduleBreak(id: number, creatorId: number) {
+  await requireAdmin()
+  const rows = (await sql`
+    SELECT id, days_added, extended_contract_id
+    FROM schedule_breaks
+    WHERE id = ${id} AND creator_id = ${creatorId}
+    LIMIT 1
+  `) as { id: number; days_added: number; extended_contract_id: number | null }[]
+  const row = rows[0]
+  if (!row) return
+  if (row.extended_contract_id && row.days_added > 0) {
+    const contracts = (await sql`
+      SELECT id, end_date::text AS end_date
+      FROM contracts WHERE id = ${row.extended_contract_id}
+      LIMIT 1
+    `) as { id: number; end_date: string | null }[]
+    const end = contracts[0]?.end_date
+    if (end) {
+      const nextEnd = addDays(end, -row.days_added)
+      await sql`UPDATE contracts SET end_date = ${nextEnd}::date WHERE id = ${row.extended_contract_id}`
+    }
+  }
+  await sql`DELETE FROM schedule_breaks WHERE id = ${id} AND creator_id = ${creatorId}`
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  revalidatePath('/submit')
 }

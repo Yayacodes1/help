@@ -5,6 +5,7 @@ import { DeleteSubmission } from '@/components/admin/delete-submission'
 import { CopyLink } from '@/components/copy-link'
 import { formatDate, formatNumber } from '@/lib/format'
 import { PLATFORM_META } from '@/lib/platforms'
+import { adminPersonHref } from '@/lib/admin-href'
 
 export function SubmissionsTable({
   submissions,
@@ -12,6 +13,8 @@ export function SubmissionsTable({
   showCreator = true,
   showProject = true,
   editableViews = true,
+  linkRole,
+  projectId,
 }: {
   submissions: AdminSubmissionRow[] | Array<{
     id: number
@@ -28,6 +31,8 @@ export function SubmissionsTable({
   showCreator?: boolean
   showProject?: boolean
   editableViews?: boolean
+  linkRole?: string | null
+  projectId?: number | string | null
 }) {
   if (submissions.length === 0) {
     return (
@@ -63,7 +68,7 @@ export function SubmissionsTable({
                   <td className="whitespace-nowrap px-4 py-3 font-medium">
                     {'creator_id' in s && s.creator_id != null ? (
                       <Link
-                        href={`/admin/creators/${s.creator_id}`}
+                        href={adminPersonHref(s.creator_id, { role: linkRole, projectId })}
                         className="underline-offset-4 hover:underline"
                       >
                         {s.creator_name}

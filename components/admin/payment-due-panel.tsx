@@ -1,14 +1,19 @@
 import Link from 'next/link'
 import type { PaymentDueRow } from '@/lib/queries'
 import { formatDate, formatMoney } from '@/lib/format'
+import { adminPersonHref } from '@/lib/admin-href'
 
 function DueTable({
   rows,
   labels,
   settled,
+  linkRole,
+  projectId,
 }: {
   rows: PaymentDueRow[]
   settled?: boolean
+  linkRole?: string | null
+  projectId?: number | string | null
   labels: {
     empty: string
     due: string
@@ -66,7 +71,11 @@ function DueTable({
               </td>
               <td className="whitespace-nowrap px-4 py-3">
                 <Link
-                  href={`/admin/creators/${row.creatorId}?panel=contracts`}
+                  href={adminPersonHref(row.creatorId, {
+                    role: linkRole,
+                    projectId,
+                    panel: 'contracts',
+                  })}
                   className="font-medium underline-offset-4 hover:underline"
                 >
                   {row.creatorName}
@@ -122,9 +131,13 @@ export function PaymentDuePanel({
   due,
   settled,
   labels,
+  linkRole,
+  projectId,
 }: {
   due: PaymentDueRow[]
   settled: PaymentDueRow[]
+  linkRole?: string | null
+  projectId?: number | string | null
   labels: {
     empty: string
     settledEmpty: string
@@ -150,12 +163,14 @@ export function PaymentDuePanel({
         Pay due when a contract hits its video target (counted from start). End date does not matter.
         Open the creator → Contracts to record payment.
       </p>
-      <DueTable rows={due} labels={labels} />
+      <DueTable rows={due} labels={labels} linkRole={linkRole} projectId={projectId} />
       <div>
         <h3 className="mb-2 text-sm font-semibold">{labels.settledTitle}</h3>
         <DueTable
           rows={settled}
           settled
+          linkRole={linkRole}
+          projectId={projectId}
           labels={{ ...labels, empty: labels.settledEmpty }}
         />
       </div>

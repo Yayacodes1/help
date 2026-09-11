@@ -17,6 +17,7 @@ import {
   getServerToday,
   getSubmissionsForCreator,
   contractWindow,
+  getScheduleBreaks,
 } from '@/lib/queries'
 import { ConsistencyCalendar } from '@/components/admin/consistency-calendar'
 import { CreatorContractForm } from '@/components/admin/creator-contract-form'
@@ -26,10 +27,13 @@ import { PanelBoard } from '@/components/admin/panel-board'
 import { CreatorVideosPanel } from '@/components/admin/creator-videos-panel'
 import { LanguageToggle } from '@/components/language-toggle'
 import { RoleQuickSelect } from '@/components/admin/role-quick-select'
+import { BreaksManager } from '@/components/admin/breaks-manager'
+import { PersonHandlesLine } from '@/components/person-handles'
 import { StatCard } from '@/components/stat-card'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
+import { adminDashboardHref } from '@/lib/admin-href'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +42,7 @@ export default async function CreatorDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ panel?: string }>
+  searchParams: Promise<{ panel?: string; role?: string; project?: string }>
 }) {
   if (!(await isAdmin())) redirect('/login')
   await ensureCreatorTrackingColumns()
@@ -55,7 +59,7 @@ export default async function CreatorDetailPage({
 
   const sp = await searchParams
   const today = await getServerToday()
-  const [projects, consistency, stats, submissions, comparisons, active, payments, contracts, paidTotal] =
+  const [projects, consistency, stats, submissions, comparisons, active, payments, contracts, paidTotal, breaks] =
     await Promise.all([
       getAllProjects(),
       getCreatorConsistency(creator, today),
@@ -66,6 +70,7 @@ export default async function CreatorDetailPage({
       getPaymentsForCreator(creator.id),
       getContractsForCreator(creator.id),
       getCreatorPaidTotal(creator.id),
+      getScheduleBreaks(creator.id),
     ])
   const project = creator.project_id ? await getProjectById(creator.project_id) : null
   const pay = await getPaySummary(creator, today)
@@ -84,7 +89,10 @@ export default async function CreatorDetailPage({
       <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <Link
-            href="/admin"
+            href={adminDashboardHref({
+              role: sp.role || creator.role,
+              projectId: sp.project,
+            })}
             className="text-xs font-medium text-muted-foreground underline-offset-4 hover:underline"
           >
             {t('backToAdmin')}
@@ -93,6 +101,7 @@ export default async function CreatorDetailPage({
             {creator.name}
             <RoleQuickSelect creatorId={creator.id} role={creator.role} size="md" />
           </h1>
+          <PersonHandlesLine person={creator} className="mt-1 text-xs text-muted-foreground" />
           <p className="mt-1 text-sm text-muted-foreground">
             {project?.name ?? t('noProject')}
             {active
@@ -177,11 +186,14 @@ export default async function CreatorDetailPage({
             summary: comparisons.length === 0 ? t('noneYet') : `${comparisons.length} ${t('periods')}`,
             hint: active ? active.name : t('addAContract'),
             children: (
-              <ContractsManager
-                creatorId={creator.id}
-                today={today}
-                comparisons={comparisons}
-              />
+              <div className="flex flex-col gap-4">
+                <ContractsManager
+                  creatorId={creator.id}
+                  today={today}
+                  comparisons={comparisons}
+                />
+                <BreaksManager creatorId={creator.id} today={today} breaks={breaks} />
+              </div>
             ),
           },
           {
@@ -220,7 +232,6 @@ export default async function CreatorDetailPage({
                 submissions={submissions.map((s) => ({
                   ...s,
                   creator_name: creator.name,
-                  project_name: project?.name ?? null,
                 }))}
                 emptyLabel={t('noVideosYet')}
                 labels={{

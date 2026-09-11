@@ -10,6 +10,7 @@ type Submission = {
   id: number
   creator_id?: number
   creator_name?: string
+  project_id?: number | null
   project_name?: string | null
   video_date: string
   platform: 'instagram' | 'tiktok'
@@ -35,6 +36,7 @@ export function CreatorVideosPanel({
   }
 }) {
   const [platform, setPlatform] = useState<PlatformFilter>('both')
+  const [project, setProject] = useState<string>('all')
 
   const counts = useMemo(() => {
     let instagram = 0
@@ -60,10 +62,21 @@ export function CreatorVideosPanel({
     }
   }, [submissions])
 
+  const projectNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const s of submissions) {
+      if (s.project_name) names.add(s.project_name)
+    }
+    return [...names].sort()
+  }, [submissions])
+
   const filtered = useMemo(() => {
-    if (platform === 'both') return submissions
-    return submissions.filter((s) => s.platform === platform)
-  }, [submissions, platform])
+    return submissions.filter((s) => {
+      if (platform !== 'both' && s.platform !== platform) return false
+      if (project !== 'all' && (s.project_name ?? '') !== project) return false
+      return true
+    })
+  }, [submissions, platform, project])
 
   const activeCount =
     platform === 'both'
@@ -87,11 +100,12 @@ export function CreatorVideosPanel({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div
-          className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-muted/30 p-1"
-          role="tablist"
-          aria-label={labels.both}
-        >
+        <div className="flex flex-wrap items-center gap-2">
+          <div
+            className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-muted/30 p-1"
+            role="tablist"
+            aria-label={labels.both}
+          >
           {tabs.map((tab) => {
             const selected = platform === tab.id
             return (
@@ -113,6 +127,22 @@ export function CreatorVideosPanel({
             )
           })}
         </div>
+        {projectNames.length > 0 ? (
+          <select
+            value={project}
+            onChange={(e) => setProject(e.target.value)}
+            className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+            aria-label="Filter by project"
+          >
+            <option value="all">All projects</option>
+            {projectNames.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        </div>
         <p className="text-sm tabular-nums text-muted-foreground">
           <span className="font-semibold text-foreground">
             {formatNumber(activeCount)}
@@ -130,7 +160,7 @@ export function CreatorVideosPanel({
         submissions={filtered}
         emptyLabel={filtered.length === 0 && submissions.length > 0 ? labels.noMatch : emptyLabel}
         showCreator={false}
-        showProject={false}
+        showProject={true}
         editableViews={false}
       />
     </div>

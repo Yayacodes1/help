@@ -38,6 +38,19 @@ export type Creator = {
   last_paid_at: string | null
   pay_every_days: number
   notes: string | null
+  tiktok_username: string | null
+  instagram_username: string | null
+}
+
+export type ScheduleBreak = {
+  id: number
+  creator_id: number
+  start_date: string
+  end_date: string
+  reason: string | null
+  days_added: number
+  extended_contract_id: number | null
+  created_at: string
 }
 
 export type Submission = {

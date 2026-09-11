@@ -1,9 +1,11 @@
 import 'server-only'
-import { sql, type Contract, type Creator, type Payment, type Platform, type Project, type Submission } from '@/lib/db'
+import { sql, type Contract, type Creator, type Payment, type Platform, type Project, type ScheduleBreak, type Submission } from '@/lib/db'
 import type { ParticipantRole } from '@/lib/participant-role'
 import { addDays, maxDate, yearRange } from '@/lib/campaign'
+import { normalizeHandle } from '@/lib/usernames'
 import {
   buildConsistency,
+  eachDate,
   nextPayDate,
   type ConsistencySummary,
 } from '@/lib/consistency'
@@ -25,7 +27,7 @@ export async function getCreatorByToken(token: string): Promise<Creator | null> 
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
-           pay_every_days, notes
+           pay_every_days, notes, tiktok_username, instagram_username
     FROM creators
     WHERE token = ${token}
     LIMIT 1
@@ -40,7 +42,7 @@ export async function getCreatorById(id: number): Promise<Creator | null> {
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
-           pay_every_days, notes
+           pay_every_days, notes, tiktok_username, instagram_username
     FROM creators
     WHERE id = ${id}
     LIMIT 1
@@ -49,15 +51,19 @@ export async function getCreatorById(id: number): Promise<Creator | null> {
 }
 
 export async function getCreatorByName(name: string): Promise<Creator | null> {
+  const handle = normalizeHandle(name)
+  if (!handle) return null
   const rows = (await sql`
     SELECT id, name, token, project_id, created_at, role,
            goal_instagram, goal_tiktok, platforms,
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
-           pay_every_days, notes
+           pay_every_days, notes, tiktok_username, instagram_username
     FROM creators
-    WHERE lower(name) = lower(${name.trim()})
+    WHERE lower(name) = lower(${handle})
+       OR lower(COALESCE(tiktok_username, '')) = lower(${handle})
+       OR lower(COALESCE(instagram_username, '')) = lower(${handle})
     LIMIT 1
   `) as Creator[]
   return rows[0] ?? null
@@ -70,27 +76,29 @@ export async function getProjectById(id: number): Promise<Project | null> {
   return rows[0] ?? null
 }
 
-export async function getSubmissionsForCreator(creatorId: number): Promise<Submission[]> {
+export async function getSubmissionsForCreator(creatorId: number): Promise<Array<Submission & { project_name: string | null }>> {
   return (await sql`
-    SELECT id, creator_id, project_id, platform, url, video_date::text AS video_date,
-           views, views_error, created_at
-    FROM submissions
-    WHERE creator_id = ${creatorId}
-    ORDER BY video_date DESC, created_at DESC
-  `) as Submission[]
+    SELECT s.id, s.creator_id, s.project_id, s.platform, s.url, s.video_date::text AS video_date,
+           s.views, s.views_error, s.created_at, p.name AS project_name
+    FROM submissions s
+    LEFT JOIN projects p ON p.id = s.project_id
+    WHERE s.creator_id = ${creatorId}
+    ORDER BY s.video_date DESC, s.created_at DESC
+  `) as Array<Submission & { project_name: string | null }>
 }
 
 export async function getSubmissionsForCreatorOnDate(
   creatorId: number,
   date: string,
-): Promise<Submission[]> {
+): Promise<Array<Submission & { project_name: string | null }>> {
   return (await sql`
-    SELECT id, creator_id, project_id, platform, url, video_date::text AS video_date,
-           views, views_error, created_at
-    FROM submissions
-    WHERE creator_id = ${creatorId} AND video_date = ${date}
-    ORDER BY created_at DESC
-  `) as Submission[]
+    SELECT s.id, s.creator_id, s.project_id, s.platform, s.url, s.video_date::text AS video_date,
+           s.views, s.views_error, s.created_at, p.name AS project_name
+    FROM submissions s
+    LEFT JOIN projects p ON p.id = s.project_id
+    WHERE s.creator_id = ${creatorId} AND s.video_date = ${date}
+    ORDER BY s.created_at DESC
+  `) as Array<Submission & { project_name: string | null }>
 }
 
 export type PlatformCount = { platform: Platform; count: number }
@@ -176,7 +184,7 @@ export async function getAllCreators(): Promise<CreatorWithProject[]> {
            c.contract_start::text AS contract_start,
            c.contract_end::text AS contract_end,
            c.last_paid_at::text AS last_paid_at,
-           c.pay_every_days, c.notes,
+           c.pay_every_days, c.notes, c.tiktok_username, c.instagram_username,
            p.name AS project_name
     FROM creators c
     LEFT JOIN projects p ON p.id = c.project_id
@@ -204,16 +212,23 @@ export async function getCreatorsWithProgressOnDate(
       c.contract_start::text AS contract_start,
       c.contract_end::text AS contract_end,
       c.last_paid_at::text AS last_paid_at,
-      c.pay_every_days, c.notes,
+      c.pay_every_days, c.notes, c.tiktok_username, c.instagram_username,
       p.name AS project_name,
-      COALESCE(SUM(CASE WHEN s.video_date = ${date}::date AND s.platform = 'instagram' THEN 1 ELSE 0 END), 0)::int AS today_instagram,
-      COALESCE(SUM(CASE WHEN s.video_date = ${date}::date AND s.platform = 'tiktok' THEN 1 ELSE 0 END), 0)::int AS today_tiktok,
-      COALESCE(COUNT(s.id), 0)::int AS total_videos
+      COALESCE(SUM(CASE WHEN s.video_date = ${date}::date AND s.platform = 'instagram' AND (${pid}::int IS NULL OR s.project_id = ${pid}) THEN 1 ELSE 0 END), 0)::int AS today_instagram,
+      COALESCE(SUM(CASE WHEN s.video_date = ${date}::date AND s.platform = 'tiktok' AND (${pid}::int IS NULL OR s.project_id = ${pid}) THEN 1 ELSE 0 END), 0)::int AS today_tiktok,
+      COALESCE(SUM(CASE WHEN s.id IS NOT NULL AND (${pid}::int IS NULL OR s.project_id = ${pid}) THEN 1 ELSE 0 END), 0)::int AS total_videos
     FROM creators c
     LEFT JOIN projects p ON p.id = c.project_id
     LEFT JOIN submissions s ON s.creator_id = c.id
-    WHERE (${pid}::int IS NULL OR c.project_id = ${pid})
-      AND (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
+    WHERE (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
+      AND (
+        ${pid}::int IS NULL
+        OR c.project_id = ${pid}
+        OR EXISTS (
+          SELECT 1 FROM submissions sx
+          WHERE sx.creator_id = c.id AND sx.project_id = ${pid}
+        )
+      )
     GROUP BY c.id, p.name
     ORDER BY c.name ASC
   `) as CreatorProgress[]
@@ -367,7 +382,10 @@ export async function getConsistencyForWindow(
   today: string,
   goals?: { goalInstagram: number; goalTiktok: number },
 ): Promise<ConsistencySummary> {
-  const countsByDate = await getCreatorDailyPlatformCounts(creator.id, start, end)
+  const [countsByDate, breakDates] = await Promise.all([
+    getCreatorDailyPlatformCounts(creator.id, start, end),
+    getBreakDatesForCreator(creator.id, start, end),
+  ])
   return buildConsistency({
     start,
     end,
@@ -375,7 +393,41 @@ export async function getConsistencyForWindow(
     goalInstagram: goals?.goalInstagram ?? creator.goal_instagram,
     goalTiktok: goals?.goalTiktok ?? creator.goal_tiktok,
     countsByDate,
+    breakDates,
   })
+}
+
+export async function getScheduleBreaks(creatorId: number): Promise<ScheduleBreak[]> {
+  return (await sql`
+    SELECT id, creator_id,
+           start_date::text AS start_date,
+           end_date::text AS end_date,
+           reason, days_added, extended_contract_id, created_at
+    FROM schedule_breaks
+    WHERE creator_id = ${creatorId}
+    ORDER BY start_date DESC, id DESC
+  `) as ScheduleBreak[]
+}
+
+export async function getBreakDatesForCreator(
+  creatorId: number,
+  start: string,
+  end: string,
+): Promise<Set<string>> {
+  const rows = (await sql`
+    SELECT start_date::text AS start_date, end_date::text AS end_date
+    FROM schedule_breaks
+    WHERE creator_id = ${creatorId}
+      AND start_date <= ${end}::date
+      AND end_date >= ${start}::date
+  `) as { start_date: string; end_date: string }[]
+  const dates = new Set<string>()
+  for (const row of rows) {
+    const from = row.start_date < start ? start : row.start_date
+    const to = row.end_date > end ? end : row.end_date
+    for (const d of eachDate(from, to)) dates.add(d)
+  }
+  return dates
 }
 
 export function contractPlatforms(
@@ -764,9 +816,11 @@ export async function getPaymentDueList(
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
-           pay_every_days, notes
+           pay_every_days, notes, tiktok_username, instagram_username
     FROM creators
-    WHERE (${pid}::int IS NULL OR project_id = ${pid})
+    WHERE (${pid}::int IS NULL OR project_id = ${pid} OR EXISTS (
+      SELECT 1 FROM submissions sx WHERE sx.creator_id = creators.id AND sx.project_id = ${pid}
+    ))
       AND (${roleFilter}::text IS NULL OR role = ${roleFilter})
     ORDER BY name ASC
   `) as Creator[]

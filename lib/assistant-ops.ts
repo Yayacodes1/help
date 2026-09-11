@@ -1259,11 +1259,11 @@ export async function createCreatorFromAssistant(input: CreateCreatorInput) {
   const rows = (await sql`
     INSERT INTO creators (
       name, token, project_id, role, goal_instagram, goal_tiktok, platforms,
-      last_paid_at, pay_every_days, notes
+      last_paid_at, pay_every_days, notes, tiktok_username
     )
     VALUES (
       ${name}, ${token}, ${projectId}, ${role}, ${goals.goalInstagram}, ${goals.goalTiktok}, ${platforms},
-      ${lastPaidAt}, ${payEveryDays}, ${notes}
+      ${lastPaidAt}, ${payEveryDays}, ${notes}, ${name}
     )
     RETURNING id
   `) as { id: number }[]

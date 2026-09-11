@@ -51,15 +51,17 @@ import { AnalyticsPanel } from '@/components/admin/analytics-panel'
 import { TopVideosPanel } from '@/components/admin/top-videos-panel'
 import { MarketingBudgetBoard } from '@/components/marketing/marketing-budget-board'
 import { OutflowPanel } from '@/components/admin/outflow-panel'
+import { PayCadences } from '@/components/admin/pay-cadence'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { LanguageToggle } from '@/components/language-toggle'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { getOutflowSnapshot, type OutflowView } from '@/lib/outflow'
-import { usdToSar } from '@/lib/fx'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 import type { Platform } from '@/lib/db'
 import { parseRoleFilter, roleFilterToSql } from '@/lib/participant-role'
+import { getLeagueBoard } from '@/lib/ranking'
+import { RankingBoard } from '@/components/ranking-board'
 
 export const dynamic = 'force-dynamic'
 
@@ -164,6 +166,7 @@ export default async function AdminPage({
     marketingExpenses,
     marketingRequests,
     outflow,
+    league,
   ] = await Promise.all([
     getAdminSubmissions(filters),
     getAllProjects(),
@@ -209,6 +212,14 @@ export default async function AdminPage({
     listMarketingExpenses(),
     listMarketingRequests(),
     getOutflowSnapshot({ from: ofFrom, to: ofTo, view: ofView, countMode: 'base' }),
+    roleFilter === 'reposter'
+      ? getLeagueBoard({
+          from: monthStart,
+          to: monthEnd,
+          projectId: projectId ?? null,
+          role: 'reposter',
+        })
+      : Promise.resolve(null),
   ])
   const creators = await attachTracking(creatorsBase, today)
   const misses = getMissesFromProgress(creators)
@@ -254,6 +265,7 @@ export default async function AdminPage({
     sp.panel &&
     [
       'analytics',
+      'ranking',
       'topvideos',
       'progress',
       'attention',
@@ -354,6 +366,32 @@ export default async function AdminPage({
               />
             ),
           },
+          ...(league
+            ? [
+                {
+                  id: 'ranking',
+                  title: t('rankingTitle'),
+                  summary: league.rows[0] ? formatNumber(league.rows[0].views) : '0',
+                  hint: `${league.rows.length} ranked · ${league.from.slice(5)}→${league.to.slice(5)}`,
+                  children: (
+                    <RankingBoard
+                      board={league}
+                      collapsedLimit={null}
+                      labels={{
+                        title: t('rankingTitle'),
+                        empty: t('rankingEmpty'),
+                        expand: t('rankingExpand'),
+                        collapse: t('rankingCollapse'),
+                        search: t('rankingSearch'),
+                        rank: t('rankingRank'),
+                        views: t('views'),
+                        videos: t('videosWord'),
+                      }}
+                    />
+                  ),
+                },
+              ]
+            : []),
           {
             id: 'topvideos',
             title: 'Top videos',
@@ -378,7 +416,11 @@ export default async function AdminPage({
             children: (
               <div className="flex flex-col gap-3">
                 <DayNavigator selectedDay={selectedDay} today={today} />
-                <TodayProgress creators={creators} />
+                <TodayProgress
+                  creators={creators}
+                  linkRole={roleFilter}
+                  projectId={projectId}
+                />
               </div>
             ),
           },
@@ -391,6 +433,8 @@ export default async function AdminPage({
               <MissList
                 misses={misses}
                 dayLabel={isToday ? t('today') : formatDate(selectedDay)}
+                linkRole={roleFilter}
+                projectId={projectId}
               />
             ),
           },
@@ -423,6 +467,8 @@ export default async function AdminPage({
                 <SubmissionsTable
                   submissions={submissions}
                   emptyLabel={t('noVideosMatch')}
+                  linkRole={roleFilter}
+                  projectId={projectId}
                 />
               </div>
             ),
@@ -436,6 +482,8 @@ export default async function AdminPage({
               <PaymentDuePanel
                 due={payDueRows.due}
                 settled={payDueRows.settled}
+                linkRole={roleFilter}
+                projectId={projectId}
                 labels={{
                   empty: t('payDueEmpty'),
                   settledEmpty: t('payDueSettledEmpty'),
@@ -498,8 +546,13 @@ export default async function AdminPage({
           {
             id: 'outflow',
             title: 'Marketing by month',
-            summary: formatMoney(usdToSar(outflow.plannedTotal), 'SAR'),
-            hint: `Biweekly ${formatMoney(outflow.plannedBiweekly)} · monthly ${formatMoney(outflow.plannedTotal)}`,
+            copy: true,
+            summary: (
+              <PayCadences
+                monthlyUsd={outflow.plannedMonthly}
+                biweeklyUsd={outflow.plannedBiweekly}
+              />
+            ),
             children: (
               <Suspense fallback={<p className="text-sm text-muted-foreground">…</p>}>
                 <OutflowPanel
