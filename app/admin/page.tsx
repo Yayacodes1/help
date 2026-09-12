@@ -68,6 +68,8 @@ import { StrikesPanel } from '@/components/admin/strikes-panel'
 import { getReposterStrikeBoard, syncReposterStrikes } from '@/lib/strikes'
 import { getProjectViewsBoard } from '@/lib/project-views'
 import { ProjectViewsPanel } from '@/components/admin/project-views-panel'
+import { getCommissionBoard, getCommissionEstimate } from '@/lib/commission-data'
+import { CommissionBoardPanel } from '@/components/admin/commission-board'
 
 export const dynamic = 'force-dynamic'
 
@@ -104,6 +106,9 @@ export default async function AdminPage({
     rankMonth?: string
     rankProject?: string
     rankRole?: string
+    cmFrom?: string
+    cmTo?: string
+    cmContract?: string
   }>
 }) {
   if (!(await isAdmin())) redirect('/login')
@@ -186,6 +191,12 @@ export default async function AdminPage({
       : 'all'
   const rankRoleSql = roleFilterToSql(rankRole)
 
+  const cmFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.cmFrom ?? '') ? sp.cmFrom! : monthStart
+  const cmTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.cmTo ?? '') ? sp.cmTo! : monthEnd
+  const cmContractRaw = Number(sp.cmContract)
+  const cmContractId =
+    Number.isFinite(cmContractRaw) && cmContractRaw > 0 ? cmContractRaw : null
+
   const [
     submissions,
     projects,
@@ -209,6 +220,8 @@ export default async function AdminPage({
     projectViews,
     projectViewVideos,
     strikeBoard,
+    commissionBoard,
+    commissionEstimate,
   ] = await Promise.all([
     getAdminSubmissions(filters),
     getAllProjects(),
@@ -274,6 +287,19 @@ export default async function AdminPage({
         })
       : Promise.resolve([]),
     getReposterStrikeBoard(opToday),
+    getCommissionBoard({
+      from: cmFrom,
+      to: cmTo,
+      today,
+      projectId: projectId ?? null,
+      role: roleSql,
+    }),
+    getCommissionEstimate({
+      today,
+      projectId: projectId ?? null,
+      role: roleSql,
+      contractId: cmContractId,
+    }),
   ])
   const pvModeRaw = sp.pvMode
   const pvMode: 'combined' | number =
@@ -655,6 +681,51 @@ export default async function AdminPage({
                   refreshLabel={t('refreshThisVideo')}
                 />
               </div>
+            ),
+          },
+          {
+            id: 'commission',
+            title: t('commissionBoard'),
+            summary: formatMoney(commissionEstimate.estimate.did),
+            hint: `${t('commissionPayNow')} ${formatMoney(commissionEstimate.estimate.payNow)}`,
+            children: (
+              <CommissionBoardPanel
+                board={commissionBoard}
+                today={today}
+                linkRole={roleFilter}
+                projectId={projectId}
+                estimate={commissionEstimate.estimate}
+                estimateOptions={commissionEstimate.options}
+                estimateScope={commissionEstimate.scope}
+                labels={{
+                  settings: t('commissionSettings'),
+                  save: t('commissionSave'),
+                  leaderboard: t('commissionLeaderboard'),
+                  empty: t('commissionEmpty'),
+                  rank: t('rankingRank'),
+                  person: peopleNoun,
+                  standing: t('standing'),
+                  views: t('views'),
+                  paid: t('totalPaid'),
+                  earned: t('commissionEarned'),
+                  qualified: t('commissionQualified'),
+                  costPer1k: t('costPer1k'),
+                  vsGroup: t('vsGroup'),
+                  team: t('team'),
+                  estimateScope: t('commissionScope'),
+                  allContracts: t('commissionAllContracts'),
+                  current: t('commissionCurrent'),
+                  did: t('commissionDid'),
+                  didHint: t('commissionDidHint'),
+                  goingToDo: t('commissionGoing'),
+                  goingHint: t('commissionGoingHint'),
+                  recorded: t('commissionRecorded'),
+                  recordedHint: t('commissionRecordedHint'),
+                  payNow: t('commissionPayNow'),
+                  payNowHint: t('commissionPayNowHint'),
+                  units: t('commissionUnitsHit'),
+                }}
+              />
             ),
           },
           {

@@ -47,6 +47,11 @@ export function TodayVideos({
                 {s.project_name}
               </span>
             ) : null}
+            {s.batch_index != null ? (
+              <span className="shrink-0 rounded-full border border-border px-2 py-1 text-[11px] text-muted-foreground">
+                دفعة {s.batch_index}
+              </span>
+            ) : null}
             <div className="min-w-0 flex-1">
               <CopyLink url={s.url} copyLabel="نسخ" copiedLabel="تم" />
               {s.created_at ? (

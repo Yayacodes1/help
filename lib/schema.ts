@@ -240,4 +240,28 @@ export async function ensureCreatorTrackingColumns() {
   } catch {
     /* skip if duplicates already exist */
   }
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS commission_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      views_threshold INTEGER NOT NULL DEFAULT 5000,
+      commission_amount NUMERIC(12, 2) NOT NULL DEFAULT 5000,
+      reel_count INTEGER NOT NULL DEFAULT 5,
+      count_mode TEXT NOT NULL DEFAULT 'video'
+    )
+  `
+  await sql`
+    INSERT INTO commission_settings (id, views_threshold, commission_amount, reel_count, count_mode)
+    VALUES (1, 5000, 5000, 5, 'video')
+    ON CONFLICT (id) DO NOTHING
+  `
+
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS count_mode text`
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS views_threshold integer`
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS view_commission_amount numeric(12, 2)`
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS commission_reels integer`
+
+  await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_id text`
+  await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_index integer`
+  await sql`CREATE INDEX IF NOT EXISTS submissions_batch_id_idx ON submissions (batch_id)`
 }

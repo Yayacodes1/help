@@ -16,9 +16,12 @@ import {
   verifyPassword,
 } from '@/lib/admin-auth'
 import { getPaidForContract, getServerToday } from '@/lib/queries'
+import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { normalizeHandle, parseLoginPlatform, parseOptionalHandle, resolveLoginPlatform } from '@/lib/usernames'
+import { HOUSE_COMMISSION, normalizeCountMode } from '@/lib/commission'
+import type { CountMode } from '@/lib/db'
 
 async function requireAdmin() {
   if (!(await isAdmin())) throw new Error('Unauthorized')
@@ -81,6 +84,17 @@ function parsePlatforms(value: FormDataEntryValue | null): PlatformsMode {
   return normalizePlatforms((value ?? '').toString())
 }
 
+function parseOptionalPositiveInt(value: FormDataEntryValue | null): number | null {
+  const raw = (value ?? '').toString().trim()
+  if (!raw) return null
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+}
+
+function parseContractCountMode(value: FormDataEntryValue | null): CountMode | null {
+  return normalizeCountMode((value ?? '').toString().trim())
+}
+
 function parseContractQuotas(
   formData: FormData,
   previous?: { baseAmount: number; commissionAmount: number | null },
@@ -102,7 +116,14 @@ function parseContractQuotas(
       : parseOptionalAmount(formData.get('commission_amount')),
   }
   const q = applyPlatformsToQuotas(platforms, raw)
-  return { ...q, platforms }
+  return {
+    ...q,
+    platforms,
+    countMode: parseContractCountMode(formData.get('count_mode')),
+    viewsThreshold: parseOptionalPositiveInt(formData.get('views_threshold')),
+    viewCommissionAmount: parseOptionalAmount(formData.get('view_commission_amount')),
+    commissionReels: parseOptionalPositiveInt(formData.get('commission_reels')),
+  }
 }
 
 // --- Auth ---
@@ -119,6 +140,32 @@ export async function login(_prev: unknown, formData: FormData) {
 export async function logout() {
   await destroyAdminSession()
   redirect('/login')
+}
+
+export async function updateCommissionSettings(formData: FormData) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const viewsThreshold =
+    parseOptionalPositiveInt(formData.get('views_threshold')) ??
+    HOUSE_COMMISSION.viewsThreshold
+  const commissionAmount =
+    parseOptionalAmount(formData.get('commission_amount')) ??
+    HOUSE_COMMISSION.commissionAmount
+  const reelCount =
+    parseOptionalPositiveInt(formData.get('reel_count')) ?? HOUSE_COMMISSION.reelCount
+  const countMode =
+    parseContractCountMode(formData.get('count_mode')) ?? HOUSE_COMMISSION.countMode
+  await sql`
+    INSERT INTO commission_settings (id, views_threshold, commission_amount, reel_count, count_mode)
+    VALUES (1, ${viewsThreshold}, ${commissionAmount}, ${reelCount}, ${countMode})
+    ON CONFLICT (id) DO UPDATE SET
+      views_threshold = EXCLUDED.views_threshold,
+      commission_amount = EXCLUDED.commission_amount,
+      reel_count = EXCLUDED.reel_count,
+      count_mode = EXCLUDED.count_mode
+  `
+  revalidatePath('/admin')
+  revalidatePath('/submit')
 }
 
 // --- Projects ---
@@ -326,12 +373,14 @@ export async function createContract(creatorId: number, formData: FormData) {
     INSERT INTO contracts (
       creator_id, name, start_date, end_date,
       goal_instagram, goal_tiktok, target_instagram, target_tiktok,
-      platforms, base_amount, commission_amount
+      platforms, base_amount, commission_amount,
+      count_mode, views_threshold, view_commission_amount, commission_reels
     )
     VALUES (
       ${creatorId}, ${name}, ${start}, ${end},
       ${q.goalInstagram}, ${q.goalTiktok}, ${q.targetInstagram}, ${q.targetTiktok},
-      ${q.platforms}, ${q.baseAmount}, ${q.commissionAmount}
+      ${q.platforms}, ${q.baseAmount}, ${q.commissionAmount},
+      ${q.countMode}, ${q.viewsThreshold}, ${q.viewCommissionAmount}, ${q.commissionReels}
     )
   `
 
@@ -392,12 +441,14 @@ export async function startNewContract(creatorId: number, formData: FormData) {
     INSERT INTO contracts (
       creator_id, name, start_date, end_date,
       goal_instagram, goal_tiktok, target_instagram, target_tiktok,
-      platforms, base_amount, commission_amount
+      platforms, base_amount, commission_amount,
+      count_mode, views_threshold, view_commission_amount, commission_reels
     )
     VALUES (
       ${creatorId}, ${name}, ${start}, ${end},
       ${q.goalInstagram}, ${q.goalTiktok}, ${q.targetInstagram}, ${q.targetTiktok},
-      ${q.platforms}, ${q.baseAmount}, ${q.commissionAmount}
+      ${q.platforms}, ${q.baseAmount}, ${q.commissionAmount},
+      ${q.countMode}, ${q.viewsThreshold}, ${q.viewCommissionAmount}, ${q.commissionReels}
     )
   `
   revalidatePath('/admin')
@@ -484,7 +535,10 @@ export async function updateContract(id: number, creatorId: number, formData: Fo
         goal_instagram = ${q.goalInstagram}, goal_tiktok = ${q.goalTiktok},
         target_instagram = ${q.targetInstagram}, target_tiktok = ${q.targetTiktok},
         platforms = ${q.platforms},
-        base_amount = ${q.baseAmount}, commission_amount = ${q.commissionAmount}
+        base_amount = ${q.baseAmount}, commission_amount = ${q.commissionAmount},
+        count_mode = ${q.countMode}, views_threshold = ${q.viewsThreshold},
+        view_commission_amount = ${q.viewCommissionAmount},
+        commission_reels = ${q.commissionReels}
     WHERE id = ${id} AND creator_id = ${creatorId}
   `
 

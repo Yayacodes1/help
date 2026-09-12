@@ -13,6 +13,7 @@ import {
   updateContract,
 } from '@/app/actions/admin'
 import { formatDate, formatMoney } from '@/lib/format'
+import { CommissionTermsFields } from '@/components/admin/commission-terms-fields'
 
 const inputClass =
   'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -427,6 +428,7 @@ export function ContractsManager({
             </label>
           </div>
           <PayFields base={Number(stickyBase) || 0} requireBase variant="current" />
+          <CommissionTermsFields />
           <QuotaFields variant="current" />
         </form>
       </TapOpenSection>
@@ -463,6 +465,7 @@ export function ContractsManager({
               </label>
             </div>
             <PayFields requireBase variant="current" />
+            <CommissionTermsFields />
             <QuotaFields variant="current" />
             <button
               type="submit"
@@ -550,6 +553,12 @@ export function ContractsManager({
                         base={Number(contract.base_amount) || 0}
                         commission={contract.commission_amount}
                         variant={pastVariant ? 'past' : 'current'}
+                      />
+                      <CommissionTermsFields
+                        countMode={contract.count_mode}
+                        viewsThreshold={contract.views_threshold}
+                        viewCommissionAmount={contract.view_commission_amount}
+                        commissionReels={contract.commission_reels}
                       />
                       <QuotaFields
                         goalIg={contract.goal_instagram}

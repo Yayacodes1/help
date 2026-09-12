@@ -9,6 +9,7 @@ const ADMIN_PANELS = new Set([
   'attention',
   'videos',
   'paydue',
+  'commission',
   'payments',
   'marketing',
   'outflow',

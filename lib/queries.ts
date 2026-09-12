@@ -127,7 +127,8 @@ export async function getProjectById(id: number): Promise<Project | null> {
 export async function getSubmissionsForCreator(creatorId: number): Promise<Array<Submission & { project_name: string | null }>> {
   return (await sql`
     SELECT s.id, s.creator_id, s.project_id, s.platform, s.url, s.video_date::text AS video_date,
-           s.views, s.views_error, s.created_at, p.name AS project_name
+           s.views, s.views_error, s.created_at, s.batch_id, s.batch_index,
+           p.name AS project_name
     FROM submissions s
     LEFT JOIN projects p ON p.id = s.project_id
     WHERE s.creator_id = ${creatorId}
@@ -141,7 +142,8 @@ export async function getSubmissionsForCreatorOnDate(
 ): Promise<Array<Submission & { project_name: string | null }>> {
   return (await sql`
     SELECT s.id, s.creator_id, s.project_id, s.platform, s.url, s.video_date::text AS video_date,
-           s.views, s.views_error, s.created_at, p.name AS project_name
+           s.views, s.views_error, s.created_at, s.batch_id, s.batch_index,
+           p.name AS project_name
     FROM submissions s
     LEFT JOIN projects p ON p.id = s.project_id
     WHERE s.creator_id = ${creatorId} AND s.video_date = ${date}
@@ -203,6 +205,8 @@ export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<A
       s.views,
       s.views_error,
       s.created_at,
+      s.batch_id,
+      s.batch_index,
       c.name AS creator_name,
       c.role AS creator_role,
       p.name AS project_name
@@ -377,7 +381,10 @@ export async function getContractsForCreator(creatorId: number): Promise<Contrac
            target_instagram, target_tiktok,
            platforms,
            base_amount::float AS base_amount,
-           commission_amount::float AS commission_amount
+           commission_amount::float AS commission_amount,
+           count_mode, views_threshold,
+           view_commission_amount::float AS view_commission_amount,
+           commission_reels
     FROM contracts
     WHERE creator_id = ${creatorId}
     ORDER BY start_date DESC, id DESC
@@ -397,7 +404,10 @@ export async function getActiveContract(
            target_instagram, target_tiktok,
            platforms,
            base_amount::float AS base_amount,
-           commission_amount::float AS commission_amount
+           commission_amount::float AS commission_amount,
+           count_mode, views_threshold,
+           view_commission_amount::float AS view_commission_amount,
+           commission_reels
     FROM contracts
     WHERE creator_id = ${creatorId}
       AND start_date <= ${today}::date
@@ -416,7 +426,10 @@ export async function getActiveContract(
            target_instagram, target_tiktok,
            platforms,
            base_amount::float AS base_amount,
-           commission_amount::float AS commission_amount
+           commission_amount::float AS commission_amount,
+           count_mode, views_threshold,
+           view_commission_amount::float AS view_commission_amount,
+           commission_reels
     FROM contracts
     WHERE creator_id = ${creatorId}
     ORDER BY start_date DESC, id DESC

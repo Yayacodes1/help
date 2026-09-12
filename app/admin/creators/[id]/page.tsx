@@ -33,6 +33,9 @@ import { StrikesManager } from '@/components/admin/strikes-manager'
 import { getCreatorStrikeSummary, syncReposterStrikes } from '@/lib/strikes'
 import { PersonHandlesLine } from '@/components/person-handles'
 import { StatCard } from '@/components/stat-card'
+import { ScoreDot, StandingBadge } from '@/components/standing-badge'
+import { getCommissionBoard, getCommissionEstimate } from '@/lib/commission-data'
+import { CommissionEstimateCards } from '@/components/admin/commission-estimate'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
@@ -45,7 +48,13 @@ export default async function CreatorDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ panel?: string; role?: string; project?: string; from?: string }>
+  searchParams: Promise<{
+    panel?: string
+    role?: string
+    project?: string
+    from?: string
+    cmContract?: string
+  }>
 }) {
   if (!(await isAdmin())) redirect('/login')
   await ensureCreatorTrackingColumns()
@@ -66,7 +75,11 @@ export default async function CreatorDetailPage({
   if (creator.role === 'reposter') {
     await syncReposterStrikes({ today: opToday, creatorId: creator.id })
   }
-  const [projects, consistency, stats, submissions, comparisons, active, payments, contracts, paidTotal, breaks, strikeSummary] =
+  const cmContractRaw = Number(sp.cmContract)
+  const cmContractId =
+    Number.isFinite(cmContractRaw) && cmContractRaw > 0 ? cmContractRaw : null
+
+  const [projects, consistency, stats, submissions, comparisons, active, payments, contracts, paidTotal, breaks, strikeSummary, personPerf, personEstimate] =
     await Promise.all([
       getAllProjects(),
       getCreatorConsistency(creator, today),
@@ -81,7 +94,19 @@ export default async function CreatorDetailPage({
       creator.role === 'reposter'
         ? getCreatorStrikeSummary(creator.id, opToday)
         : Promise.resolve(null),
+      getCommissionBoard({
+        from: '2000-01-01',
+        to: today,
+        today,
+        creatorId: creator.id,
+      }),
+      getCommissionEstimate({
+        today,
+        creatorId: creator.id,
+        contractId: cmContractId,
+      }),
     ])
+  const perf = personPerf.rows[0] ?? null
   const project = creator.project_id ? await getProjectById(creator.project_id) : null
   const pay = await getPaySummary(creator, today)
   const window = contractWindow(creator, today, active)
@@ -90,7 +115,7 @@ export default async function CreatorDetailPage({
   const activeCompare = comparisons.find((c) => c.isActive)
 
   const defaultPanel =
-    sp.panel && ['consistency', 'contracts', 'payments', 'profile', 'videos', 'strikes'].includes(sp.panel)
+    sp.panel && ['consistency', 'contracts', 'payments', 'profile', 'videos', 'strikes', 'commission'].includes(sp.panel)
       ? sp.panel
       : null
   const returnPanel = adminReturnPanel(sp.from)
@@ -114,6 +139,7 @@ export default async function CreatorDetailPage({
           <h1 className="mt-2 flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight">
             {creator.name}
             <RoleQuickSelect creatorId={creator.id} role={creator.role} size="md" />
+            {perf ? <StandingBadge standing={perf.standing} /> : null}
           </h1>
           <PersonHandlesLine person={creator} className="mt-1 text-xs text-muted-foreground" />
           <p className="mt-1 text-sm text-muted-foreground">
@@ -131,7 +157,7 @@ export default async function CreatorDetailPage({
         />
       </header>
 
-      <section className={`grid grid-cols-2 gap-3 ${creator.role === 'reposter' ? 'lg:grid-cols-6' : 'lg:grid-cols-5'}`}>
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
         <StatCard label={t('currentStreak')} value={`${consistency.currentStreak} ${t('days')}`} />
         {strikeSummary ? (
           <StatCard
@@ -162,6 +188,22 @@ export default async function CreatorDetailPage({
                 ? `${activeCompare.videoCount}/${activeCompare.targetTotal}`
                 : `${activeCompare.videoCount}`
               : `${stats.total_videos}`
+          }
+        />
+        <StatCard
+          label={t('views')}
+          value={formatNumber(perf?.views ?? totalViews)}
+          hint={
+            perf
+              ? `${perf.qualifiedUnits} ${t('commissionQualified').toLowerCase()}`
+              : undefined
+          }
+        />
+        <StatCard
+          label={t('commissionEarned')}
+          value={formatMoney(perf?.commissionEarned ?? 0)}
+          hint={
+            perf?.costPer1k != null ? `${formatMoney(perf.costPer1k)} / 1k` : undefined
           }
         />
         <StatCard label={t('totalPaid')} value={formatMoney(paidTotal)} />
@@ -278,6 +320,68 @@ export default async function CreatorDetailPage({
             summary: `${creator.goal_instagram + creator.goal_tiktok}/day`,
             hint: t('fallbackGoals'),
             children: <CreatorContractForm creator={creator} projects={projects} />,
+          },
+          {
+            id: 'commission',
+            title: t('commissionBoard'),
+            summary: formatMoney(personEstimate.estimate.did),
+            hint: `${t('commissionPayNow')} ${formatMoney(personEstimate.estimate.payNow)}`,
+            children: (
+              <div className="flex flex-col gap-4">
+                <CommissionEstimateCards
+                  estimate={personEstimate.estimate}
+                  options={personEstimate.options}
+                  selectedId={personEstimate.scope}
+                  today={today}
+                  panel="commission"
+                  basePath={`/admin/creators/${creator.id}`}
+                  showCreator={false}
+                  labels={{
+                    scope: t('commissionScope'),
+                    allContracts: t('commissionAllContracts'),
+                    current: t('commissionCurrent'),
+                    did: t('commissionDid'),
+                    didHint: t('commissionDidHint'),
+                    goingToDo: t('commissionGoing'),
+                    goingHint: t('commissionGoingHint'),
+                    recorded: t('commissionRecorded'),
+                    recordedHint: t('commissionRecordedHint'),
+                    payNow: t('commissionPayNow'),
+                    payNowHint: t('commissionPayNowHint'),
+                    units: t('commissionUnitsHit'),
+                  }}
+                />
+                {perf ? (
+                  <div className="flex flex-col gap-3">
+                    <StandingBadge standing={perf.standing} />
+                    <div className="flex flex-wrap gap-3">
+                      <ScoreDot score={perf.viewsScore} label={t('views')} />
+                      <ScoreDot score={perf.commissionScore} label={t('commissionEarned')} />
+                      <ScoreDot score={perf.spendScore} label={t('costPer1k')} />
+                    </div>
+                    <p className="text-sm tabular-nums">
+                      {formatNumber(perf.views)} {t('views')}
+                      {' · '}
+                      {perf.qualifiedUnits}/{perf.units} {t('commissionQualified').toLowerCase()}
+                      {' · '}
+                      {t('commissionEarned')} {formatMoney(perf.commissionEarned)}
+                      {' · '}
+                      {t('totalPaid')} {formatMoney(perf.paid)}
+                      {perf.costPer1k != null ? ` · ${formatMoney(perf.costPer1k)} / 1k` : ''}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {perf.terms.countMode === 'batch' ? 'Per batch' : 'Per video'}
+                      {' · '}
+                      {formatNumber(perf.terms.viewsThreshold)} views
+                      {' · '}
+                      {formatMoney(perf.terms.commissionAmount)} / {perf.terms.reelCount} reels
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t('commissionEmpty')}</p>
+                )}
+              </div>
+            ),
           },
           {
             id: 'videos',

@@ -69,6 +69,8 @@ export type ScheduleBreak = {
   created_at: string
 }
 
+export type CountMode = 'video' | 'batch'
+
 export type Submission = {
   id: number
   creator_id: number
@@ -80,6 +82,10 @@ export type Submission = {
   /** Last TikHub/views lookup error; null when last fetch succeeded or never tried. */
   views_error: string | null
   created_at: string
+  /** Same-content IG+TikTok pair. Null = counted as its own unit. */
+  batch_id: string | null
+  /** 1-based batch number shown to the creator. */
+  batch_index: number | null
 }
 
 export type Contract = {
@@ -103,6 +109,18 @@ export type Contract = {
   base_amount: number
   /** Commission (nullable until set later) */
   commission_amount: number | null
+  /** Null = use house default */
+  count_mode: CountMode | null
+  views_threshold: number | null
+  view_commission_amount: number | null
+  commission_reels: number | null
+}
+
+export type CommissionSettings = {
+  views_threshold: number
+  commission_amount: number
+  reel_count: number
+  count_mode: CountMode
 }
 
 export type Payment = {

@@ -36,6 +36,7 @@ export function SubmissionsTable({
     url: string
     views: number
     views_error?: string | null
+    batch_index?: number | null
   }>
   emptyLabel?: string
   showCreator?: boolean
@@ -125,6 +126,11 @@ export function SubmissionsTable({
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
                   {PLATFORM_META[s.platform].en}
+                  {'batch_index' in s && s.batch_index != null ? (
+                    <span className="ml-1 text-[11px] text-muted-foreground">
+                      · batch {s.batch_index}
+                    </span>
+                  ) : null}
                 </td>
                 <td className="max-w-[280px] px-4 py-3">
                   <CopyLink url={s.url} />
