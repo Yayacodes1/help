@@ -18,6 +18,7 @@ import {
   getSubmissionsForCreator,
   contractWindow,
   getScheduleBreaks,
+  getOperationalToday,
 } from '@/lib/queries'
 import { ConsistencyCalendar } from '@/components/admin/consistency-calendar'
 import { CreatorContractForm } from '@/components/admin/creator-contract-form'
@@ -28,12 +29,14 @@ import { CreatorVideosPanel } from '@/components/admin/creator-videos-panel'
 import { LanguageToggle } from '@/components/language-toggle'
 import { RoleQuickSelect } from '@/components/admin/role-quick-select'
 import { BreaksManager } from '@/components/admin/breaks-manager'
+import { StrikesManager } from '@/components/admin/strikes-manager'
+import { getCreatorStrikeSummary, syncReposterStrikes } from '@/lib/strikes'
 import { PersonHandlesLine } from '@/components/person-handles'
 import { StatCard } from '@/components/stat-card'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
-import { adminDashboardHref } from '@/lib/admin-href'
+import { adminDashboardHref, adminReturnPanel } from '@/lib/admin-href'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,7 +45,7 @@ export default async function CreatorDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ panel?: string; role?: string; project?: string }>
+  searchParams: Promise<{ panel?: string; role?: string; project?: string; from?: string }>
 }) {
   if (!(await isAdmin())) redirect('/login')
   await ensureCreatorTrackingColumns()
@@ -59,7 +62,11 @@ export default async function CreatorDetailPage({
 
   const sp = await searchParams
   const today = await getServerToday()
-  const [projects, consistency, stats, submissions, comparisons, active, payments, contracts, paidTotal, breaks] =
+  const opToday = await getOperationalToday()
+  if (creator.role === 'reposter') {
+    await syncReposterStrikes({ today: opToday, creatorId: creator.id })
+  }
+  const [projects, consistency, stats, submissions, comparisons, active, payments, contracts, paidTotal, breaks, strikeSummary] =
     await Promise.all([
       getAllProjects(),
       getCreatorConsistency(creator, today),
@@ -71,6 +78,9 @@ export default async function CreatorDetailPage({
       getContractsForCreator(creator.id),
       getCreatorPaidTotal(creator.id),
       getScheduleBreaks(creator.id),
+      creator.role === 'reposter'
+        ? getCreatorStrikeSummary(creator.id, opToday)
+        : Promise.resolve(null),
     ])
   const project = creator.project_id ? await getProjectById(creator.project_id) : null
   const pay = await getPaySummary(creator, today)
@@ -80,22 +90,26 @@ export default async function CreatorDetailPage({
   const activeCompare = comparisons.find((c) => c.isActive)
 
   const defaultPanel =
-    sp.panel && ['consistency', 'contracts', 'payments', 'profile', 'videos'].includes(sp.panel)
+    sp.panel && ['consistency', 'contracts', 'payments', 'profile', 'videos', 'strikes'].includes(sp.panel)
       ? sp.panel
-      : 'contracts'
+      : null
+  const returnPanel = adminReturnPanel(sp.from)
+  const backHref = adminDashboardHref({
+    role: sp.role || creator.role,
+    projectId: sp.project,
+    panel: returnPanel,
+  })
+  const backLabel = returnPanel === 'manage' ? t('backToCreators') : t('backToAdmin')
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 py-8">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <Link
-            href={adminDashboardHref({
-              role: sp.role || creator.role,
-              projectId: sp.project,
-            })}
+            href={backHref}
             className="text-xs font-medium text-muted-foreground underline-offset-4 hover:underline"
           >
-            {t('backToAdmin')}
+            {backLabel}
           </Link>
           <h1 className="mt-2 flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight">
             {creator.name}
@@ -117,8 +131,21 @@ export default async function CreatorDetailPage({
         />
       </header>
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <section className={`grid grid-cols-2 gap-3 ${creator.role === 'reposter' ? 'lg:grid-cols-6' : 'lg:grid-cols-5'}`}>
         <StatCard label={t('currentStreak')} value={`${consistency.currentStreak} ${t('days')}`} />
+        {strikeSummary ? (
+          <StatCard
+            label={t('strikeCount')}
+            value={strikeSummary.contractStrikes}
+            hint={
+              strikeSummary.needsCorrective
+                ? t('strikesCorrectiveFlag')
+                : strikeSummary.postedToday
+                  ? t('strikePostedToday')
+                  : t('strikeMissedToday')
+            }
+          />
+        ) : null}
         <StatCard
           label={t('videoProgress')}
           value={
@@ -180,6 +207,36 @@ export default async function CreatorDetailPage({
               </div>
             ),
           },
+          ...(strikeSummary
+            ? [
+                {
+                  id: 'strikes',
+                  title: t('strikesTitle'),
+                  summary: `${strikeSummary.contractStrikes}`,
+                  hint: strikeSummary.needsCorrective
+                    ? t('strikesCorrectiveFlag')
+                    : t('strikeCount'),
+                  children: (
+                    <StrikesManager
+                      creatorId={creator.id}
+                      today={opToday}
+                      strikes={strikeSummary.strikes}
+                      labels={{
+                        title: t('strikesTitle'),
+                        hint: t('strikesHint'),
+                        date: t('strikeDate'),
+                        reason: t('strikeReason'),
+                        add: t('strikeAdd'),
+                        remove: t('strikeRemove'),
+                        empty: t('strikeEmpty'),
+                        auto: t('strikeSourceAuto'),
+                        manual: t('strikeSourceManual'),
+                      }}
+                    />
+                  ),
+                },
+              ]
+            : []),
           {
             id: 'contracts',
             title: t('contracts'),
@@ -229,6 +286,7 @@ export default async function CreatorDetailPage({
             hint: `IG ${stats.instagram_videos} · TT ${stats.tiktok_videos} · ${formatNumber(totalViews)} ${t('views')}`,
             children: (
               <CreatorVideosPanel
+                creatorId={creator.id}
                 submissions={submissions.map((s) => ({
                   ...s,
                   creator_name: creator.name,
@@ -241,6 +299,8 @@ export default async function CreatorDetailPage({
                   videos: t('videosWord'),
                   views: t('views'),
                   noMatch: t('noVideosMatch'),
+                  refreshViews: t('refreshViews'),
+                  refreshThisVideo: t('refreshThisVideo'),
                 }}
               />
             ),

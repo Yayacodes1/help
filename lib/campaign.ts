@@ -16,6 +16,27 @@ export function monthRange(today: string): { start: string; end: string } {
   return { start: `${today.slice(0, 7)}-01`, end: today }
 }
 
+/** YYYY-MM → first and last calendar day of that month (UTC). */
+export function calendarMonthRange(yearMonth: string): { start: string; end: string } {
+  const [year, month] = yearMonth.split('-').map(Number)
+  const start = `${yearMonth}-01`
+  const end = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
+  return { start, end }
+}
+
+/** Ranking window for a calendar month; current month is clipped to `today`. */
+export function rankingMonthRange(
+  yearMonth: string,
+  today: string,
+): { start: string; end: string } {
+  const { start, end } = calendarMonthRange(yearMonth)
+  return { start, end: end > today ? today : end }
+}
+
+export function parseYearMonth(value: string | null | undefined, today: string): string {
+  return value && /^\d{4}-\d{2}$/.test(value) ? value : today.slice(0, 7)
+}
+
 export type DateRangePresetId =
   | 'today'
   | 'lastTwoDays'

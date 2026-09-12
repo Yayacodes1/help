@@ -5,15 +5,19 @@ import { useRouter } from 'next/navigation'
 import { Trash2 } from 'lucide-react'
 import { deleteOwnSubmission } from '@/app/actions/creator'
 import { CopyLink } from '@/components/copy-link'
+import { formatDateTime } from '@/lib/format'
 import { PLATFORM_META } from '@/lib/platforms'
 import type { Submission } from '@/lib/db'
+import type { Locale } from '@/lib/i18n'
 
 export function TodayVideos({
   username,
   submissions,
+  locale,
 }: {
   username: string
   submissions: Array<Submission & { project_name?: string | null }>
+  locale: Locale
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -45,6 +49,11 @@ export function TodayVideos({
             ) : null}
             <div className="min-w-0 flex-1">
               <CopyLink url={s.url} copyLabel="نسخ" copiedLabel="تم" />
+              {s.created_at ? (
+                <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">
+                  {formatDateTime(s.created_at, locale)}
+                </p>
+              ) : null}
             </div>
             <button
               type="button"

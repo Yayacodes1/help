@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { RefreshCw } from 'lucide-react'
 import type { Platform } from '@/lib/db'
 
 type ChunkResult = {
@@ -38,14 +39,39 @@ function explainHttpError(status: number, apiError?: string): string {
   return `Refresh failed (HTTP ${status}).`
 }
 
-function readFilters(params: URLSearchParams, defaults: { from: string; to: string }) {
-  const from = params.get('from') || defaults.from
-  const to = params.get('to') || defaults.to
+type RefreshFilterInput = {
+  from?: string
+  to?: string
+  creatorId?: number
+  projectId?: number
+  submissionId?: number
+  role?: string
+  platform?: Platform
+}
+
+function readFilters(
+  params: URLSearchParams,
+  defaults: { from?: string; to?: string },
+  overrides: {
+    creatorId?: number
+    allDates?: boolean
+    submissionId?: number
+  } = {},
+): RefreshFilterInput {
+  if (overrides.allDates || overrides.submissionId) {
+    return {
+      creatorId: overrides.creatorId,
+      submissionId: overrides.submissionId,
+    }
+  }
+
+  const from = params.get('from') || defaults.from || undefined
+  const to = params.get('to') || defaults.to || undefined
   const creatorRaw = params.get('creator')
   const projectRaw = params.get('project')
   const roleRaw = params.get('role')
   const platformRaw = params.get('platform')
-  const creatorId = creatorRaw ? Number(creatorRaw) : undefined
+  const creatorFromUrl = creatorRaw ? Number(creatorRaw) : undefined
   const projectId = projectRaw ? Number(projectRaw) : undefined
   const role =
     roleRaw === 'creator' || roleRaw === 'reposter' ? roleRaw : undefined
@@ -57,7 +83,7 @@ function readFilters(params: URLSearchParams, defaults: { from: string; to: stri
   return {
     from,
     to,
-    creatorId: Number.isFinite(creatorId) ? creatorId : undefined,
+    creatorId: overrides.creatorId ?? (Number.isFinite(creatorFromUrl) ? creatorFromUrl : undefined),
     projectId: Number.isFinite(projectId) ? projectId : undefined,
     role,
     platform,
@@ -80,6 +106,7 @@ async function fetchChunk(
       to: filters.to,
       creatorId: filters.creatorId,
       projectId: filters.projectId,
+      submissionId: filters.submissionId,
       role: filters.role,
       platform: filters.platform,
     }),
@@ -102,10 +129,14 @@ export function RefreshViewsButton({
   label,
   defaultFrom,
   defaultTo,
+  creatorId,
+  allDates = false,
 }: {
   label: string
-  defaultFrom: string
-  defaultTo: string
+  defaultFrom?: string
+  defaultTo?: string
+  creatorId?: number
+  allDates?: boolean
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -122,10 +153,14 @@ export function RefreshViewsButton({
     setIsError(false)
     setSampleFails([])
 
-    const filters = readFilters(searchParams, {
-      from: defaultFrom,
-      to: defaultTo,
-    })
+    const filters = readFilters(
+      searchParams,
+      {
+        from: defaultFrom,
+        to: defaultTo,
+      },
+      { creatorId, allDates },
+    )
 
     let checked = 0
     let updated = 0
@@ -137,9 +172,13 @@ export function RefreshViewsButton({
     const failMap = new Map<string, number>()
     const samples: { id: number; url: string; reason: string }[] = []
     const limit = 4
-    const filterLine = `Dates ${filters.from} → ${filters.to}${
-      filters.creatorId ? ` · creator #${filters.creatorId}` : ''
-    }${filters.platform ? ` · ${filters.platform}` : ''}`
+    const filterLine = [
+      filters.from && filters.to ? `Dates ${filters.from} → ${filters.to}` : 'All dates',
+      filters.creatorId ? `creator #${filters.creatorId}` : null,
+      filters.platform ? filters.platform : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
 
     try {
       for (let round = 0; round < 500; round++) {
@@ -254,9 +293,9 @@ export function RefreshViewsButton({
         </p>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Uses the date / creator / platform filters above. Fixes IG↔TT from each
-          URL, then pulls current views. A daily cron also refreshes today +
-          yesterday once per day (Vercel Hobby limit).
+          {allDates || creatorId
+            ? 'Pulls current views for this creator\'s videos. Fixes IG↔TT from each URL.'
+            : 'Uses the date / creator / platform filters above. Fixes IG↔TT from each URL, then pulls current views. A daily cron also refreshes today + yesterday once per day (Vercel Hobby limit).'}
         </p>
       )}
       {sampleFails.length > 0 && (
@@ -281,6 +320,54 @@ export function RefreshViewsButton({
           ))}
         </ul>
       )}
+    </div>
+  )
+}
+
+export function RefreshVideoButton({
+  submissionId,
+  label,
+}: {
+  submissionId: number
+  label: string
+}) {
+  const router = useRouter()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function run() {
+    setPending(true)
+    setError(null)
+    try {
+      const data = await fetchChunk(0, 1, { submissionId })
+      if (data.failed > 0) {
+        setError(data.failureSamples?.[0]?.reason || 'Refresh failed')
+      }
+      router.refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Refresh failed')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => void run()}
+        title={label}
+        aria-label={label}
+        className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
+      >
+        <RefreshCw className={`size-3.5 ${pending ? 'animate-spin' : ''}`} />
+      </button>
+      {error ? (
+        <span className="max-w-[160px] text-left text-[11px] leading-snug text-destructive">
+          {error}
+        </span>
+      ) : null}
     </div>
   )
 }

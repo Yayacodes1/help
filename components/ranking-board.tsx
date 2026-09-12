@@ -3,7 +3,6 @@
 import { useMemo, useState, Fragment } from 'react'
 import { ChevronDown, Minus, Search, TrendingDown, TrendingUp } from 'lucide-react'
 import { formatNumber } from '@/lib/format'
-import { PersonHandlesLine } from '@/components/person-handles'
 import type { LeagueBoard, LeagueRow } from '@/lib/ranking-types'
 
 function Movement({ delta }: { delta: number | null }) {
@@ -99,12 +98,19 @@ export function RankingBoard({
   highlightId,
   collapsedLimit = 5,
   showSearch = true,
+  showRole = false,
+  identity = 'handle',
+  periodLabel,
   labels,
 }: {
   board: LeagueBoard
   highlightId?: number | null
   collapsedLimit?: number | null
   showSearch?: boolean
+  showRole?: boolean
+  /** Creators see the login handle; admin sees the given first name. */
+  identity?: 'handle' | 'given'
+  periodLabel?: string
   labels: {
     title: string
     empty: string
@@ -114,6 +120,8 @@ export function RankingBoard({
     rank: string
     views: string
     videos: string
+    creatorRole?: string
+    reposterRole?: string
   }
 }) {
   const [expanded, setExpanded] = useState(collapsedLimit == null)
@@ -126,6 +134,7 @@ export function RankingBoard({
     return board.rows.filter((r) => {
       return (
         r.name.toLowerCase().includes(needle) ||
+        r.loginHandle.toLowerCase().includes(needle) ||
         (r.tiktokUsername ?? '').toLowerCase().includes(needle) ||
         (r.instagramUsername ?? '').toLowerCase().includes(needle)
       )
@@ -145,7 +154,9 @@ export function RankingBoard({
         <div>
           <h3 className="text-sm font-semibold">{labels.title}</h3>
           <p className="text-xs text-muted-foreground">
-            {board.from.slice(5)} → {board.to.slice(5)} · monthly views
+            {periodLabel ?? `${board.from.slice(5)} → ${board.to.slice(5)}`}
+            {' · '}
+            monthly views
           </p>
         </div>
         {showSearch ? (
@@ -168,6 +179,7 @@ export function RankingBoard({
               <th className="px-3 py-2 font-medium">{labels.rank}</th>
               <th className="px-3 py-2 font-medium" />
               <th className="px-3 py-2 font-medium">User</th>
+              {showRole ? <th className="px-3 py-2 font-medium">Kind</th> : null}
               <th className="px-3 py-2 font-medium">{labels.views}</th>
               <th className="px-3 py-2 font-medium">IG</th>
               <th className="px-3 py-2 font-medium">TT</th>
@@ -197,16 +209,22 @@ export function RankingBoard({
                         onClick={() => setOpenId(open ? null : row.creatorId)}
                         className="flex items-center gap-1 text-left font-medium underline-offset-4 hover:underline"
                       >
-                        {row.name}
+                        {identity === 'handle' ? `@${row.loginHandle}` : row.name}
                         <ChevronDown className={`size-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
                       </button>
-                      <PersonHandlesLine
-                        person={{
-                          tiktok_username: row.tiktokUsername,
-                          instagram_username: row.instagramUsername,
-                        }}
-                      />
+                      {identity === 'handle' ? (
+                        <p className="text-xs text-muted-foreground">
+                          {row.loginPlatform === 'instagram' ? 'Instagram' : 'TikTok'}
+                        </p>
+                      ) : null}
                     </td>
+                    {showRole ? (
+                      <td className="px-3 py-2 text-xs text-muted-foreground">
+                        {row.role === 'reposter'
+                          ? (labels.reposterRole ?? 'Reposter')
+                          : (labels.creatorRole ?? 'Creator')}
+                      </td>
+                    ) : null}
                     <td className="px-3 py-2 font-semibold tabular-nums">{formatNumber(row.views)}</td>
                     <td className="px-3 py-2 tabular-nums text-muted-foreground">
                       {formatNumber(row.viewsInstagram)}
@@ -226,7 +244,7 @@ export function RankingBoard({
                   </tr>
                   {open ? (
                     <tr key={`${row.creatorId}-detail`} className="border-b border-border">
-                      <td colSpan={8 + board.projects.length} className="p-0">
+                      <td colSpan={8 + board.projects.length + (showRole ? 1 : 0)} className="p-0">
                         <RowDetail board={board} row={row} />
                       </td>
                     </tr>

@@ -40,6 +40,22 @@ export type Creator = {
   notes: string | null
   tiktok_username: string | null
   instagram_username: string | null
+  /** Which social handle they log in with and that appears on the ranking. */
+  login_platform: Platform
+}
+
+export type StrikeSource = 'auto' | 'manual'
+export type StrikeStatus = 'active' | 'waived'
+
+export type CreatorStrike = {
+  id: number
+  creator_id: number
+  contract_id: number | null
+  strike_date: string
+  source: StrikeSource
+  status: StrikeStatus
+  reason: string | null
+  created_at: string
 }
 
 export type ScheduleBreak = {

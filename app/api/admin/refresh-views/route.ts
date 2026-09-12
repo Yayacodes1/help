@@ -20,6 +20,7 @@ type Body = {
   to?: string
   creatorId?: number
   projectId?: number
+  submissionId?: number
   role?: string
   platform?: Platform
 }
@@ -59,6 +60,7 @@ export async function POST(req: Request) {
     to: body.to ?? null,
     creatorId: body.creatorId ?? null,
     projectId: body.projectId ?? null,
+    submissionId: body.submissionId ?? null,
     role: body.role ?? null,
     platform: body.platform ?? null,
   }
@@ -72,6 +74,7 @@ export async function POST(req: Request) {
     })
 
     revalidatePath('/admin')
+    revalidatePath('/admin/creators', 'layout')
     revalidatePath('/submit')
     return NextResponse.json(result)
   } catch (e) {

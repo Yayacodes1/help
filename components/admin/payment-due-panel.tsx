@@ -75,6 +75,7 @@ function DueTable({
                     role: linkRole,
                     projectId,
                     panel: 'contracts',
+                    from: 'paydue',
                   })}
                   className="font-medium underline-offset-4 hover:underline"
                 >

@@ -1,15 +1,13 @@
 'use server'
 
 import { sql } from '@/lib/db'
-import { getCreatorByName } from '@/lib/queries'
+import { getCreatorByLoginHandle, getCreatorByName } from '@/lib/queries'
 import { classifyMediaLinks } from '@/lib/media-url'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { normalizeHandle } from '@/lib/usernames'
-
-function isValidDate(value: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value)
-}
+import { normalizeHandle, parseLoginPlatform } from '@/lib/usernames'
+import { ensureCreatorTrackingColumns } from '@/lib/schema'
+import { operationalDayFromIso } from '@/lib/operational-day'
 
 async function fillViewsForNewSubmission(
   id: number,
@@ -42,24 +40,30 @@ async function fillViewsForNewSubmission(
 // Public gate: verify the TikTok username belongs to a registered creator,
 // then unlock the submission form for them.
 export async function startSubmission(_prev: unknown, formData: FormData) {
+  await ensureCreatorTrackingColumns()
+  const platform = parseLoginPlatform(formData.get('login_platform'))
   const username = normalizeHandle((formData.get('username') ?? '').toString())
+  if (!platform) {
+    return { ok: false, message: 'اختر إنستقرام أو تيك توك.' }
+  }
   if (!username) {
-    return { ok: false, message: 'أدخل اسم مستخدم تيك توك أو انستقرام.' }
+    return { ok: false, message: 'أدخل اسم المستخدم.' }
   }
-  const creator = await getCreatorByName(username)
+  const creator = await getCreatorByLoginHandle(platform, username)
   if (!creator) {
-    return { ok: false, message: 'اسم المستخدم غير مسجّل. تواصل مع الإدارة لإضافتك.' }
+    return { ok: false, message: 'اسم المستخدم غير مسجّل على هذا الحساب. تواصل مع الإدارة لإضافتك.' }
   }
-  redirect(`/submit?u=${encodeURIComponent(creator.name)}`)
+  await sql`
+    UPDATE creators
+    SET login_platform = ${platform}
+    WHERE id = ${creator.id}
+  `
+  redirect(`/submit?u=${encodeURIComponent(username)}`)
 }
 
 export async function submitVideos(username: string, _prev: unknown, formData: FormData) {
   const creator = await getCreatorByName(username)
   if (!creator) return { ok: false, message: 'اسم المستخدم غير مسجّل.' }
-
-  const dateRaw = (formData.get('video_date') ?? '').toString()
-  const videoDate = isValidDate(dateRaw) ? dateRaw : null
-  if (!videoDate) return { ok: false, message: 'Please choose a valid date.' }
 
   const projectRaw = (formData.get('project_id') ?? '').toString()
   const projectId = projectRaw ? Number(projectRaw) : NaN
@@ -90,10 +94,22 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
     return { ok: false, message: 'Paste at least one Instagram or TikTok video link.' }
   }
 
+  const videoDate =
+    creator.role === 'reposter'
+      ? operationalDayFromIso(new Date().toISOString())
+      : null
+
   for (const row of rows) {
     const inserted = (await sql`
-      INSERT INTO submissions (creator_id, project_id, platform, url, video_date)
-      VALUES (${creator.id}, ${projectId}, ${row.platform}, ${row.url}, ${videoDate})
+      INSERT INTO submissions (creator_id, project_id, platform, url, video_date, created_at)
+      VALUES (
+        ${creator.id},
+        ${projectId},
+        ${row.platform},
+        ${row.url},
+        COALESCE(${videoDate}::date, CURRENT_DATE),
+        NOW()
+      )
       RETURNING id
     `) as { id: number }[]
     const id = inserted[0]?.id

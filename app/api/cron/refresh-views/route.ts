@@ -21,11 +21,21 @@ async function run(req: Request) {
   if (!authorize(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const { getOperationalToday } = await import('@/lib/queries')
+  const { syncReposterStrikes } = await import('@/lib/strikes')
+  const { ensureCreatorTrackingColumns } = await import('@/lib/schema')
+  await ensureCreatorTrackingColumns()
+  const opToday = await getOperationalToday()
+  const strikesAdded = await syncReposterStrikes({ today: opToday })
+
   if (!process.env.TIKHUB_API_KEY?.trim()) {
-    return NextResponse.json(
-      { error: 'TIKHUB_API_KEY is not set' },
-      { status: 500 },
-    )
+    revalidatePath('/admin')
+    revalidatePath('/submit')
+    return NextResponse.json({
+      error: 'TIKHUB_API_KEY is not set',
+      strikesAdded,
+    }, { status: 500 })
   }
 
   const url = new URL(req.url)
@@ -36,7 +46,7 @@ async function run(req: Request) {
   const result = await refreshViews(scope, { delayMs: 80, limit: 40 })
   revalidatePath('/admin')
   revalidatePath('/submit')
-  return NextResponse.json(result)
+  return NextResponse.json({ ...result, strikesAdded })
 }
 
 export async function GET(req: Request) {

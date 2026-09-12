@@ -125,13 +125,65 @@ export async function ensureCreatorTrackingColumns() {
   // Why a views lookup failed (cleared on success).
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS views_error text`
 
+  // Posted time is server-owned. Creators (and later edits) cannot change it.
+  try {
+    await sql`
+      CREATE OR REPLACE FUNCTION lock_submission_timing()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      AS $fn$
+      BEGIN
+        NEW.created_at := OLD.created_at;
+        NEW.video_date := OLD.video_date;
+        RETURN NEW;
+      END;
+      $fn$
+    `
+    await sql`DROP TRIGGER IF EXISTS submissions_lock_timing ON submissions`
+    try {
+      await sql`
+        CREATE TRIGGER submissions_lock_timing
+        BEFORE UPDATE ON submissions
+        FOR EACH ROW
+        EXECUTE FUNCTION lock_submission_timing()
+      `
+    } catch {
+      await sql`
+        CREATE TRIGGER submissions_lock_timing
+        BEFORE UPDATE ON submissions
+        FOR EACH ROW
+        EXECUTE PROCEDURE lock_submission_timing()
+      `
+    }
+  } catch {
+    /* skip if this role cannot create triggers */
+  }
+
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS tiktok_username text`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS instagram_username text`
+  await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS login_platform text`
   await sql`
     UPDATE creators
     SET tiktok_username = name
     WHERE (tiktok_username IS NULL OR btrim(tiktok_username) = '')
       AND name IS NOT NULL AND btrim(name) <> ''
+  `
+  await sql`
+    UPDATE creators
+    SET login_platform = 'tiktok'
+    WHERE (login_platform IS NULL OR login_platform NOT IN ('instagram', 'tiktok'))
+      AND tiktok_username IS NOT NULL AND btrim(tiktok_username) <> ''
+  `
+  await sql`
+    UPDATE creators
+    SET login_platform = 'instagram'
+    WHERE (login_platform IS NULL OR login_platform NOT IN ('instagram', 'tiktok'))
+      AND instagram_username IS NOT NULL AND btrim(instagram_username) <> ''
+  `
+  await sql`
+    UPDATE creators
+    SET login_platform = 'tiktok'
+    WHERE login_platform IS NULL OR login_platform NOT IN ('instagram', 'tiktok')
   `
   try {
     await sql`
@@ -165,4 +217,27 @@ export async function ensureCreatorTrackingColumns() {
     )
   `
   await sql`CREATE INDEX IF NOT EXISTS schedule_breaks_creator_id_idx ON schedule_breaks (creator_id)`
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS creator_strikes (
+      id SERIAL PRIMARY KEY,
+      creator_id INTEGER NOT NULL REFERENCES creators(id) ON DELETE CASCADE,
+      contract_id INTEGER REFERENCES contracts(id) ON DELETE SET NULL,
+      strike_date DATE NOT NULL,
+      source TEXT NOT NULL DEFAULT 'auto',
+      status TEXT NOT NULL DEFAULT 'active',
+      reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS creator_strikes_creator_id_idx ON creator_strikes (creator_id)`
+  await sql`CREATE INDEX IF NOT EXISTS creator_strikes_date_idx ON creator_strikes (strike_date)`
+  try {
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS creator_strikes_creator_date_uidx
+      ON creator_strikes (creator_id, strike_date)
+    `
+  } catch {
+    /* skip if duplicates already exist */
+  }
 }

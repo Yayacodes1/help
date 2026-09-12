@@ -13,6 +13,7 @@ import {
   getContractComparisons,
   getCreatorByName,
   getServerToday,
+  getServerNowIso,
   getSubmissionsForCreatorOnDate,
   getCreatorCountsByPlatformOnDate,
   getCreatorStats,
@@ -25,7 +26,10 @@ import {
 } from '@/lib/queries'
 import { getLeagueBoard } from '@/lib/ranking'
 import { RankingBoard } from '@/components/ranking-board'
-import { PersonHandlesLine } from '@/components/person-handles'
+import { StrikeBanner } from '@/components/strike-banner'
+import { operationalDayFromIso } from '@/lib/operational-day'
+import { getCreatorStrikeSummary, syncReposterStrikes } from '@/lib/strikes'
+import { loginHandleFor } from '@/lib/usernames'
 import { PLATFORMS } from '@/lib/db'
 import { goalFor } from '@/lib/platforms'
 import { yearRange } from '@/lib/campaign'
@@ -54,9 +58,15 @@ export default async function SubmitPage({
     return <UsernameGate initialUsername={u ?? ''} locale={locale} />
   }
 
-  const username = creator.name
-  const today = await getServerToday()
-  const { start: rangeStart, end: rangeEnd } = yearRange(today)
+  const login = loginHandleFor(creator)
+  const username = login.handle || creator.name
+  const [calendarToday, serverNow] = await Promise.all([getServerToday(), getServerNowIso()])
+  const opToday = operationalDayFromIso(serverNow)
+  const today = creator.role === 'reposter' ? opToday : calendarToday
+  if (creator.role === 'reposter') {
+    await syncReposterStrikes({ today: opToday, creatorId: creator.id })
+  }
+  const { start: rangeStart, end: rangeEnd } = yearRange(calendarToday)
 
   let date = isValidDate(dateParam) ? dateParam : today
   if (date < rangeStart) date = rangeStart
@@ -76,6 +86,7 @@ export default async function SubmitPage({
     paidTotal,
     projects,
     league,
+    strikeSummary,
   ] = await Promise.all([
     getCreatorCountsByPlatformOnDate(creator.id, date),
     getSubmissionsForCreatorOnDate(creator.id, date),
@@ -90,6 +101,9 @@ export default async function SubmitPage({
     getAllProjects(),
     creator.role === 'reposter'
       ? getLeagueBoard({ role: 'reposter' })
+      : Promise.resolve(null),
+    creator.role === 'reposter'
+      ? getCreatorStrikeSummary(creator.id, opToday)
       : Promise.resolve(null),
   ])
 
@@ -130,12 +144,11 @@ export default async function SubmitPage({
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm text-[#a05a55]">
-                {t('welcome')} {creator.name}
+                {t('welcome')} @{username}
               </p>
-              <PersonHandlesLine
-                person={creator}
-                className="mt-0.5 text-xs text-[#a05a55]"
-              />
+              <p className="mt-0.5 text-xs text-[#a05a55]">
+                {login.platform === 'instagram' ? t('instagram') : t('tiktok')}
+              </p>
               <h1 className="mt-1 text-balance text-2xl font-bold tracking-tight text-[#9a0d18]">
                 {t('submitHeading')}
               </h1>
@@ -154,12 +167,29 @@ export default async function SubmitPage({
           <p className="mt-1 text-xs text-[#a05a55]">{t('platformsBoth')}</p>
         </header>
 
+        {strikeSummary ? (
+          <StrikeBanner
+            count={strikeSummary.contractStrikes}
+            postedToday={strikeSummary.postedToday}
+            labels={{
+              none: t('strikeNone'),
+              one: t('strikeYouHaveOne'),
+              two: t('strikeYouHaveTwo'),
+              three: t('strikeYouHaveThree'),
+              posted: t('strikePostedToday'),
+              missed: t('strikeMissedToday'),
+              hint: t('strikesHint'),
+            }}
+          />
+        ) : null}
+
         {league ? (
           <RankingBoard
             board={league}
             highlightId={creator.id}
             collapsedLimit={5}
             showSearch={false}
+            identity="handle"
             labels={{
               title: t('rankingTitle'),
               empty: t('rankingEmpty'),
@@ -202,6 +232,7 @@ export default async function SubmitPage({
                     )}
                   </section>
 
+                  {isToday ? (
                   <section className="flex flex-col gap-3">
                     <div className="flex items-center gap-2">
                       <Send className="h-4 w-4 text-primary" />
@@ -216,10 +247,11 @@ export default async function SubmitPage({
                     </p>
                     <SubmitForm
                       username={username}
-                      date={date}
                       fields={fields}
                       projects={projects}
                       defaultProjectId={creator.project_id}
+                      serverNow={serverNow}
+                      locale={locale}
                       labels={{
                         pasteLinks: t('pasteLinks'),
                         pasteHint: t('pasteLinksHint'),
@@ -228,13 +260,20 @@ export default async function SubmitPage({
                         project: t('submitProject'),
                         projectHint: t('submitProjectHint'),
                         pickProject: t('pickProject'),
+                        recordedAt: t('submitTimeLabel'),
+                        recordedAtHint: t('submitTimeHint'),
                       }}
                     />
                   </section>
+                  ) : null}
 
                   <section className="flex flex-col gap-3">
                     <h2 className="text-sm font-semibold text-foreground">{t('todaysVideos')}</h2>
-                    <TodayVideos username={username} submissions={submissions} />
+                    <TodayVideos
+                      username={username}
+                      submissions={submissions}
+                      locale={locale}
+                    />
                   </section>
                 </div>
               ),

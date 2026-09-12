@@ -39,11 +39,13 @@ export function CreatorsManager({
   projects,
   roleFilter = 'creator',
   today,
+  currentProjectId,
 }: {
   creators: CreatorTrackingRow[]
   projects: Project[]
   roleFilter?: RoleFilter
   today?: string
+  currentProjectId?: number | string | null
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -116,13 +118,15 @@ export function CreatorsManager({
     name,
     tiktok,
     instagram,
+    loginPlatform,
   }: {
     name?: string
     tiktok?: string | null
     instagram?: string | null
+    loginPlatform?: string | null
   }) {
     return (
-      <div className="grid w-full gap-2 sm:grid-cols-3">
+      <div className="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Display name
           <input
@@ -150,6 +154,17 @@ export function CreatorsManager({
             className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Login account
+          <select
+            name="login_platform"
+            defaultValue={loginPlatform === 'instagram' ? 'instagram' : 'tiktok'}
+            className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="tiktok">TikTok</option>
+            <option value="instagram">Instagram</option>
+          </select>
+        </label>
       </div>
     )
   }
@@ -158,9 +173,9 @@ export function CreatorsManager({
     <div className="rounded-lg border border-border bg-card p-4">
       <h2 className="text-sm font-semibold">{heading}</h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        They submit at the shared <span className="font-medium">/submit</span> link using their
-        TikTok or Instagram username. One person can post for more than one project. Default
-        project is only a pre-select on submit.
+        They submit at the shared <span className="font-medium">/submit</span> or{' '}
+        <span className="font-medium">/login</span> link using the Instagram or TikTok account
+        chosen as their login account. That same handle is what shows on the ranking.
       </p>
 
       {roleFilter === 'reposter' && today ? (
@@ -236,6 +251,7 @@ export function CreatorsManager({
                     name={c.name}
                     tiktok={c.tiktok_username}
                     instagram={c.instagram_username}
+                    loginPlatform={c.login_platform}
                   />
                   <div className="flex flex-wrap items-center gap-2">
                     <select name="project_id" defaultValue={c.project_id ?? ''} className={selectClass}>
@@ -286,7 +302,11 @@ export function CreatorsManager({
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <Link
-                            href={adminPersonHref(c.id, { role: roleFilter, projectId: c.project_id })}
+                            href={adminPersonHref(c.id, {
+                              role: roleFilter,
+                              projectId: currentProjectId,
+                              from: 'manage',
+                            })}
                             className="font-medium underline-offset-4 hover:underline"
                           >
                             {c.name}

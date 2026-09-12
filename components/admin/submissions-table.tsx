@@ -1,11 +1,14 @@
 import Link from 'next/link'
 import type { AdminSubmissionRow } from '@/lib/queries'
 import { ViewsCell } from '@/components/admin/views-cell'
+import { RefreshVideoButton } from '@/components/admin/refresh-views-button'
+import { ProjectCell } from '@/components/admin/project-cell'
 import { DeleteSubmission } from '@/components/admin/delete-submission'
 import { CopyLink } from '@/components/copy-link'
-import { formatDate, formatNumber } from '@/lib/format'
+import { formatDateTime, formatNumber } from '@/lib/format'
 import { PLATFORM_META } from '@/lib/platforms'
 import { adminPersonHref } from '@/lib/admin-href'
+import type { Project } from '@/lib/db'
 
 export function SubmissionsTable({
   submissions,
@@ -13,15 +16,22 @@ export function SubmissionsTable({
   showCreator = true,
   showProject = true,
   editableViews = true,
+  editableProject = false,
+  projects = [],
+  noProjectLabel = 'No project',
   linkRole,
   projectId,
+  linkFrom,
+  refreshLabel = 'Refresh this video',
 }: {
   submissions: AdminSubmissionRow[] | Array<{
     id: number
     creator_id?: number
     creator_name?: string
+    project_id?: number | null
     project_name?: string | null
     video_date: string
+    created_at?: string | null
     platform: 'instagram' | 'tiktok'
     url: string
     views: number
@@ -31,8 +41,13 @@ export function SubmissionsTable({
   showCreator?: boolean
   showProject?: boolean
   editableViews?: boolean
+  editableProject?: boolean
+  projects?: Pick<Project, 'id' | 'name'>[]
+  noProjectLabel?: string
   linkRole?: string | null
   projectId?: number | string | null
+  linkFrom?: string | null
+  refreshLabel?: string
 }) {
   if (submissions.length === 0) {
     return (
@@ -49,7 +64,7 @@ export function SubmissionsTable({
           <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
             {showCreator && <th className="px-4 py-3 font-medium">Creator</th>}
             {showProject && <th className="px-4 py-3 font-medium">Project</th>}
-            <th className="px-4 py-3 font-medium">Date</th>
+            <th className="px-4 py-3 font-medium">Posted</th>
             <th className="px-4 py-3 font-medium">Platform</th>
             <th className="px-4 py-3 font-medium">Link</th>
             <th className="px-4 py-3 text-right font-medium">Views</th>
@@ -68,7 +83,11 @@ export function SubmissionsTable({
                   <td className="whitespace-nowrap px-4 py-3 font-medium">
                     {'creator_id' in s && s.creator_id != null ? (
                       <Link
-                        href={adminPersonHref(s.creator_id, { role: linkRole, projectId })}
+                        href={adminPersonHref(s.creator_id, {
+                          role: linkRole,
+                          projectId,
+                          from: linkFrom,
+                        })}
                         className="underline-offset-4 hover:underline"
                       >
                         {s.creator_name}
@@ -80,11 +99,29 @@ export function SubmissionsTable({
                 )}
                 {showProject && (
                   <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                    {s.project_name ?? '—'}
+                    {editableProject && projects.length > 0 ? (
+                      <ProjectCell
+                        id={s.id}
+                        projectId={'project_id' in s ? (s.project_id ?? null) : null}
+                        projects={projects}
+                        noneLabel={noProjectLabel}
+                      />
+                    ) : (
+                      s.project_name ?? '—'
+                    )}
                   </td>
                 )}
                 <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                  {formatDate(s.video_date)}
+                  <time
+                    dateTime={
+                      'created_at' in s && s.created_at ? String(s.created_at) : s.video_date
+                    }
+                    className="tabular-nums"
+                  >
+                    {formatDateTime(
+                      'created_at' in s && s.created_at ? s.created_at : s.video_date,
+                    )}
+                  </time>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
                   {PLATFORM_META[s.platform].en}
@@ -93,22 +130,25 @@ export function SubmissionsTable({
                   <CopyLink url={s.url} />
                 </td>
                 <td className="px-2 py-2 text-right">
-                  <div className="flex flex-col items-end gap-0.5">
-                    {editableViews ? (
-                      <ViewsCell id={s.id} views={s.views ?? 0} />
-                    ) : (
-                      <span className="px-2 tabular-nums">
-                        {formatNumber(s.views ?? 0)}
-                      </span>
-                    )}
-                    {err && (
-                      <span
-                        className="max-w-[220px] text-left text-[11px] leading-snug text-destructive"
-                        title={err}
-                      >
-                        {err}
-                      </span>
-                    )}
+                  <div className="flex items-start justify-end gap-1.5">
+                    <div className="flex flex-col items-end gap-0.5">
+                      {editableViews ? (
+                        <ViewsCell id={s.id} views={s.views ?? 0} />
+                      ) : (
+                        <span className="px-2 tabular-nums">
+                          {formatNumber(s.views ?? 0)}
+                        </span>
+                      )}
+                      {err && (
+                        <span
+                          className="max-w-[220px] text-left text-[11px] leading-snug text-destructive"
+                          title={err}
+                        >
+                          {err}
+                        </span>
+                      )}
+                    </div>
+                    <RefreshVideoButton submissionId={s.id} label={refreshLabel} />
                   </div>
                 </td>
                 {editableViews && (

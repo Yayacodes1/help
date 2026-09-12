@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { Suspense, useMemo, useState } from 'react'
 import { SubmissionsTable } from '@/components/admin/submissions-table'
+import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { formatNumber } from '@/lib/format'
 
 type PlatformFilter = 'both' | 'instagram' | 'tiktok'
@@ -13,6 +14,7 @@ type Submission = {
   project_id?: number | null
   project_name?: string | null
   video_date: string
+  created_at?: string | null
   platform: 'instagram' | 'tiktok'
   url: string
   views: number
@@ -20,10 +22,12 @@ type Submission = {
 }
 
 export function CreatorVideosPanel({
+  creatorId,
   submissions,
   emptyLabel,
   labels,
 }: {
+  creatorId: number
   submissions: Submission[]
   emptyLabel: string
   labels: {
@@ -33,6 +37,8 @@ export function CreatorVideosPanel({
     videos: string
     views: string
     noMatch: string
+    refreshViews: string
+    refreshThisVideo: string
   }
 }) {
   const [platform, setPlatform] = useState<PlatformFilter>('both')
@@ -156,12 +162,23 @@ export function CreatorVideosPanel({
         </p>
       </div>
 
+      <Suspense
+        fallback={<p className="text-xs text-muted-foreground">Loading refresh…</p>}
+      >
+        <RefreshViewsButton
+          label={labels.refreshViews}
+          creatorId={creatorId}
+          allDates
+        />
+      </Suspense>
+
       <SubmissionsTable
         submissions={filtered}
         emptyLabel={filtered.length === 0 && submissions.length > 0 ? labels.noMatch : emptyLabel}
         showCreator={false}
         showProject={true}
         editableViews={false}
+        refreshLabel={labels.refreshThisVideo}
       />
     </div>
   )

@@ -2,8 +2,9 @@ import 'server-only'
 import { sql } from '@/lib/db'
 import { addDays, monthRange } from '@/lib/campaign'
 import { getServerToday } from '@/lib/queries'
-import { normalizeHandle } from '@/lib/usernames'
+import { loginHandleFor, normalizeHandle } from '@/lib/usernames'
 import type { ParticipantRole } from '@/lib/participant-role'
+import { sortProjects } from '@/lib/project-order'
 import type {
   LeagueBoard,
   LeagueDayPoint,
@@ -51,23 +52,28 @@ export async function getLeagueBoard(opts: {
   const from = opts.from && /^\d{4}-\d{2}-\d{2}$/.test(opts.from) ? opts.from : month.start
   const to = opts.to && /^\d{4}-\d{2}-\d{2}$/.test(opts.to) ? opts.to : month.end
   const projectId = opts.projectId ?? null
-  const role = opts.role ?? 'reposter'
+  const role = opts.role !== undefined ? opts.role : 'reposter'
   const username = normalizeHandle(opts.username)
 
-  const projects = (await sql`
+  const projectRows = (await sql`
     SELECT id, name FROM projects ORDER BY name ASC
   `) as LeagueProject[]
+  const projects = sortProjects(projectRows).filter(
+    (p) => projectId == null || p.id === projectId,
+  )
 
   const people = (await sql`
-    SELECT id, name, tiktok_username, instagram_username
+    SELECT id, name, role, tiktok_username, instagram_username, login_platform
     FROM creators
     WHERE (${role}::text IS NULL OR role = ${role})
     ORDER BY name ASC
   `) as {
     id: number
     name: string
+    role: ParticipantRole
     tiktok_username: string | null
     instagram_username: string | null
+    login_platform: string | null
   }[]
 
   const aggs = (await sql`
@@ -95,9 +101,12 @@ export async function getLeagueBoard(opts: {
   `) as AggRow[]
 
   const names = new Map<number, string>()
+  const roles = new Map<number, ParticipantRole>()
   const meta = new Map<number, {
     tiktokUsername: string | null
     instagramUsername: string | null
+    loginHandle: string
+    loginPlatform: 'instagram' | 'tiktok'
   }>()
   const dailyViews = new Map<number, Map<string, number>>()
   const totals = new Map<number, number>()
@@ -107,10 +116,14 @@ export async function getLeagueBoard(opts: {
   const byProject = new Map<number, Record<number, number>>()
 
   for (const p of people) {
+    const login = loginHandleFor(p)
     names.set(p.id, p.name)
+    roles.set(p.id, p.role === 'reposter' ? 'reposter' : 'creator')
     meta.set(p.id, {
       tiktokUsername: p.tiktok_username,
       instagramUsername: p.instagram_username,
+      loginHandle: login.handle || p.name,
+      loginPlatform: login.platform,
     })
     dailyViews.set(p.id, new Map())
     totals.set(p.id, 0)
@@ -168,6 +181,9 @@ export async function getLeagueBoard(opts: {
     return {
       creatorId: id,
       name: names.get(id) ?? '',
+      role: roles.get(id) ?? 'creator',
+      loginHandle: info.loginHandle,
+      loginPlatform: info.loginPlatform,
       tiktokUsername: info.tiktokUsername,
       instagramUsername: info.instagramUsername,
       rank,
@@ -195,6 +211,7 @@ export async function getLeagueBoard(opts: {
     rows = rows.filter((r) => {
       return (
         r.name.toLowerCase().includes(q) ||
+        r.loginHandle.toLowerCase().includes(q) ||
         (r.tiktokUsername ?? '').toLowerCase().includes(q) ||
         (r.instagramUsername ?? '').toLowerCase().includes(q)
       )

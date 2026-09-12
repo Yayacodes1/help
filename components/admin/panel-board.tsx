@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronDown } from 'lucide-react'
 
@@ -34,9 +34,14 @@ export function PanelBoard({
     urlPanel && panelIds.has(urlPanel) ? urlPanel : null
 
   const [open, setOpen] = useState<string | null>(fromUrl ?? defaultOpen)
+  const ready = useRef(false)
 
   useEffect(() => {
-    if (fromUrl) setOpen(fromUrl)
+    if (!ready.current) {
+      ready.current = true
+      return
+    }
+    setOpen(fromUrl)
   }, [fromUrl])
 
   function selectPanel(id: string | null) {
@@ -45,7 +50,7 @@ export function PanelBoard({
     if (id) next.set('panel', id)
     else next.delete('panel')
     const qs = next.toString()
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+    router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
 
   const active = panels.find((p) => p.id === open) ?? null

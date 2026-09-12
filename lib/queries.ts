@@ -2,7 +2,7 @@ import 'server-only'
 import { sql, type Contract, type Creator, type Payment, type Platform, type Project, type ScheduleBreak, type Submission } from '@/lib/db'
 import type { ParticipantRole } from '@/lib/participant-role'
 import { addDays, maxDate, yearRange } from '@/lib/campaign'
-import { normalizeHandle } from '@/lib/usernames'
+import { normalizeHandle, type LoginPlatform } from '@/lib/usernames'
 import {
   buildConsistency,
   eachDate,
@@ -20,6 +20,21 @@ export async function getServerToday(): Promise<string> {
   return rows[0].today
 }
 
+/** 5am–5am posting day in Riyadh (used for reposter strikes). */
+export async function getOperationalToday(): Promise<string> {
+  const { operationalDayFromIso } = await import('@/lib/operational-day')
+  const now = await getServerNowIso()
+  return operationalDayFromIso(now)
+}
+
+/** UTC instant from the database — used as a live preview; inserts still use NOW(). */
+export async function getServerNowIso(): Promise<string> {
+  const rows = (await sql`
+    SELECT to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS now
+  `) as { now: string }[]
+  return rows[0]?.now ?? new Date().toISOString()
+}
+
 export async function getCreatorByToken(token: string): Promise<Creator | null> {
   const rows = (await sql`
     SELECT id, name, token, project_id, created_at, role,
@@ -27,7 +42,7 @@ export async function getCreatorByToken(token: string): Promise<Creator | null> 
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
-           pay_every_days, notes, tiktok_username, instagram_username
+           pay_every_days, notes, tiktok_username, instagram_username, login_platform
     FROM creators
     WHERE token = ${token}
     LIMIT 1
@@ -42,7 +57,7 @@ export async function getCreatorById(id: number): Promise<Creator | null> {
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
-           pay_every_days, notes, tiktok_username, instagram_username
+           pay_every_days, notes, tiktok_username, instagram_username, login_platform
     FROM creators
     WHERE id = ${id}
     LIMIT 1
@@ -59,13 +74,46 @@ export async function getCreatorByName(name: string): Promise<Creator | null> {
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
-           pay_every_days, notes, tiktok_username, instagram_username
+           pay_every_days, notes, tiktok_username, instagram_username, login_platform
     FROM creators
     WHERE lower(name) = lower(${handle})
        OR lower(COALESCE(tiktok_username, '')) = lower(${handle})
        OR lower(COALESCE(instagram_username, '')) = lower(${handle})
     LIMIT 1
   `) as Creator[]
+  return rows[0] ?? null
+}
+
+export async function getCreatorByLoginHandle(
+  platform: LoginPlatform,
+  username: string,
+): Promise<Creator | null> {
+  const handle = normalizeHandle(username)
+  if (!handle) return null
+  const rows =
+    platform === 'instagram'
+      ? ((await sql`
+          SELECT id, name, token, project_id, created_at, role,
+                 goal_instagram, goal_tiktok, platforms,
+                 contract_start::text AS contract_start,
+                 contract_end::text AS contract_end,
+                 last_paid_at::text AS last_paid_at,
+                 pay_every_days, notes, tiktok_username, instagram_username, login_platform
+          FROM creators
+          WHERE lower(COALESCE(instagram_username, '')) = lower(${handle})
+          LIMIT 1
+        `) as Creator[])
+      : ((await sql`
+          SELECT id, name, token, project_id, created_at, role,
+                 goal_instagram, goal_tiktok, platforms,
+                 contract_start::text AS contract_start,
+                 contract_end::text AS contract_end,
+                 last_paid_at::text AS last_paid_at,
+                 pay_every_days, notes, tiktok_username, instagram_username, login_platform
+          FROM creators
+          WHERE lower(COALESCE(tiktok_username, '')) = lower(${handle})
+          LIMIT 1
+        `) as Creator[])
   return rows[0] ?? null
 }
 
@@ -122,6 +170,7 @@ export async function getCreatorCountsByPlatformOnDate(
 
 export type AdminSubmissionRow = Submission & {
   creator_name: string
+  creator_role: ParticipantRole
   project_name: string | null
 }
 
@@ -155,6 +204,7 @@ export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<A
       s.views_error,
       s.created_at,
       c.name AS creator_name,
+      c.role AS creator_role,
       p.name AS project_name
     FROM submissions s
     JOIN creators c ON c.id = s.creator_id
@@ -184,7 +234,7 @@ export async function getAllCreators(): Promise<CreatorWithProject[]> {
            c.contract_start::text AS contract_start,
            c.contract_end::text AS contract_end,
            c.last_paid_at::text AS last_paid_at,
-           c.pay_every_days, c.notes, c.tiktok_username, c.instagram_username,
+           c.pay_every_days, c.notes, c.tiktok_username, c.instagram_username, c.login_platform,
            p.name AS project_name
     FROM creators c
     LEFT JOIN projects p ON p.id = c.project_id
@@ -212,7 +262,7 @@ export async function getCreatorsWithProgressOnDate(
       c.contract_start::text AS contract_start,
       c.contract_end::text AS contract_end,
       c.last_paid_at::text AS last_paid_at,
-      c.pay_every_days, c.notes, c.tiktok_username, c.instagram_username,
+      c.pay_every_days, c.notes, c.tiktok_username, c.instagram_username, c.login_platform,
       p.name AS project_name,
       COALESCE(SUM(CASE WHEN s.video_date = ${date}::date AND s.platform = 'instagram' AND (${pid}::int IS NULL OR s.project_id = ${pid}) THEN 1 ELSE 0 END), 0)::int AS today_instagram,
       COALESCE(SUM(CASE WHEN s.video_date = ${date}::date AND s.platform = 'tiktok' AND (${pid}::int IS NULL OR s.project_id = ${pid}) THEN 1 ELSE 0 END), 0)::int AS today_tiktok,
@@ -816,7 +866,7 @@ export async function getPaymentDueList(
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
-           pay_every_days, notes, tiktok_username, instagram_username
+           pay_every_days, notes, tiktok_username, instagram_username, login_platform
     FROM creators
     WHERE (${pid}::int IS NULL OR project_id = ${pid} OR EXISTS (
       SELECT 1 FROM submissions sx WHERE sx.creator_id = creators.id AND sx.project_id = ${pid}

@@ -1,9 +1,10 @@
 'use client'
 
 import { useActionState } from 'react'
-import { AlertCircle, ArrowLeft, Music2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft } from 'lucide-react'
 import { startSubmission } from '@/app/actions/creator'
 import { LanguageToggle } from '@/components/language-toggle'
+import { CreatorLoginFields } from '@/components/creator-login-fields'
 import { createT, type Locale } from '@/lib/i18n'
 
 type State = { ok: boolean; message: string } | null
@@ -44,28 +45,7 @@ export function UsernameGate({
         </header>
 
         <form action={formAction} className="mt-6 flex flex-col gap-3">
-          <label htmlFor="username" className="text-sm font-semibold text-foreground">
-            {t('igOrTtUsername')}
-          </label>
-          <div className="relative">
-            <Music2
-              className={`pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-primary ${
-                rtl ? 'right-3' : 'left-3'
-              }`}
-            />
-            <input
-              id="username"
-              name="username"
-              required
-              defaultValue={initialUsername}
-              autoComplete="off"
-              dir="ltr"
-              placeholder="@username"
-              className={`h-12 w-full rounded-xl border border-input bg-card text-sm font-medium shadow-sm outline-none transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring ${
-                rtl ? 'pr-10 pl-3 text-right' : 'pl-10 pr-3 text-left'
-              }`}
-            />
-          </div>
+          <CreatorLoginFields locale={locale} defaultUsername={initialUsername} />
 
           {state && !state.ok && (
             <p

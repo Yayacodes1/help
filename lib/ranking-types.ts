@@ -1,8 +1,15 @@
+import type { ParticipantRole } from '@/lib/participant-role'
+
 export type LeagueProject = { id: number; name: string }
 
 export type LeagueRow = {
   creatorId: number
+  /** Given / first name set in admin. */
   name: string
+  role: ParticipantRole
+  /** Instagram or TikTok handle they log in with. */
+  loginHandle: string
+  loginPlatform: 'instagram' | 'tiktok'
   tiktokUsername: string | null
   instagramUsername: string | null
   rank: number

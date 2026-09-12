@@ -34,7 +34,7 @@ export function MissList({
           >
             <div className="min-w-0">
               <Link
-                href={adminPersonHref(m.id, { role: linkRole, projectId })}
+                href={adminPersonHref(m.id, { role: linkRole, projectId, from: 'attention' })}
                 className="font-medium underline-offset-4 hover:underline"
               >
                 {m.name}

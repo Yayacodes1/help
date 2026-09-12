@@ -1,5 +1,25 @@
 import { normalizeParticipantRole, type ParticipantRole } from '@/lib/participant-role'
 
+const ADMIN_PANELS = new Set([
+  'analytics',
+  'ranking',
+  'projectviews',
+  'topvideos',
+  'progress',
+  'attention',
+  'videos',
+  'paydue',
+  'payments',
+  'marketing',
+  'outflow',
+  'manage',
+  'strikes',
+])
+
+export function adminReturnPanel(from?: string | null): string {
+  return from && ADMIN_PANELS.has(from) ? from : 'manage'
+}
+
 export function adminDashboardHref(opts?: {
   role?: string | null
   projectId?: number | string | null
@@ -30,6 +50,7 @@ export function adminPersonHref(
     role?: string | null
     panel?: string | null
     projectId?: number | string | null
+    from?: string | null
   },
 ): string {
   const next = new URLSearchParams()
@@ -40,6 +61,7 @@ export function adminPersonHref(
   if (projectId != null && String(projectId) !== '') {
     next.set('project', String(projectId))
   }
+  if (opts?.from && ADMIN_PANELS.has(opts.from)) next.set('from', opts.from)
   const qs = next.toString()
   return qs ? `/admin/creators/${id}?${qs}` : `/admin/creators/${id}`
 }

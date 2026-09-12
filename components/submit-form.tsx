@@ -1,11 +1,13 @@
 'use client'
 
-import { useActionState, useEffect, useRef } from 'react'
+import { useActionState, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Music2, Send, CheckCircle2, AlertCircle, Link2 } from 'lucide-react'
+import { Camera, Clock, Lock, Music2, Send, CheckCircle2, AlertCircle, Link2 } from 'lucide-react'
 import { submitVideos } from '@/app/actions/creator'
+import { formatDateTime } from '@/lib/format'
 import { PLATFORM_META } from '@/lib/platforms'
 import type { Platform } from '@/lib/db'
+import type { Locale } from '@/lib/i18n'
 
 const PLATFORM_ICON: Record<Platform, typeof Camera> = {
   instagram: Camera,
@@ -28,27 +30,48 @@ type Labels = {
   project: string
   projectHint: string
   pickProject: string
+  recordedAt: string
+  recordedAtHint: string
+}
+
+function useServerClock(serverNowIso: string) {
+  const [now, setNow] = useState(() => new Date(serverNowIso))
+
+  useEffect(() => {
+    const base = new Date(serverNowIso).getTime()
+    if (Number.isNaN(base)) return
+    const origin = Date.now()
+    const tick = () => setNow(new Date(base + (Date.now() - origin)))
+    tick()
+    const id = window.setInterval(tick, 1000)
+    return () => window.clearInterval(id)
+  }, [serverNowIso])
+
+  return now
 }
 
 export function SubmitForm({
   username,
-  date,
   fields,
   labels,
   projects,
   defaultProjectId,
+  serverNow,
+  locale,
 }: {
   username: string
-  date: string
   fields: PlatformField[]
   labels: Labels
   projects: { id: number; name: string }[]
   defaultProjectId?: number | null
+  serverNow: string
+  locale: Locale
 }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
   const action = submitVideos.bind(null, username)
   const [state, formAction, pending] = useActionState<State, FormData>(action, null)
+  const now = useServerClock(serverNow)
 
   useEffect(() => {
     if (state?.ok) {
@@ -62,8 +85,6 @@ export function SubmitForm({
 
   return (
     <form ref={formRef} action={formAction} className="flex flex-col gap-5">
-      <input type="hidden" name="video_date" value={date} />
-
       {projects.length === 0 ? (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
           No projects are set up yet. Ask admin to add Notek and Miqat.
@@ -159,6 +180,18 @@ export function SubmitForm({
           {state.message}
         </p>
       )}
+
+      <div className="rounded-xl border border-border bg-secondary/40 px-4 py-3">
+        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+          <Lock className="h-3.5 w-3.5" />
+          <span>{labels.recordedAt}</span>
+        </div>
+        <p className="mt-1.5 flex items-center gap-2 text-base font-semibold tabular-nums text-foreground">
+          <Clock className="h-4 w-4 shrink-0 text-primary" />
+          <time dateTime={now.toISOString()}>{formatDateTime(now, locale)}</time>
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{labels.recordedAtHint}</p>
+      </div>
 
       <button
         type="submit"

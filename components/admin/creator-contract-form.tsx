@@ -51,6 +51,17 @@ export function CreatorContractForm({
             />
           </label>
         </div>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Login account
+          <select
+            name="login_platform"
+            defaultValue={creator.login_platform === 'instagram' ? 'instagram' : 'tiktok'}
+            className={inputClass}
+          >
+            <option value="tiktok">TikTok</option>
+            <option value="instagram">Instagram</option>
+          </select>
+        </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Project (default)

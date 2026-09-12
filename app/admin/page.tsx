@@ -13,6 +13,7 @@ import {
   getPaymentsInRange,
   getPaymentsTotalInRange,
   getServerToday,
+  getOperationalToday,
   type AdminFilters,
 } from '@/lib/queries'
 import {
@@ -23,7 +24,7 @@ import {
   getViewsLeaderboard,
   getViewsSummary,
 } from '@/lib/analytics'
-import { monthRange } from '@/lib/campaign'
+import { monthRange, parseYearMonth, rankingMonthRange } from '@/lib/campaign'
 import {
   ensureMarketingTables,
   getMarketingBalances,
@@ -54,7 +55,7 @@ import { OutflowPanel } from '@/components/admin/outflow-panel'
 import { PayCadences } from '@/components/admin/pay-cadence'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { LanguageToggle } from '@/components/language-toggle'
-import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { formatDate, formatMoney, formatNumber, formatYearMonth } from '@/lib/format'
 import { getOutflowSnapshot, type OutflowView } from '@/lib/outflow'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
@@ -62,6 +63,11 @@ import type { Platform } from '@/lib/db'
 import { parseRoleFilter, roleFilterToSql } from '@/lib/participant-role'
 import { getLeagueBoard } from '@/lib/ranking'
 import { RankingBoard } from '@/components/ranking-board'
+import { RankingFilters } from '@/components/admin/ranking-filters'
+import { StrikesPanel } from '@/components/admin/strikes-panel'
+import { getReposterStrikeBoard, syncReposterStrikes } from '@/lib/strikes'
+import { getProjectViewsBoard } from '@/lib/project-views'
+import { ProjectViewsPanel } from '@/components/admin/project-views-panel'
 
 export const dynamic = 'force-dynamic'
 
@@ -90,6 +96,14 @@ export default async function AdminPage({
     ofFrom?: string
     ofTo?: string
     ofView?: string
+    pvFrom?: string
+    pvTo?: string
+    pvKind?: string
+    pvMode?: string
+    pvPerson?: string
+    rankMonth?: string
+    rankProject?: string
+    rankRole?: string
   }>
 }) {
   if (!(await isAdmin())) redirect('/login')
@@ -105,6 +119,8 @@ export default async function AdminPage({
       ? (sp.platform as Platform)
       : undefined
   const today = await getServerToday()
+  const opToday = await getOperationalToday()
+  await syncReposterStrikes({ today: opToday })
   const { start: monthStart, end: monthEnd } = monthRange(today)
   const analyticsDefault = defaultAnalyticsRange(today)
 
@@ -147,6 +163,29 @@ export default async function AdminPage({
       ? sp.ofView
       : 'total'
 
+  const pvFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.pvFrom ?? '')
+    ? sp.pvFrom!
+    : analyticsDefault.from
+  const pvTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.pvTo ?? '') ? sp.pvTo! : analyticsDefault.to
+  const pvKind = parseRoleFilter(
+    sp.pvKind === 'creator' || sp.pvKind === 'reposter' || sp.pvKind === 'all'
+      ? sp.pvKind
+      : sp.role,
+  )
+  const pvKindSql = roleFilterToSql(pvKind)
+  const pvPersonId = sp.pvPerson ? Number(sp.pvPerson) : null
+  const pvCreatorId = pvPersonId != null && Number.isFinite(pvPersonId) ? pvPersonId : null
+
+  const rankMonth = parseYearMonth(sp.rankMonth, today)
+  const { start: rankFrom, end: rankTo } = rankingMonthRange(rankMonth, today)
+  const rankProjectRaw = sp.rankProject ? Number(sp.rankProject) : NaN
+  const rankProjectId = Number.isFinite(rankProjectRaw) && rankProjectRaw > 0 ? rankProjectRaw : null
+  const rankRole =
+    sp.rankRole === 'creator' || sp.rankRole === 'reposter' || sp.rankRole === 'all'
+      ? sp.rankRole
+      : 'all'
+  const rankRoleSql = roleFilterToSql(rankRole)
+
   const [
     submissions,
     projects,
@@ -167,6 +206,9 @@ export default async function AdminPage({
     marketingRequests,
     outflow,
     league,
+    projectViews,
+    projectViewVideos,
+    strikeBoard,
   ] = await Promise.all([
     getAdminSubmissions(filters),
     getAllProjects(),
@@ -212,21 +254,49 @@ export default async function AdminPage({
     listMarketingExpenses(),
     listMarketingRequests(),
     getOutflowSnapshot({ from: ofFrom, to: ofTo, view: ofView, countMode: 'base' }),
-    roleFilter === 'reposter'
-      ? getLeagueBoard({
-          from: monthStart,
-          to: monthEnd,
-          projectId: projectId ?? null,
-          role: 'reposter',
+    getLeagueBoard({
+      from: rankFrom,
+      to: rankTo,
+      projectId: rankProjectId,
+      role: rankRoleSql,
+    }),
+    getProjectViewsBoard({
+      from: pvFrom,
+      to: pvTo,
+      role: pvKindSql,
+    }),
+    pvCreatorId != null
+      ? getAdminSubmissions({
+          creatorId: pvCreatorId,
+          role: pvKindSql,
+          from: pvFrom,
+          to: pvTo,
         })
-      : Promise.resolve(null),
+      : Promise.resolve([]),
+    getReposterStrikeBoard(opToday),
   ])
+  const pvModeRaw = sp.pvMode
+  const pvMode: 'combined' | number =
+    pvModeRaw &&
+    pvModeRaw !== 'combined' &&
+    projectViews.projects.some((p) => String(p.id) === pvModeRaw)
+      ? Number(pvModeRaw)
+      : 'combined'
+  const projectViewsHint = projectViews.projects
+    .slice(0, 2)
+    .map((p) => `${p.name} ${formatNumber(projectViews.totals.viewsByProject[p.id] ?? 0)}`)
+    .join(' · ')
   const creators = await attachTracking(creatorsBase, today)
   const misses = getMissesFromProgress(creators)
   const openMarketingRequests = marketingRequests.filter((r) => r.status === 'open').length
   const marketingLeft = marketingBalances.reduce((sum, b) => sum + b.left, 0)
 
   const totalViews = submissions.reduce((sum, s) => sum + (s.views ?? 0), 0)
+  const creatorViews = submissions.reduce(
+    (sum, s) => sum + (s.creator_role === 'reposter' ? 0 : s.views ?? 0),
+    0,
+  )
+  const reposterViews = totalViews - creatorViews
   const totalVideos = submissions.length
 
   const goalTotal = creators.reduce(
@@ -266,6 +336,7 @@ export default async function AdminPage({
     [
       'analytics',
       'ranking',
+      'projectviews',
       'topvideos',
       'progress',
       'attention',
@@ -275,15 +346,18 @@ export default async function AdminPage({
       'marketing',
       'outflow',
       'manage',
+      'strikes',
     ].includes(sp.panel)
       ? sp.panel
       : openMarketingRequests > 0
         ? 'marketing'
         : payDueCount > 0
           ? 'paydue'
-          : misses.length > 0
-            ? 'attention'
-            : 'analytics'
+          : strikeBoard.needsCorrective > 0
+            ? 'strikes'
+            : misses.length > 0
+              ? 'attention'
+              : 'analytics'
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 py-8">
@@ -306,7 +380,7 @@ export default async function AdminPage({
         </div>
       </header>
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           label={isToday ? t('postedToday') : t('postedThatDay')}
           value={`${postedTodayTotal} / ${goalTotal}`}
@@ -315,7 +389,20 @@ export default async function AdminPage({
           label={activeTodayLabel}
           value={`${creatorsPostedToday} / ${creators.length}`}
         />
-        <StatCard label={t('totalViews')} value={formatNumber(totalViews)} />
+        <StatCard
+          label={t('totalViews')}
+          value={formatNumber(totalViews)}
+          hint={
+            roleFilter === 'all'
+              ? `${t('creators')} ${formatNumber(creatorViews)} · ${t('reposters')} ${formatNumber(reposterViews)}`
+              : undefined
+          }
+        />
+        <StatCard
+          label={t('strikesTitle')}
+          value={strikeBoard.withContractStrikes}
+          hint={`${strikeBoard.missingToday} ${t('strikesMissingToday')} · ${strikeBoard.needsCorrective} ${t('strikesCorrective')}`}
+        />
       </section>
 
       <p className="mt-6 mb-3 text-xs text-muted-foreground">{t('tapSection')}</p>
@@ -366,32 +453,96 @@ export default async function AdminPage({
               />
             ),
           },
-          ...(league
-            ? [
-                {
-                  id: 'ranking',
-                  title: t('rankingTitle'),
-                  summary: league.rows[0] ? formatNumber(league.rows[0].views) : '0',
-                  hint: `${league.rows.length} ranked · ${league.from.slice(5)}→${league.to.slice(5)}`,
-                  children: (
-                    <RankingBoard
-                      board={league}
-                      collapsedLimit={null}
-                      labels={{
-                        title: t('rankingTitle'),
-                        empty: t('rankingEmpty'),
-                        expand: t('rankingExpand'),
-                        collapse: t('rankingCollapse'),
-                        search: t('rankingSearch'),
-                        rank: t('rankingRank'),
-                        views: t('views'),
-                        videos: t('videosWord'),
-                      }}
-                    />
-                  ),
-                },
-              ]
-            : []),
+          {
+            id: 'ranking',
+            title: t('rankingTitle'),
+            summary: league.rows[0] ? formatNumber(league.rows[0].views) : '0',
+            hint: `${league.rows.filter((r) => r.views > 0).length} ranked · ${formatYearMonth(rankMonth, locale)}`,
+            children: (
+              <div className="flex flex-col gap-4">
+                <RankingFilters
+                  today={today}
+                  month={rankMonth}
+                  projectId={rankProjectId}
+                  role={rankRole}
+                  projects={projects}
+                  labels={{
+                    thisMonth: t('rankingThisMonth'),
+                    lastMonth: t('rankingLastMonth'),
+                    month: t('rankingMonth'),
+                    allProjects: t('projectViewsCombined'),
+                    creators: t('roleFilterCreators'),
+                    reposters: t('roleFilterReposters'),
+                    all: t('roleFilterAll'),
+                    kind: t('projectViewsKind'),
+                  }}
+                />
+                <RankingBoard
+                  board={league}
+                  collapsedLimit={null}
+                  identity="given"
+                  showRole={rankRole === 'all'}
+                  periodLabel={formatYearMonth(rankMonth, locale)}
+                  labels={{
+                    title: t('rankingTitle'),
+                    empty: t('rankingEmpty'),
+                    expand: t('rankingExpand'),
+                    collapse: t('rankingCollapse'),
+                    search: t('rankingSearch'),
+                    rank: t('rankingRank'),
+                    views: t('views'),
+                    videos: t('videosWord'),
+                    creatorRole: t('creatorRole'),
+                    reposterRole: t('reposterRole'),
+                  }}
+                />
+              </div>
+            ),
+          },
+          {
+            id: 'projectviews',
+            title: t('projectViews'),
+            summary: formatNumber(projectViews.totals.views),
+            hint: projectViewsHint || `${projectViews.totals.videos} ${t('videos')}`,
+            children: (
+              <ProjectViewsPanel
+                board={projectViews}
+                submissions={projectViewVideos}
+                selectedCreatorId={pvCreatorId}
+                mode={pvMode}
+                kind={pvKind}
+                today={today}
+                defaultFrom={pvFrom}
+                defaultTo={pvTo}
+                labels={{
+                  from: t('from'),
+                  to: t('to'),
+                  apply: t('apply'),
+                  empty: t('projectViewsEmpty'),
+                  views: t('views'),
+                  videos: t('videosWord'),
+                  combined: t('projectViewsCombined'),
+                  kind: t('projectViewsKind'),
+                  creators: t('roleFilterCreators'),
+                  reposters: t('roleFilterReposters'),
+                  all: t('roleFilterAll'),
+                  person: t('projectViewsPerson'),
+                  everyone: t('projectViewsEveryone'),
+                  extractCopy: t('projectViewsCopy'),
+                  extractCopied: t('projectViewsCopied'),
+                  extractCsv: t('projectViewsCsv'),
+                  changeHint: t('projectViewsChangeHint'),
+                  noProject: t('noProject'),
+                  creatorRole: t('creatorRole'),
+                  reposterRole: t('reposterRole'),
+                  instagram: t('instagram'),
+                  tiktok: t('tiktok'),
+                  search: t('projectViewsSearch'),
+                  noVideosMatch: t('noVideosMatch'),
+                }}
+              />
+            ),
+          },
           {
             id: 'topvideos',
             title: 'Top videos',
@@ -422,6 +573,34 @@ export default async function AdminPage({
                   projectId={projectId}
                 />
               </div>
+            ),
+          },
+          {
+            id: 'strikes',
+            title: t('strikesTitle'),
+            summary: `${strikeBoard.withContractStrikes}`,
+            hint: `${strikeBoard.missingToday} ${t('strikesMissingToday')}`,
+            children: (
+              <StrikesPanel
+                board={strikeBoard}
+                labels={{
+                  hint: t('strikesHint'),
+                  missingToday: t('strikesMissingToday'),
+                  thisContract: t('strikesThisContract'),
+                  corrective: t('strikesCorrective'),
+                  person: t('projectViewsPerson'),
+                  strikes: t('strikeCount'),
+                  today: t('today'),
+                  posted: t('strikePostedToday'),
+                  missed: t('strikeMissedToday'),
+                  lastStrike: t('strikeLast'),
+                  add: t('strikeAdd'),
+                  take: t('strikeTake'),
+                  empty: t('strikeNoReposters'),
+                  noContract: t('noContractSet'),
+                  correctiveFlag: t('strikesCorrectiveFlag'),
+                }}
+              />
             ),
           },
           {
@@ -469,6 +648,11 @@ export default async function AdminPage({
                   emptyLabel={t('noVideosMatch')}
                   linkRole={roleFilter}
                   projectId={projectId}
+                  linkFrom="videos"
+                  editableProject
+                  projects={projects}
+                  noProjectLabel={t('noProject')}
+                  refreshLabel={t('refreshThisVideo')}
                 />
               </div>
             ),
@@ -577,6 +761,7 @@ export default async function AdminPage({
                   projects={projects}
                   roleFilter={roleFilter}
                   today={today}
+                  currentProjectId={projectId}
                 />
                 <ProjectsManager key="projects-manager" projects={projects} />
               </div>

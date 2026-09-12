@@ -100,6 +100,7 @@ export function TopVideosPanel({
                       href={adminPersonHref(v.creator_id, {
                         role: params.get('role'),
                         projectId: params.get('project'),
+                        from: 'topvideos',
                       })}
                       className="font-medium underline-offset-4 hover:underline"
                     >

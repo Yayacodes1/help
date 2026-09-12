@@ -18,7 +18,7 @@ import {
 import { getPaidForContract, getServerToday } from '@/lib/queries'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { normalizeHandle, parseOptionalHandle } from '@/lib/usernames'
+import { normalizeHandle, parseLoginPlatform, parseOptionalHandle, resolveLoginPlatform } from '@/lib/usernames'
 
 async function requireAdmin() {
   if (!(await isAdmin())) throw new Error('Unauthorized')
@@ -144,7 +144,11 @@ function parsePersonHandles(formData: FormData, fallbackName: string) {
   const instagram = parseOptionalHandle(formData.get('instagram_username'))
   const nameRaw = normalizeHandle((formData.get('name') ?? '').toString())
   const name = nameRaw || tiktok || instagram || fallbackName
-  return { name, tiktok, instagram }
+  const login_platform = resolveLoginPlatform(
+    { name, tiktok_username: tiktok, instagram_username: instagram },
+    parseLoginPlatform(formData.get('login_platform')),
+  )
+  return { name, tiktok, instagram, login_platform }
 }
 
 async function handleIsTaken(
@@ -184,7 +188,7 @@ async function handleIsTaken(
 
 export async function createCreator(formData: FormData) {
   await requireAdmin()
-  const { name, tiktok, instagram } = parsePersonHandles(formData, '')
+  const { name, tiktok, instagram, login_platform } = parsePersonHandles(formData, '')
   const projectIdRaw = (formData.get('project_id') ?? '').toString()
   const projectId = projectIdRaw ? Number(projectIdRaw) : null
   if (!name || (!tiktok && !instagram)) return
@@ -205,11 +209,11 @@ export async function createCreator(formData: FormData) {
   const rows = (await sql`
     INSERT INTO creators (
       name, token, project_id, role, goal_instagram, goal_tiktok, platforms,
-      last_paid_at, pay_every_days, notes, tiktok_username, instagram_username
+      last_paid_at, pay_every_days, notes, tiktok_username, instagram_username, login_platform
     )
     VALUES (
       ${name}, ${token}, ${projectId}, ${role}, ${goals.goalInstagram}, ${goals.goalTiktok}, ${platforms},
-      ${lastPaidAt}, ${payEveryDays}, ${notes}, ${tiktok}, ${instagram}
+      ${lastPaidAt}, ${payEveryDays}, ${notes}, ${tiktok}, ${instagram}, ${login_platform}
     )
     RETURNING id
   `) as { id: number }[]
@@ -235,7 +239,7 @@ export async function createCreator(formData: FormData) {
 
 export async function updateCreator(id: number, formData: FormData) {
   await requireAdmin()
-  const { name, tiktok, instagram } = parsePersonHandles(formData, '')
+  const { name, tiktok, instagram, login_platform } = parsePersonHandles(formData, '')
   const projectIdRaw = (formData.get('project_id') ?? '').toString()
   const projectId = projectIdRaw ? Number(projectIdRaw) : null
   if (!name || (!tiktok && !instagram)) return
@@ -260,7 +264,8 @@ export async function updateCreator(id: number, formData: FormData) {
         last_paid_at = ${lastPaidAt}, pay_every_days = ${payEveryDays},
         notes = ${notes},
         tiktok_username = ${tiktok},
-        instagram_username = ${instagram}
+        instagram_username = ${instagram},
+        login_platform = ${login_platform}
     WHERE id = ${id}
   `
   revalidatePath('/admin')
@@ -687,6 +692,21 @@ export async function updateViews(id: number, views: number) {
   revalidatePath('/admin')
 }
 
+export async function updateSubmissionProject(id: number, projectId: number | null) {
+  await requireAdmin()
+  if (projectId == null) {
+    await sql`UPDATE submissions SET project_id = NULL WHERE id = ${id}`
+  } else {
+    const found = (await sql`
+      SELECT id FROM projects WHERE id = ${projectId} LIMIT 1
+    `) as { id: number }[]
+    if (!found[0]) return
+    await sql`UPDATE submissions SET project_id = ${projectId} WHERE id = ${id}`
+  }
+  revalidatePath('/admin')
+  revalidatePath('/submit')
+}
+
 /** Pull TikHub view counts for submissions still at 0 views. */
 export async function refreshRecentViews() {
   await requireAdmin()
@@ -820,4 +840,86 @@ export async function deleteScheduleBreak(id: number, creatorId: number) {
   revalidatePath('/admin')
   revalidatePath(`/admin/creators/${creatorId}`)
   revalidatePath('/submit')
+}
+
+function revalidateStrikePaths(creatorId: number) {
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  revalidatePath('/submit')
+}
+
+export async function addStrike(creatorId: number, formData: FormData) {
+  await requireAdmin()
+  const person = (await sql`
+    SELECT id, role FROM creators WHERE id = ${creatorId} LIMIT 1
+  `) as { id: number; role: string }[]
+  if (!person[0] || person[0].role !== 'reposter') return
+
+  const strikeDate = parseOptionalDate(formData.get('strike_date'))
+  if (!strikeDate) return
+  const reason = parseNotes(formData.get('reason'))
+
+  const contract = (await sql`
+    SELECT id FROM contracts
+    WHERE creator_id = ${creatorId}
+      AND start_date <= ${strikeDate}::date
+      AND (end_date IS NULL OR end_date >= ${strikeDate}::date)
+    ORDER BY start_date DESC, id DESC
+    LIMIT 1
+  `) as { id: number }[]
+  const contractId = contract[0]?.id ?? null
+
+  const existing = (await sql`
+    SELECT id, status FROM creator_strikes
+    WHERE creator_id = ${creatorId} AND strike_date = ${strikeDate}::date
+    LIMIT 1
+  `) as { id: number; status: string }[]
+
+  if (existing[0]) {
+    await sql`
+      UPDATE creator_strikes
+      SET status = 'active',
+          source = 'manual',
+          reason = ${reason},
+          contract_id = ${contractId}
+      WHERE id = ${existing[0].id}
+    `
+  } else {
+    await sql`
+      INSERT INTO creator_strikes (
+        creator_id, contract_id, strike_date, source, status, reason
+      )
+      VALUES (
+        ${creatorId}, ${contractId}, ${strikeDate}::date, 'manual', 'active', ${reason}
+      )
+    `
+  }
+  revalidateStrikePaths(creatorId)
+}
+
+export async function removeStrike(strikeId: number, creatorId: number) {
+  await requireAdmin()
+  await sql`
+    UPDATE creator_strikes
+    SET status = 'waived'
+    WHERE id = ${strikeId} AND creator_id = ${creatorId}
+  `
+  revalidateStrikePaths(creatorId)
+}
+
+export async function removeLatestStrike(creatorId: number) {
+  await requireAdmin()
+  const rows = (await sql`
+    SELECT id FROM creator_strikes
+    WHERE creator_id = ${creatorId} AND status = 'active'
+    ORDER BY strike_date DESC, id DESC
+    LIMIT 1
+  `) as { id: number }[]
+  if (!rows[0]) return
+  await sql`
+    UPDATE creator_strikes
+    SET status = 'waived'
+    WHERE id = ${rows[0].id} AND creator_id = ${creatorId}
+  `
+  revalidateStrikePaths(creatorId)
 }

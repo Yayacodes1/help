@@ -62,7 +62,11 @@ export function TodayProgress({
                 <td className="px-4 py-3">
                   <div>
                     <Link
-                      href={adminPersonHref(c.id, { role: linkRole ?? c.role, projectId })}
+                      href={adminPersonHref(c.id, {
+                        role: linkRole ?? c.role,
+                        projectId,
+                        from: 'progress',
+                      })}
                       className="font-medium underline-offset-4 hover:underline"
                     >
                       {c.name}

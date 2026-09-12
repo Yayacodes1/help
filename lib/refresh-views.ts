@@ -15,6 +15,7 @@ export type RefreshFilters = {
   projectId?: number | null
   role?: string | null
   platform?: Platform | null
+  submissionId?: number | null
 }
 
 export type RefreshFailureSample = {
@@ -91,6 +92,8 @@ export async function refreshViews(
     const to = f.to && DATE_RE.test(f.to) ? f.to : null
     const creatorId = f.creatorId && Number.isFinite(f.creatorId) ? f.creatorId : null
     const projectId = f.projectId && Number.isFinite(f.projectId) ? f.projectId : null
+    const submissionId =
+      f.submissionId && Number.isFinite(f.submissionId) ? f.submissionId : null
     const role = f.role === 'creator' || f.role === 'reposter' ? f.role : null
     const platform =
       f.platform === 'instagram' || f.platform === 'tiktok' ? f.platform : null
@@ -103,6 +106,7 @@ export async function refreshViews(
         AND (${to}::date IS NULL OR s.video_date <= ${to}::date)
         AND (${creatorId}::int IS NULL OR s.creator_id = ${creatorId})
         AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
+        AND (${submissionId}::int IS NULL OR s.id = ${submissionId})
         AND (${role}::text IS NULL OR c.role = ${role})
         AND (${platform}::text IS NULL OR s.platform = ${platform})
       ORDER BY s.video_date ASC, s.id ASC
