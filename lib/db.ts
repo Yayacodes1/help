@@ -82,6 +82,8 @@ export type Submission = {
   /** Last TikHub/views lookup error; null when last fetch succeeded or never tried. */
   views_error: string | null
   created_at: string
+  /** When TikTok/IG published the video (from TikHub), if known. */
+  platform_posted_at: string | null
   /** Same-content IG+TikTok pair. Null = counted as its own unit. */
   batch_id: string | null
   /** 1-based batch number shown to the creator. */

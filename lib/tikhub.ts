@@ -83,13 +83,9 @@ function firstArrayItem(value: unknown): Record<string, unknown> | null {
   return null
 }
 
-/**
- * Prefer TikTok `statistics.play_count` / IG metric fields.
- * Avoid walking the whole tree (many unrelated `*_count: 0` fields).
- */
-export function extractViewCount(payload: unknown): number | null {
+function preferredMediaObjects(payload: unknown): Array<Record<string, unknown> | null> {
   const root = asRecord(payload)
-  if (!root) return null
+  if (!root) return []
 
   const data = asRecord(root.data) ?? root
   // Some IG responses nest again: data.data
@@ -104,7 +100,17 @@ export function extractViewCount(payload: unknown): number | null {
     asRecord(root.aweme_detail) ??
     asRecord(root.aweme)
 
-  const preferred: Array<Record<string, unknown> | null> = [
+  return [
+    aweme,
+    asRecord(asRecord(inner.itemInfo)?.itemStruct),
+    asRecord(inner.item),
+    asRecord(data.item),
+    asRecord(inner.media),
+    asRecord(data.media),
+    asRecord(inner.video),
+    asRecord(data.video),
+    asRecord(inner.caption),
+    asRecord(data.caption),
     asRecord(aweme?.statistics),
     asRecord(aweme?.stats),
     asRecord(inner.statistics),
@@ -113,22 +119,20 @@ export function extractViewCount(payload: unknown): number | null {
     asRecord(data.stats),
     asRecord(inner.metrics),
     asRecord(data.metrics),
-    asRecord(inner.video),
-    asRecord(data.video),
-    asRecord(inner.item),
-    asRecord(data.item),
-    asRecord(inner.media),
-    asRecord(data.media),
-    asRecord(asRecord(inner.itemInfo)?.itemStruct),
     asRecord(asRecord(asRecord(inner.itemInfo)?.itemStruct)?.stats),
-    aweme,
     inner,
     data,
     root,
   ]
+}
 
+/**
+ * Prefer TikTok `statistics.play_count` / IG metric fields.
+ * Avoid walking the whole tree (many unrelated `*_count: 0` fields).
+ */
+export function extractViewCount(payload: unknown): number | null {
   let foundZero: number | null = null
-  for (const obj of preferred) {
+  for (const obj of preferredMediaObjects(payload)) {
     const n = viewsFromObject(obj)
     if (n == null) continue
     if (n > 0) return n
@@ -136,6 +140,60 @@ export function extractViewCount(payload: unknown): number | null {
   }
 
   return foundZero
+}
+
+const POSTED_AT_KEYS = [
+  'create_time',
+  'createTime',
+  'create_timestamp',
+  'createTimestamp',
+  'taken_at',
+  'takenAt',
+  'taken_at_timestamp',
+  'takenAtTimestamp',
+  'device_timestamp',
+  'deviceTimestamp',
+  'publish_time',
+  'publishTime',
+  'posted_at',
+  'postedAt',
+  'timestamp',
+] as const
+
+/** Parse unix seconds/ms or ISO-ish strings into an ISO timestamptz string. */
+function isoFromUnknownTime(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    const ms = value > 1e12 ? value : value * 1000
+    const d = new Date(ms)
+    return Number.isNaN(d.getTime()) ? null : d.toISOString()
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const trimmed = value.trim()
+    if (/^\d+(\.\d+)?$/.test(trimmed)) {
+      return isoFromUnknownTime(Number(trimmed))
+    }
+    const d = new Date(trimmed)
+    return Number.isNaN(d.getTime()) ? null : d.toISOString()
+  }
+  return null
+}
+
+function postedAtFromObject(obj: Record<string, unknown> | null | undefined): string | null {
+  if (!obj) return null
+  for (const k of POSTED_AT_KEYS) {
+    const iso = isoFromUnknownTime(obj[k])
+    if (iso) return iso
+  }
+  return null
+}
+
+/** Platform publish time from TikHub / TikTok / IG payloads, if present. */
+export function extractPostedAt(payload: unknown): string | null {
+  for (const obj of preferredMediaObjects(payload)) {
+    const iso = postedAtFromObject(obj)
+    if (iso) return iso
+  }
+  return null
 }
 
 function friendlyTikHubError(status: number, body: string): string {
@@ -195,6 +253,8 @@ export type FetchViewsOk = {
   ok: true
   views: number
   resolvedUrl?: string
+  /** ISO timestamptz when the platform says the video went live. */
+  postedAt?: string
 }
 
 export type FetchViewsErr = {
@@ -208,6 +268,21 @@ function viewsFromPayload(data: unknown): number | null {
   return extractViewCount(data)
 }
 
+function metaFromPayload(
+  data: unknown,
+  resolvedUrl?: string,
+): FetchViewsOk | null {
+  const views = viewsFromPayload(data)
+  if (views == null) return null
+  const postedAt = extractPostedAt(data) ?? undefined
+  return {
+    ok: true,
+    views,
+    resolvedUrl,
+    postedAt,
+  }
+}
+
 async function fetchTikTokViews(url: string): Promise<FetchViewsResult> {
   const attempts: string[] = []
   let bestResolved = url
@@ -217,13 +292,9 @@ async function fetchTikTokViews(url: string): Promise<FetchViewsResult> {
       '/api/v1/tiktok/app/v3/fetch_one_video_by_share_url',
       { share_url: shareUrl },
     )
-    const views = viewsFromPayload(data)
-    if (views != null && views > 0) {
-      return { ok: true as const, views, resolvedUrl: shareUrl }
-    }
-    if (views === 0) {
-      return { ok: true as const, views: 0, resolvedUrl: shareUrl }
-    }
+    const hit = metaFromPayload(data, shareUrl)
+    if (hit && hit.views > 0) return hit
+    if (hit && hit.views === 0) return hit
     attempts.push('share_url: no play_count')
     return null
   }
@@ -257,10 +328,8 @@ async function fetchTikTokViews(url: string): Promise<FetchViewsResult> {
       const data = await tikhubGet('/api/v1/tiktok/app/v3/fetch_one_video', {
         aweme_id: awemeId,
       })
-      const views = viewsFromPayload(data)
-      if (views != null) {
-        return { ok: true, views, resolvedUrl: bestResolved }
-      }
+      const hit = metaFromPayload(data, bestResolved)
+      if (hit) return hit
       attempts.push('aweme_id: no play_count')
     } catch (e) {
       attempts.push(
@@ -274,10 +343,8 @@ async function fetchTikTokViews(url: string): Promise<FetchViewsResult> {
     const data = await tikhubGet('/api/v1/hybrid/video_data', {
       url: bestResolved,
     })
-    const views = viewsFromPayload(data)
-    if (views != null) {
-      return { ok: true, views, resolvedUrl: bestResolved }
-    }
+    const hit = metaFromPayload(data, bestResolved)
+    if (hit) return hit
     attempts.push('hybrid: no play_count')
   } catch (e) {
     attempts.push(
@@ -301,8 +368,8 @@ async function fetchInstagramViews(url: string): Promise<FetchViewsResult> {
     const data = await tikhubGet('/api/v1/instagram/v1/fetch_post_by_url', {
       post_url: url,
     })
-    const views = viewsFromPayload(data)
-    if (views != null) return { ok: true, views }
+    const hit = metaFromPayload(data)
+    if (hit) return hit
     attempts.push('v1: no view_count')
   } catch (e) {
     attempts.push(e instanceof Error ? e.message.slice(0, 80) : 'v1 failed')
@@ -312,8 +379,8 @@ async function fetchInstagramViews(url: string): Promise<FetchViewsResult> {
     const data = await tikhubGet('/api/v1/instagram/v1/fetch_post_by_url_v2', {
       post_url: url,
     })
-    const views = viewsFromPayload(data)
-    if (views != null) return { ok: true, views }
+    const hit = metaFromPayload(data)
+    if (hit) return hit
     attempts.push('v2: no view_count')
   } catch (e) {
     attempts.push(e instanceof Error ? `v2: ${e.message.slice(0, 60)}` : 'v2 failed')

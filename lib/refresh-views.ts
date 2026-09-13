@@ -5,6 +5,7 @@ import { addDays } from '@/lib/campaign'
 import { detectPlatformFromUrl } from '@/lib/media-url'
 import { getServerToday } from '@/lib/queries'
 import { fetchViewsDetailed } from '@/lib/tikhub'
+import { applyFetchViewsResult } from '@/lib/submission-meta'
 
 export type RefreshViewsScope = 'recent' | 'all' | 'zeros' | 'filtered'
 
@@ -44,6 +45,7 @@ type Row = {
   platform: Platform
   url: string
   views: number
+  platform_posted_at: string | null
 }
 
 const DEFAULT_CHUNK = 25
@@ -99,7 +101,7 @@ export async function refreshViews(
       f.platform === 'instagram' || f.platform === 'tiktok' ? f.platform : null
 
     rows = (await sql`
-      SELECT s.id, s.platform, s.url, s.views
+      SELECT s.id, s.platform, s.url, s.views, s.platform_posted_at
       FROM submissions s
       JOIN creators c ON c.id = s.creator_id
       WHERE (${from}::date IS NULL OR s.video_date >= ${from}::date)
@@ -116,7 +118,7 @@ export async function refreshViews(
     hasMore = nextOffset != null
   } else if (scope === 'zeros') {
     rows = (await sql`
-      SELECT id, platform, url, views
+      SELECT id, platform, url, views, platform_posted_at
       FROM submissions
       WHERE views = 0
       ORDER BY video_date ASC, id ASC
@@ -126,7 +128,7 @@ export async function refreshViews(
     hasMore = nextOffset != null
   } else if (scope === 'all') {
     rows = (await sql`
-      SELECT id, platform, url, views
+      SELECT id, platform, url, views, platform_posted_at
       FROM submissions
       ORDER BY video_date ASC, id ASC
       LIMIT ${limit} OFFSET ${offset}
@@ -135,7 +137,7 @@ export async function refreshViews(
     hasMore = nextOffset != null
   } else {
     rows = (await sql`
-      SELECT id, platform, url, views
+      SELECT id, platform, url, views, platform_posted_at
       FROM submissions
       WHERE video_date = ${today}::date OR video_date = ${yesterday}::date
       ORDER BY id ASC
@@ -188,22 +190,12 @@ export async function refreshViews(
       result.resolvedUrl && result.resolvedUrl !== row.url,
     )
     const viewsChanged = result.views !== row.views
+    const postedAtChanged = Boolean(
+      result.postedAt && result.postedAt !== row.platform_posted_at,
+    )
 
-    if (urlChanged && result.resolvedUrl) {
-      await sql`
-        UPDATE submissions
-        SET views = ${result.views},
-            url = ${result.resolvedUrl},
-            views_error = NULL
-        WHERE id = ${row.id}
-      `
-      updated += 1
-    } else if (viewsChanged) {
-      await sql`
-        UPDATE submissions
-        SET views = ${result.views}, views_error = NULL
-        WHERE id = ${row.id}
-      `
+    if (urlChanged || viewsChanged || postedAtChanged) {
+      await applyFetchViewsResult(row.id, result, { updateUrl: urlChanged })
       updated += 1
     } else {
       await sql`

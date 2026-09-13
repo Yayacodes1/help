@@ -4,6 +4,7 @@ import { ViewsCell } from '@/components/admin/views-cell'
 import { RefreshVideoButton } from '@/components/admin/refresh-views-button'
 import { ProjectCell } from '@/components/admin/project-cell'
 import { DeleteSubmission } from '@/components/admin/delete-submission'
+import { ReplaceSubmission } from '@/components/admin/replace-submission'
 import { CopyLink } from '@/components/copy-link'
 import { formatDateTime, formatNumber } from '@/lib/format'
 import { PLATFORM_META } from '@/lib/platforms'
@@ -16,6 +17,7 @@ export function SubmissionsTable({
   showCreator = true,
   showProject = true,
   editableViews = true,
+  allowManageVideos = false,
   editableProject = false,
   projects = [],
   noProjectLabel = 'No project',
@@ -32,6 +34,7 @@ export function SubmissionsTable({
     project_name?: string | null
     video_date: string
     created_at?: string | null
+    platform_posted_at?: string | null
     platform: 'instagram' | 'tiktok'
     url: string
     views: number
@@ -42,6 +45,8 @@ export function SubmissionsTable({
   showCreator?: boolean
   showProject?: boolean
   editableViews?: boolean
+  /** Show replace + delete even when views are read-only. */
+  allowManageVideos?: boolean
   editableProject?: boolean
   projects?: Pick<Project, 'id' | 'name'>[]
   noProjectLabel?: string
@@ -50,6 +55,7 @@ export function SubmissionsTable({
   linkFrom?: string | null
   refreshLabel?: string
 }) {
+  const manageVideos = allowManageVideos || editableViews
   if (submissions.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -69,7 +75,7 @@ export function SubmissionsTable({
             <th className="px-4 py-3 font-medium">Platform</th>
             <th className="px-4 py-3 font-medium">Link</th>
             <th className="px-4 py-3 text-right font-medium">Views</th>
-            {editableViews && <th className="px-4 py-3" />}
+            {manageVideos && <th className="px-4 py-3" />}
           </tr>
         </thead>
         <tbody>
@@ -115,12 +121,22 @@ export function SubmissionsTable({
                 <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
                   <time
                     dateTime={
-                      'created_at' in s && s.created_at ? String(s.created_at) : s.video_date
+                      ('platform_posted_at' in s && s.platform_posted_at
+                        ? String(s.platform_posted_at)
+                        : null) ??
+                      ('created_at' in s && s.created_at
+                        ? String(s.created_at)
+                        : s.video_date)
                     }
                     className="tabular-nums"
                   >
                     {formatDateTime(
-                      'created_at' in s && s.created_at ? s.created_at : s.video_date,
+                      ('platform_posted_at' in s && s.platform_posted_at
+                        ? s.platform_posted_at
+                        : null) ??
+                        ('created_at' in s && s.created_at
+                          ? s.created_at
+                          : s.video_date),
                     )}
                   </time>
                 </td>
@@ -157,9 +173,12 @@ export function SubmissionsTable({
                     <RefreshVideoButton submissionId={s.id} label={refreshLabel} />
                   </div>
                 </td>
-                {editableViews && (
+                {manageVideos && (
                   <td className="px-2 py-2 text-right">
-                    <DeleteSubmission id={s.id} />
+                    <div className="flex items-start justify-end gap-0.5">
+                      <ReplaceSubmission id={s.id} currentUrl={s.url} />
+                      <DeleteSubmission id={s.id} />
+                    </div>
                   </td>
                 )}
               </tr>

@@ -11,10 +11,10 @@ export function DeleteSubmission({ id }: { id: number }) {
       type="button"
       disabled={pending}
       onClick={() => {
-        if (confirm('Delete this submission?')) startTransition(() => deleteSubmission(id))
+        if (confirm('Delete this video?')) startTransition(() => deleteSubmission(id))
       }}
       className="rounded-md p-1.5 text-muted-foreground hover:text-destructive disabled:opacity-60"
-      title="Delete submission"
+      title="Delete video"
     >
       <Trash2 className="size-4" />
     </button>

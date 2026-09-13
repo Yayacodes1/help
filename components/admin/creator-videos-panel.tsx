@@ -3,6 +3,7 @@
 import { Suspense, useMemo, useState } from 'react'
 import { SubmissionsTable } from '@/components/admin/submissions-table'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
+import { AddCreatorVideoForm } from '@/components/admin/add-creator-video-form'
 import { formatNumber } from '@/lib/format'
 
 type PlatformFilter = 'both' | 'instagram' | 'tiktok'
@@ -15,6 +16,7 @@ type Submission = {
   project_name?: string | null
   video_date: string
   created_at?: string | null
+  platform_posted_at?: string | null
   platform: 'instagram' | 'tiktok'
   url: string
   views: number
@@ -25,11 +27,13 @@ export function CreatorVideosPanel({
   creatorId,
   submissions,
   emptyLabel,
+  today,
   labels,
 }: {
   creatorId: number
   submissions: Submission[]
   emptyLabel: string
+  today: string
   labels: {
     both: string
     instagram: string
@@ -172,12 +176,15 @@ export function CreatorVideosPanel({
         />
       </Suspense>
 
+      <AddCreatorVideoForm creatorId={creatorId} today={today} />
+
       <SubmissionsTable
         submissions={filtered}
         emptyLabel={filtered.length === 0 && submissions.length > 0 ? labels.noMatch : emptyLabel}
         showCreator={false}
         showProject={true}
         editableViews={false}
+        allowManageVideos
         refreshLabel={labels.refreshThisVideo}
       />
     </div>

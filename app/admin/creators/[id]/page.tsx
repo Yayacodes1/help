@@ -404,6 +404,7 @@ export default async function CreatorDetailPage({
             children: (
               <CreatorVideosPanel
                 creatorId={creator.id}
+                today={today}
                 submissions={submissions.map((s) => ({
                   ...s,
                   creator_name: creator.name,

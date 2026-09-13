@@ -124,6 +124,8 @@ export async function ensureCreatorTrackingColumns() {
 
   // Why a views lookup failed (cleared on success).
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS views_error text`
+  // When TikTok/IG says the video went live (from TikHub). Display + optional video_date source.
+  await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS platform_posted_at timestamptz`
 
   // Posted time is server-owned. Creators (and later edits) cannot change it.
   try {

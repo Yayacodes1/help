@@ -835,8 +835,135 @@ export async function reclassifySubmissionPlatforms() {
 
 export async function deleteSubmission(id: number) {
   await requireAdmin()
+  const rows = (await sql`
+    SELECT creator_id FROM submissions WHERE id = ${id} LIMIT 1
+  `) as { creator_id: number }[]
   await sql`DELETE FROM submissions WHERE id = ${id}`
   revalidatePath('/admin')
+  revalidatePath('/submit')
+  if (rows[0]) revalidatePath(`/admin/creators/${rows[0].creator_id}`)
+}
+
+/** Swap the link on an existing submission (keeps date / batch / creator). */
+export async function replaceSubmissionUrl(id: number, formData: FormData) {
+  await requireAdmin()
+  const raw = (formData.get('url') ?? '').toString().trim()
+  const { normalizeMediaUrl, detectPlatformFromUrl } = await import('@/lib/media-url')
+  const url = normalizeMediaUrl(raw)
+  if (!url) return { ok: false as const, message: 'Paste a video link.' }
+  const platform = detectPlatformFromUrl(url)
+  if (!platform) {
+    return { ok: false as const, message: 'Use an Instagram or TikTok link.' }
+  }
+
+  const existing = (await sql`
+    SELECT id, creator_id FROM submissions WHERE id = ${id} LIMIT 1
+  `) as { id: number; creator_id: number }[]
+  if (!existing[0]) return { ok: false as const, message: 'Video not found.' }
+
+  await sql`
+    UPDATE submissions
+    SET url = ${url},
+        platform = ${platform},
+        views = 0,
+        views_error = NULL,
+        platform_posted_at = NULL
+    WHERE id = ${id}
+  `
+
+  if (process.env.TIKHUB_API_KEY?.trim()) {
+    try {
+      const { fetchViewsDetailed } = await import('@/lib/tikhub')
+      const { applyFetchViewsResult } = await import('@/lib/submission-meta')
+      const result = await fetchViewsDetailed(platform, url)
+      if (result.ok) {
+        await applyFetchViewsResult(id, result)
+      } else {
+        await sql`
+          UPDATE submissions
+          SET views_error = ${result.reason.slice(0, 400)}
+          WHERE id = ${id}
+        `
+      }
+    } catch {
+      /* views can refresh later */
+    }
+  }
+
+  revalidatePath('/admin')
+  revalidatePath('/submit')
+  revalidatePath(`/admin/creators/${existing[0].creator_id}`)
+  return { ok: true as const }
+}
+
+/** Admin: add a video for a creator (after deleting, or as an extra). */
+export async function addCreatorSubmission(creatorId: number, formData: FormData) {
+  await requireAdmin()
+  const raw = (formData.get('url') ?? '').toString().trim()
+  const formDate =
+    parseOptionalDate(formData.get('video_date')) ??
+    (await getServerToday())
+  const { normalizeMediaUrl, detectPlatformFromUrl } = await import('@/lib/media-url')
+  const url = normalizeMediaUrl(raw)
+  if (!url) return { ok: false as const, message: 'Paste a video link.' }
+  const platform = detectPlatformFromUrl(url)
+  if (!platform) {
+    return { ok: false as const, message: 'Use an Instagram or TikTok link.' }
+  }
+
+  const creator = (await sql`
+    SELECT id, project_id FROM creators WHERE id = ${creatorId} LIMIT 1
+  `) as { id: number; project_id: number | null }[]
+  if (!creator[0]) return { ok: false as const, message: 'Creator not found.' }
+
+  let views = 0
+  let viewsError: string | null = null
+  let platformPostedAt: string | null = null
+  let videoDate = formDate
+  let finalUrl = url
+
+  if (process.env.TIKHUB_API_KEY?.trim()) {
+    try {
+      const { fetchViewsDetailed } = await import('@/lib/tikhub')
+      const { videoDateFromPostedAt } = await import('@/lib/submission-meta')
+      const result = await fetchViewsDetailed(platform, url)
+      if (result.ok) {
+        views = result.views
+        if (result.resolvedUrl) finalUrl = result.resolvedUrl
+        if (result.postedAt) {
+          platformPostedAt = result.postedAt
+          videoDate = videoDateFromPostedAt(result.postedAt)
+        }
+      } else {
+        viewsError = result.reason.slice(0, 400)
+      }
+    } catch {
+      /* insert with form date; views can refresh later */
+    }
+  }
+
+  await sql`
+    INSERT INTO submissions (
+      creator_id, project_id, platform, url, video_date, created_at,
+      views, views_error, platform_posted_at
+    )
+    VALUES (
+      ${creatorId},
+      ${creator[0].project_id},
+      ${platform},
+      ${finalUrl},
+      ${videoDate}::date,
+      NOW(),
+      ${views},
+      ${viewsError},
+      ${platformPostedAt}::timestamptz
+    )
+  `
+
+  revalidatePath('/admin')
+  revalidatePath('/submit')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  return { ok: true as const }
 }
 
 function inclusiveDayCount(start: string, end: string): number {

@@ -10,34 +10,6 @@ import { normalizeHandle, parseLoginPlatform } from '@/lib/usernames'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import { operationalDayFromIso } from '@/lib/operational-day'
 
-async function fillViewsForNewSubmission(
-  id: number,
-  platform: 'instagram' | 'tiktok',
-  url: string,
-) {
-  if (!process.env.TIKHUB_API_KEY?.trim()) return
-  try {
-    const { fetchViewsDetailed } = await import('@/lib/tikhub')
-    const result = await fetchViewsDetailed(platform, url)
-    if (result.ok) {
-      await sql`
-        UPDATE submissions
-        SET views = ${result.views}, views_error = NULL
-        WHERE id = ${id}
-      `
-    } else {
-      await sql`
-        UPDATE submissions
-        SET views_error = ${result.reason.slice(0, 400)}
-        WHERE id = ${id}
-      `
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message.slice(0, 400) : 'views fetch failed'
-    await sql`UPDATE submissions SET views_error = ${msg} WHERE id = ${id}`
-  }
-}
-
 // Public gate: verify the TikTok username belongs to a registered creator,
 // then unlock the submission form for them.
 export async function startSubmission(_prev: unknown, formData: FormData) {
@@ -140,33 +112,60 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
     return { ok: false, message: 'Paste at least one Instagram or TikTok video link.' }
   }
 
-  const videoDate =
+  const videoDateFallback =
     creator.role === 'reposter'
       ? operationalDayFromIso(new Date().toISOString())
       : null
 
   for (const row of pending) {
-    const inserted = (await sql`
+    let views = 0
+    let viewsError: string | null = null
+    let platformPostedAt: string | null = null
+    let videoDate = videoDateFallback
+    let finalUrl = row.url
+
+    if (process.env.TIKHUB_API_KEY?.trim()) {
+      try {
+        const { fetchViewsDetailed } = await import('@/lib/tikhub')
+        const { videoDateFromPostedAt } = await import('@/lib/submission-meta')
+        const result = await fetchViewsDetailed(row.platform, row.url)
+        if (result.ok) {
+          views = result.views
+          if (result.resolvedUrl) finalUrl = result.resolvedUrl
+          if (result.postedAt) {
+            platformPostedAt = result.postedAt
+            if (creator.role !== 'reposter') {
+              videoDate = videoDateFromPostedAt(result.postedAt)
+            }
+          }
+        } else {
+          viewsError = result.reason.slice(0, 400)
+        }
+      } catch (e) {
+        viewsError =
+          e instanceof Error ? e.message.slice(0, 400) : 'views fetch failed'
+      }
+    }
+
+    await sql`
       INSERT INTO submissions (
         creator_id, project_id, platform, url, video_date, created_at,
-        batch_id, batch_index
+        batch_id, batch_index, views, views_error, platform_posted_at
       )
       VALUES (
         ${creator.id},
         ${projectId},
         ${row.platform},
-        ${row.url},
+        ${finalUrl},
         COALESCE(${videoDate}::date, CURRENT_DATE),
         NOW(),
         ${row.batchId},
-        ${row.batchIndex}
+        ${row.batchIndex},
+        ${views},
+        ${viewsError},
+        ${platformPostedAt}::timestamptz
       )
-      RETURNING id
-    `) as { id: number }[]
-    const id = inserted[0]?.id
-    if (id != null) {
-      await fillViewsForNewSubmission(id, row.platform, row.url)
-    }
+    `
   }
 
   revalidatePath('/submit')

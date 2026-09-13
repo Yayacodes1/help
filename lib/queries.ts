@@ -135,7 +135,7 @@ export async function getProjectById(id: number): Promise<Project | null> {
 export async function getSubmissionsForCreator(creatorId: number): Promise<Array<Submission & { project_name: string | null }>> {
   return (await sql`
     SELECT s.id, s.creator_id, s.project_id, s.platform, s.url, s.video_date::text AS video_date,
-           s.views, s.views_error, s.created_at, s.batch_id, s.batch_index,
+           s.views, s.views_error, s.created_at, s.platform_posted_at, s.batch_id, s.batch_index,
            p.name AS project_name
     FROM submissions s
     LEFT JOIN projects p ON p.id = s.project_id
@@ -150,7 +150,7 @@ export async function getSubmissionsForCreatorOnDate(
 ): Promise<Array<Submission & { project_name: string | null }>> {
   return (await sql`
     SELECT s.id, s.creator_id, s.project_id, s.platform, s.url, s.video_date::text AS video_date,
-           s.views, s.views_error, s.created_at, s.batch_id, s.batch_index,
+           s.views, s.views_error, s.created_at, s.platform_posted_at, s.batch_id, s.batch_index,
            p.name AS project_name
     FROM submissions s
     LEFT JOIN projects p ON p.id = s.project_id
@@ -213,6 +213,7 @@ export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<A
       s.views,
       s.views_error,
       s.created_at,
+      s.platform_posted_at,
       s.batch_id,
       s.batch_index,
       c.name AS creator_name,

@@ -54,9 +54,9 @@ export function TodayVideos({
             ) : null}
             <div className="min-w-0 flex-1">
               <CopyLink url={s.url} copyLabel="نسخ" copiedLabel="تم" />
-              {s.created_at ? (
+              {s.platform_posted_at || s.created_at ? (
                 <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">
-                  {formatDateTime(s.created_at, locale)}
+                  {formatDateTime(s.platform_posted_at ?? s.created_at, locale)}
                 </p>
               ) : null}
             </div>
