@@ -20,6 +20,12 @@ export type ConsistencySummary = {
   hitRate: number
   currentStreak: number
   bestStreak: number
+  /** Active streak period start (inclusive). */
+  streakEpochStart?: string
+  /** Active streak period end (inclusive). */
+  streakEpochEnd?: string
+  /** First day that counts toward streak (epoch start left out). */
+  streakFrom?: string
 }
 
 function dayStatus(
@@ -75,6 +81,10 @@ export function buildConsistency(options: {
   goalTiktok: number
   countsByDate: Record<string, { instagram: number; tiktok: number }>
   breakDates?: Set<string> | string[]
+  /** Only dates >= this count toward current/best streak (leave epoch day 1 out). */
+  streakFrom?: string | null
+  streakEpochStart?: string | null
+  streakEpochEnd?: string | null
 }): ConsistencySummary {
   const { start, end, today, goalInstagram, goalTiktok, countsByDate } = options
   const breaks = options.breakDates instanceof Set
@@ -82,6 +92,7 @@ export function buildConsistency(options: {
     : new Set(options.breakDates ?? [])
   const cappedEnd = end < today ? end : today
   const dates = eachDate(start, end)
+  const streakFrom = options.streakFrom ?? null
 
   const days: DayProgress[] = dates.map((date) => {
     const counts = countsByDate[date] ?? { instagram: 0, tiktok: 0 }
@@ -125,9 +136,14 @@ export function buildConsistency(options: {
   const hitRate = requiredDays > 0 ? hitDays / requiredDays : 0
 
   // Current streak: consecutive hits ending at today. Break days are skipped, not a reset.
+  // Epoch day 1 is left out of streak scoring when streakFrom is set.
   let currentStreak = 0
   const streakDays = days.filter(
-    (d) => d.date <= today && d.status !== 'none' && d.status !== 'future',
+    (d) =>
+      d.date <= today &&
+      d.status !== 'none' &&
+      d.status !== 'future' &&
+      (streakFrom == null || d.date >= streakFrom),
   )
   for (let i = streakDays.length - 1; i >= 0; i--) {
     if (streakDays[i].status === 'break') continue
@@ -156,5 +172,8 @@ export function buildConsistency(options: {
     hitRate,
     currentStreak,
     bestStreak,
+    streakEpochStart: options.streakEpochStart ?? undefined,
+    streakEpochEnd: options.streakEpochEnd ?? undefined,
+    streakFrom: streakFrom ?? undefined,
   }
 }

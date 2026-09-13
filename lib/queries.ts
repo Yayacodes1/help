@@ -9,6 +9,7 @@ import {
   nextPayDate,
   type ConsistencySummary,
 } from '@/lib/consistency'
+import { ensureStreakEpoch, previousEpochWindow } from '@/lib/streak-epoch'
 import {
   normalizePlatforms,
   videoCompletionRate,
@@ -456,6 +457,11 @@ export async function getConsistencyForWindow(
   end: string,
   today: string,
   goals?: { goalInstagram: number; goalTiktok: number },
+  streakOpts?: {
+    streakFrom?: string | null
+    streakEpochStart?: string | null
+    streakEpochEnd?: string | null
+  },
 ): Promise<ConsistencySummary> {
   const [countsByDate, breakDates] = await Promise.all([
     getCreatorDailyPlatformCounts(creator.id, start, end),
@@ -469,6 +475,9 @@ export async function getConsistencyForWindow(
     goalTiktok: goals?.goalTiktok ?? creator.goal_tiktok,
     countsByDate,
     breakDates,
+    streakFrom: streakOpts?.streakFrom,
+    streakEpochStart: streakOpts?.streakEpochStart,
+    streakEpochEnd: streakOpts?.streakEpochEnd,
   })
 }
 
@@ -552,10 +561,44 @@ export function goalsForContract(
 export async function getCreatorConsistency(
   creator: Creator,
   today: string,
-): Promise<ConsistencySummary> {
+): Promise<ConsistencySummary & { previousPeriod?: ConsistencySummary }> {
   const active = await getActiveContract(creator.id, today)
-  const { start, end } = contractWindow(creator, today, active)
-  return getConsistencyForWindow(creator, start, end, today, goalsForContract(creator, active))
+  const goals = goalsForContract(creator, active)
+  const epoch = await ensureStreakEpoch(today)
+
+  // Streaks / consistency board use the global 30-day epoch (reset for everyone).
+  const consistency = await getConsistencyForWindow(
+    creator,
+    epoch.start,
+    epoch.end,
+    today,
+    goals,
+    {
+      streakFrom: epoch.start,
+      streakEpochStart: epoch.start,
+      streakEpochEnd: epoch.end,
+    },
+  )
+
+  // After a roll: score the last 30 days, leaving the first day out of streak math.
+  const prev = previousEpochWindow(epoch.start, epoch.days)
+  if (prev.end < epoch.start && prev.start <= prev.end) {
+    const previousPeriod = await getConsistencyForWindow(
+      creator,
+      prev.start,
+      prev.end,
+      prev.end,
+      goals,
+      {
+        streakFrom: prev.streakFrom,
+        streakEpochStart: prev.start,
+        streakEpochEnd: prev.end,
+      },
+    )
+    return { ...consistency, previousPeriod }
+  }
+
+  return consistency
 }
 
 export type ContractProgress = {

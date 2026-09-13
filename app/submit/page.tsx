@@ -534,7 +534,20 @@ export default async function SubmitPage({
                   <h2 className="mb-3 text-sm font-semibold text-foreground">
                     {t('activitySummary')}
                   </h2>
+                  {consistency.streakEpochStart && consistency.streakEpochEnd ? (
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      {t('streakPeriod')}: {formatDate(consistency.streakEpochStart)} →{' '}
+                      {formatDate(consistency.streakEpochEnd)}. {t('streakPeriodHint')}
+                    </p>
+                  ) : null}
                   <CreatorStats stats={displayStats} locale={locale} />
+                  {'previousPeriod' in consistency && consistency.previousPeriod ? (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      {t('lastStreakPeriod')}: {consistency.previousPeriod.bestStreak}{' '}
+                      {t('days')} · {Math.round(consistency.previousPeriod.hitRate * 100)}%.{' '}
+                      {t('lastStreakPeriodHint')}
+                    </p>
+                  ) : null}
                 </div>
               ),
             },

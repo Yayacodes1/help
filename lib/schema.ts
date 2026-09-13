@@ -272,4 +272,7 @@ export async function ensureCreatorTrackingColumns() {
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_id text`
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_index integer`
   await sql`CREATE INDEX IF NOT EXISTS submissions_batch_id_idx ON submissions (batch_id)`
+
+  const { ensureStreakSettingsTable } = await import('@/lib/streak-epoch')
+  await ensureStreakSettingsTable()
 }

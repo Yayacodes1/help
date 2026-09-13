@@ -22,7 +22,7 @@ export function ConsistencyCalendar({ days }: { days: DayProgress[] }) {
   if (days.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-        Set a contract start date to see consistency.
+        Set a streak period to see consistency.
       </p>
     )
   }

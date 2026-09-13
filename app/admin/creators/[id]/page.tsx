@@ -256,11 +256,24 @@ export default async function CreatorDetailPage({
             hint: active ? active.name : undefined,
             children: (
               <div>
+                {consistency.streakEpochStart && consistency.streakEpochEnd ? (
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    {t('streakPeriod')}: {formatDate(consistency.streakEpochStart)} →{' '}
+                    {formatDate(consistency.streakEpochEnd)}. {t('streakPeriodHint')}
+                  </p>
+                ) : null}
                 <ConsistencyCalendar days={consistency.days} />
                 <p className="mt-3 text-xs text-muted-foreground">
                   {consistency.missDays} · {consistency.partialDays} · {consistency.currentStreak} /{' '}
                   {consistency.bestStreak}
                 </p>
+                {'previousPeriod' in consistency && consistency.previousPeriod ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {t('lastStreakPeriod')}: {consistency.previousPeriod.bestStreak}{' '}
+                    {t('days')} · {Math.round(consistency.previousPeriod.hitRate * 100)}%.{' '}
+                    {t('lastStreakPeriodHint')}
+                  </p>
+                ) : null}
               </div>
             ),
           },
