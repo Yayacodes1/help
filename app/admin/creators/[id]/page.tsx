@@ -370,11 +370,9 @@ export default async function CreatorDetailPage({
                       {perf.costPer1k != null ? ` · ${formatMoney(perf.costPer1k)} / 1k` : ''}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {perf.terms.countMode === 'batch' ? 'Per batch' : 'Per video'}
-                      {' · '}
-                      {formatNumber(perf.terms.viewsThreshold)} views
-                      {' · '}
-                      {formatMoney(perf.terms.commissionAmount)} / {perf.terms.reelCount} reels
+                      {perf.terms
+                        ? `${perf.terms.countMode === 'batch' ? 'Per batch' : 'Per video'} · ${formatNumber(perf.terms.viewsThreshold)} views · ${formatMoney(perf.terms.commissionAmount)} / ${perf.terms.reelCount} reels`
+                        : t('commissionMissing')}
                     </p>
                   </div>
                 ) : (

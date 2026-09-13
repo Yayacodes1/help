@@ -18,7 +18,6 @@ export function CommissionTermsFields({
   variant?: 'house' | 'contract'
 }) {
   const inherit = variant === 'contract'
-  const house = `${HOUSE_COMMISSION.commissionAmount.toLocaleString()} / ${HOUSE_COMMISSION.viewsThreshold.toLocaleString()} views / ${HOUSE_COMMISSION.reelCount} reels`
   const amountName = inherit ? 'view_commission_amount' : 'commission_amount'
   const reelsName = inherit ? 'commission_reels' : 'reel_count'
   return (
@@ -26,8 +25,8 @@ export function CommissionTermsFields({
       <p className="text-[11px] text-muted-foreground">
         View commission.{' '}
         {inherit
-          ? `Blank uses the house default (${house}).`
-          : 'House default for everyone without a contract override.'}
+          ? 'Leave $ blank for no commission on this contract. Fill $ (and optionally views / reels / count) to assign it.'
+          : 'Suggested fill-in only — never applied until you set commission $ on a contract.'}
       </p>
       <label className="flex flex-col gap-1 text-xs text-muted-foreground">
         Count
@@ -36,7 +35,7 @@ export function CommissionTermsFields({
           defaultValue={countMode ?? (inherit ? '' : HOUSE_COMMISSION.countMode)}
           className={inputClass}
         >
-          {inherit ? <option value="">House default</option> : null}
+          {inherit ? <option value="">Suggested fill-in</option> : null}
           <option value="video">Per video</option>
           <option value="batch">Per batch (same clip on IG + TikTok)</option>
         </select>
@@ -67,7 +66,7 @@ export function CommissionTermsFields({
                   ? ''
                   : HOUSE_COMMISSION.commissionAmount
             }
-            placeholder={inherit ? String(HOUSE_COMMISSION.commissionAmount) : undefined}
+            placeholder={inherit ? 'No commission' : undefined}
             className={inputClass}
           />
         </label>

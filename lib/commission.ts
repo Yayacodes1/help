@@ -39,6 +39,7 @@ export type PerformanceRow = {
   units: number
   qualifiedUnits: number
   commissionEarned: number
+  commissionAssigned: boolean
   paid: number
   costPer1k: number | null
   viewsPerDollar: number | null
@@ -48,7 +49,7 @@ export type PerformanceRow = {
   spendScore: number | null
   standing: Standing
   rank: number | null
-  terms: CommissionTerms
+  terms: CommissionTerms | null
 }
 
 export type CommissionBoard = {
@@ -90,19 +91,30 @@ export function normalizeCountMode(value: string | null | undefined): CountMode 
   return null
 }
 
+/** Commission only runs after you set $ for the deal on the contract. */
+export function hasAssignedCommission(
+  contract: ContractTermsInput | null | undefined,
+): boolean {
+  return contract?.view_commission_amount != null
+}
+
+/**
+ * Resolve deal terms for a contract. Returns null until commission $ is assigned —
+ * house settings never auto-apply on their own.
+ */
 export function resolveTerms(
   contract: ContractTermsInput | null | undefined,
   settings: CommissionTerms,
-): CommissionTerms {
+): CommissionTerms | null {
+  if (!hasAssignedCommission(contract)) return null
   const threshold = contract?.views_threshold
-  const amount = contract?.view_commission_amount
+  const amount = contract!.view_commission_amount!
   const reels = contract?.commission_reels
   const mode = normalizeCountMode(contract?.count_mode)
   return {
     viewsThreshold:
       threshold != null && threshold > 0 ? Math.floor(threshold) : settings.viewsThreshold,
-    commissionAmount:
-      amount != null && amount >= 0 ? amount : settings.commissionAmount,
+    commissionAmount: Math.max(0, amount),
     reelCount: reels != null && reels > 0 ? Math.floor(reels) : settings.reelCount,
     countMode: mode ?? settings.countMode,
   }
@@ -139,12 +151,26 @@ export type CommissionEstimateOption = {
   isActive: boolean
 }
 
-/** View-based commission for one contract window. */
+/** View-based commission for one contract window. Null terms → $0 commission. */
 export function estimateContractCommission(input: {
-  terms: CommissionTerms
+  terms: CommissionTerms | null
   submissions: SubmissionUnitInput[]
   recorded: number
 }): Omit<CommissionEstimate, 'contractCount'> {
+  const recorded = roundMoney(input.recorded)
+  if (!input.terms) {
+    const units = buildUnits(input.submissions, 'video')
+    return {
+      did: 0,
+      goingToDo: 0,
+      recorded,
+      payNow: 0,
+      views: units.reduce((sum, u) => sum + u.views, 0),
+      units: units.length,
+      qualifiedUnits: 0,
+      remainingUnits: 0,
+    }
+  }
   const units = qualifyUnits(
     buildUnits(input.submissions, input.terms.countMode),
     input.terms.viewsThreshold,
@@ -154,7 +180,6 @@ export function estimateContractCommission(input: {
   const did = roundMoney(qualifiedUnits * perUnit)
   const pot = roundMoney(input.terms.commissionAmount)
   const goingToDo = roundMoney(Math.max(did, pot))
-  const recorded = roundMoney(input.recorded)
   const remainingUnits = Math.max(0, input.terms.reelCount - qualifiedUnits)
   return {
     did,
@@ -319,7 +344,7 @@ export function scorePerson(input: {
   views: number
   qualifiedUnits: number
   paid: number
-  terms: CommissionTerms
+  terms: CommissionTerms | null
   costBenchmark: number
 }): {
   viewsScore: number | null
@@ -329,10 +354,13 @@ export function scorePerson(input: {
   costPer1k: number | null
   viewsPerDollar: number | null
 } {
-  const targetViews = input.terms.reelCount * input.terms.viewsThreshold
+  const terms = input.terms
   const viewsScore =
-    input.views > 0 || targetViews > 0 ? scoreVsTarget(input.views, targetViews) : null
-  const commissionScore = scoreVsTarget(input.qualifiedUnits, input.terms.reelCount)
+    terms != null
+      ? scoreVsTarget(input.views, terms.reelCount * terms.viewsThreshold)
+      : null
+  const commissionScore =
+    terms != null ? scoreVsTarget(input.qualifiedUnits, terms.reelCount) : null
   const cpk = costPer1k(input.paid, input.views)
   const spendScore =
     cpk != null ? scoreCostEfficiency(cpk, input.costBenchmark) : null
@@ -364,11 +392,16 @@ export function buildCommissionBoard(input: {
   const deal = dealCostPer1k(input.settings)
   const draft = input.people.map((person) => {
     const terms = resolveTerms(person.contract, input.settings)
-    const units = qualifyUnits(buildUnits(person.submissions, terms.countMode), terms.viewsThreshold)
+    const countMode = terms?.countMode ?? 'video'
+    const units = terms
+      ? qualifyUnits(buildUnits(person.submissions, countMode), terms.viewsThreshold)
+      : buildUnits(person.submissions, countMode).map((u) => ({ ...u, qualified: false }))
     const views = units.reduce((sum, u) => sum + u.views, 0)
     const qualifiedUnits = units.filter((u) => u.qualified).length
-    const perUnit = commissionPerUnit(terms)
-    const commissionEarned = Math.round(qualifiedUnits * perUnit * 100) / 100
+    const commissionEarned =
+      terms != null
+        ? Math.round(qualifiedUnits * commissionPerUnit(terms) * 100) / 100
+        : 0
     return {
       creatorId: person.creatorId,
       name: person.name,
@@ -378,6 +411,7 @@ export function buildCommissionBoard(input: {
       units: units.length,
       qualifiedUnits,
       commissionEarned,
+      commissionAssigned: terms != null,
       paid: Math.max(0, person.paid),
       terms,
     }

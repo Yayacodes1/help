@@ -243,7 +243,9 @@ export function CommissionBoardPanel({
                     {row.qualifiedUnits}/{row.units}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {formatMoney(row.commissionEarned)}
+                    {row.commissionAssigned
+                      ? formatMoney(row.commissionEarned)
+                      : '—'}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatMoney(row.paid)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">

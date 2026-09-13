@@ -25,8 +25,7 @@ import {
   goalsForContract,
 } from '@/lib/queries'
 import { getLeagueBoard } from '@/lib/ranking'
-import { getCommissionSettings } from '@/lib/commission-data'
-import { resolveTerms } from '@/lib/commission'
+import { normalizeCountMode } from '@/lib/commission'
 import { RankingBoard } from '@/components/ranking-board'
 import { StrikeBanner } from '@/components/strike-banner'
 import { operationalDayFromIso } from '@/lib/operational-day'
@@ -89,7 +88,6 @@ export default async function SubmitPage({
     projects,
     league,
     strikeSummary,
-    houseCommission,
   ] = await Promise.all([
     getCreatorCountsByPlatformOnDate(creator.id, date),
     getSubmissionsForCreatorOnDate(creator.id, date),
@@ -108,9 +106,8 @@ export default async function SubmitPage({
     creator.role === 'reposter'
       ? getCreatorStrikeSummary(creator.id, opToday)
       : Promise.resolve(null),
-    getCommissionSettings(),
   ])
-  const countMode = resolveTerms(active, houseCommission).countMode
+  const countMode = normalizeCountMode(active?.count_mode) ?? 'video'
 
   const dailyGoals = goalsForContract(creator, active)
   const goalShape = {
