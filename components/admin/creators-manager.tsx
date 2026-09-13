@@ -312,6 +312,28 @@ export function CreatorsManager({
                             {c.name}
                           </Link>
                           <RoleQuickSelect creatorId={c.id} role={c.role} />
+                          <Link
+                            href={adminPersonHref(c.id, {
+                              role: roleFilter,
+                              projectId: currentProjectId,
+                              panel: 'contracts',
+                              from: 'manage',
+                            })}
+                            className="text-[11px] font-medium text-muted-foreground underline-offset-2 hover:underline"
+                          >
+                            Contracts
+                          </Link>
+                          <Link
+                            href={adminPersonHref(c.id, {
+                              role: roleFilter,
+                              projectId: currentProjectId,
+                              panel: 'commission',
+                              from: 'manage',
+                            })}
+                            className="text-[11px] font-medium text-muted-foreground underline-offset-2 hover:underline"
+                          >
+                            Commission
+                          </Link>
                         </div>
                         <PersonHandlesLine person={c} />
                         <div className="text-xs text-muted-foreground">

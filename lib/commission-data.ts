@@ -4,6 +4,7 @@ import type { ParticipantRole } from '@/lib/participant-role'
 import {
   HOUSE_COMMISSION,
   buildCommissionBoard,
+  buildCommissionUnitLines,
   estimateContractCommission,
   normalizeCountMode,
   resolveTerms,
@@ -12,7 +13,9 @@ import {
   type CommissionEstimate,
   type CommissionEstimateOption,
   type CommissionTerms,
+  type CommissionUnitLine,
   type ContractTermsInput,
+  type SubmissionDetailInput,
   type SubmissionUnitInput,
 } from '@/lib/commission'
 
@@ -298,5 +301,108 @@ export async function getCommissionEstimate(opts: {
     today,
     options,
     estimate: sumEstimates(parts),
+  }
+}
+
+export type CommissionBreakdownResult = {
+  scope: 'all' | number
+  from: string | null
+  to: string | null
+  terms: CommissionTerms | null
+  lines: CommissionUnitLine[]
+  totalSar: number
+}
+
+/** Per-video/batch commission lines for one creator, optional contract + date filter. */
+export async function getCommissionBreakdown(opts: {
+  today: string
+  creatorId: number
+  contractId?: number | null
+  from?: string | null
+  to?: string | null
+}): Promise<CommissionBreakdownResult> {
+  const settings = await getCommissionSettings()
+  const creatorId = opts.creatorId
+  const contractId = opts.contractId ?? null
+  const from = opts.from ?? null
+  const to = opts.to ?? null
+
+  const contracts = (await sql`
+    SELECT c.id, c.creator_id, cr.name AS creator_name, c.name,
+           c.start_date::text AS start_date,
+           c.end_date::text AS end_date,
+           c.count_mode, c.views_threshold,
+           c.view_commission_amount::float AS view_commission_amount,
+           c.commission_reels
+    FROM contracts c
+    JOIN creators cr ON cr.id = c.creator_id
+    WHERE c.creator_id = ${creatorId}
+    ORDER BY c.start_date DESC, c.id DESC
+  `) as ContractRow[]
+
+  const hasPick = contractId != null && contracts.some((c) => c.id === contractId)
+  const scoped = hasPick ? contracts.filter((c) => c.id === contractId) : contracts
+  const scope: 'all' | number = hasPick && contractId != null ? contractId : 'all'
+  const filterId = hasPick ? contractId : null
+
+  if (scoped.length === 0) {
+    return { scope, from, to, terms: null, lines: [], totalSar: 0 }
+  }
+
+  const subs = (await sql`
+    SELECT DISTINCT ON (s.id)
+           s.id, s.creator_id, s.platform, s.views,
+           s.batch_id, s.batch_index, c.id AS contract_id,
+           s.video_date::text AS video_date,
+           s.url
+    FROM submissions s
+    JOIN contracts c ON c.creator_id = s.creator_id
+      AND s.video_date >= c.start_date
+      AND (c.end_date IS NULL OR s.video_date <= c.end_date)
+    WHERE s.creator_id = ${creatorId}
+      AND (${filterId}::int IS NULL OR c.id = ${filterId})
+      AND (${from}::date IS NULL OR s.video_date >= ${from}::date)
+      AND (${to}::date IS NULL OR s.video_date <= ${to}::date)
+    ORDER BY s.id, c.start_date DESC, c.id DESC
+  `) as Array<
+    SubmissionDetailInput & { creator_id: number; contract_id: number }
+  >
+
+  const lines: CommissionUnitLine[] = []
+  let termsOut: CommissionTerms | null = null
+
+  for (const c of scoped) {
+    const terms = resolveTerms(c, settings)
+    if (terms && !termsOut) termsOut = terms
+    const contractSubs = subs
+      .filter((s) => s.contract_id === c.id)
+      .map((s) => ({
+        id: s.id,
+        platform: s.platform,
+        views: Number(s.views) || 0,
+        batch_id: s.batch_id,
+        batch_index: s.batch_index,
+        video_date: s.video_date,
+        url: s.url,
+      }))
+    lines.push(...buildCommissionUnitLines({ terms, submissions: contractSubs }))
+  }
+
+  // When multiple contracts, re-sort combined list
+  lines.sort((a, b) => {
+    if (b.commissionSar !== a.commissionSar) return b.commissionSar - a.commissionSar
+    if (b.views !== a.views) return b.views - a.views
+    return (b.videoDate ?? '').localeCompare(a.videoDate ?? '')
+  })
+
+  const totalSar = Math.round(lines.reduce((s, l) => s + l.commissionSar, 0) * 100) / 100
+
+  return {
+    scope,
+    from,
+    to,
+    terms: termsOut,
+    lines,
+    totalSar,
   }
 }

@@ -111,6 +111,7 @@ export function CommissionBoardPanel({
         today={today}
         panel="commission"
         basePath="/admin"
+        currency="SAR"
         labels={{
           scope: labels.estimateScope,
           allContracts: labels.allContracts,
@@ -140,7 +141,7 @@ export function CommissionBoardPanel({
         </div>
         <div className="rounded-lg border border-border bg-card p-3">
           <div className="text-lg font-semibold tabular-nums">
-            {formatMoney(board.totals.commissionEarned)}
+            {formatMoney(board.totals.commissionEarned, 'SAR')}
           </div>
           <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{labels.earned}</div>
         </div>
@@ -173,7 +174,7 @@ export function CommissionBoardPanel({
                   href={adminPersonHref(row.creatorId, {
                     role: linkRole,
                     projectId,
-                    panel: 'videos',
+                    panel: 'commission',
                     from: 'commission',
                   })}
                   className="mt-2 block truncate font-semibold underline-offset-4 hover:underline"
@@ -222,7 +223,7 @@ export function CommissionBoardPanel({
                       href={adminPersonHref(row.creatorId, {
                         role: linkRole,
                         projectId,
-                        panel: 'videos',
+                        panel: 'commission',
                         from: 'commission',
                       })}
                       className="font-medium underline-offset-4 hover:underline"
@@ -240,11 +241,12 @@ export function CommissionBoardPanel({
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatNumber(row.views)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {row.qualifiedUnits}/{row.units}
+                    {row.qualifiedUnits}
+                    <span className="text-muted-foreground"> / {row.units}</span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {row.commissionAssigned
-                      ? formatMoney(row.commissionEarned)
+                      ? formatMoney(row.commissionEarned, 'SAR')
                       : '—'}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatMoney(row.paid)}</td>

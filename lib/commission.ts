@@ -1,8 +1,11 @@
 import type { CountMode, Platform } from '@/lib/db'
 
+/** House defaults: SAR paid per qualifying unit once views hit the threshold. */
 export const HOUSE_COMMISSION = {
   viewsThreshold: 5000,
-  commissionAmount: 5000,
+  /** SAR paid each time a video/batch hits the view mark */
+  commissionAmount: 1000,
+  /** Expected qualifying units in the deal (for “going to do”) */
   reelCount: 5,
   countMode: 'video' as CountMode,
 }
@@ -25,9 +28,26 @@ export type Standing = {
 export type PerformanceUnit = {
   key: string
   views: number
+  /** How many full view-blocks earned (e.g. floor(views / 5000)). */
+  chunks: number
   qualified: boolean
   batchIndex: number | null
   platforms: Platform[]
+  submissionIds: number[]
+}
+
+export type CommissionUnitLine = {
+  key: string
+  submissionIds: number[]
+  platforms: Platform[]
+  views: number
+  /** Paid view-blocks (each = one viewsThreshold). */
+  chunks: number
+  qualified: boolean
+  commissionSar: number
+  batchIndex: number | null
+  videoDate: string | null
+  urls: string[]
 }
 
 export type PerformanceRow = {
@@ -91,7 +111,7 @@ export function normalizeCountMode(value: string | null | undefined): CountMode 
   return null
 }
 
-/** Commission only runs after you set $ for the deal on the contract. */
+/** Commission only runs after you set SAR pay on the contract. */
 export function hasAssignedCommission(
   contract: ContractTermsInput | null | undefined,
 ): boolean {
@@ -99,7 +119,7 @@ export function hasAssignedCommission(
 }
 
 /**
- * Resolve deal terms for a contract. Returns null until commission $ is assigned —
+ * Resolve deal terms for a contract. Returns null until SAR pay is assigned —
  * house settings never auto-apply on their own.
  */
 export function resolveTerms(
@@ -120,9 +140,16 @@ export function resolveTerms(
   }
 }
 
+/** SAR paid for one full view-block (e.g. every 5,000 views). */
 export function commissionPerUnit(terms: CommissionTerms): number {
-  const reels = Math.max(1, terms.reelCount)
-  return Math.round((terms.commissionAmount / reels) * 100) / 100
+  return roundMoney(terms.commissionAmount)
+}
+
+/** How many full threshold blocks a video/batch has earned. */
+export function viewChunks(views: number, threshold: number): number {
+  const floor = Math.max(0, Math.floor(threshold))
+  if (floor <= 0) return 0
+  return Math.max(0, Math.floor(Math.max(0, views) / floor))
 }
 
 function roundMoney(value: number): number {
@@ -175,11 +202,11 @@ export function estimateContractCommission(input: {
     buildUnits(input.submissions, input.terms.countMode),
     input.terms.viewsThreshold,
   )
-  const qualifiedUnits = units.filter((u) => u.qualified).length
+  const qualifiedUnits = units.reduce((sum, u) => sum + u.chunks, 0)
   const perUnit = commissionPerUnit(input.terms)
   const did = roundMoney(qualifiedUnits * perUnit)
-  const pot = roundMoney(input.terms.commissionAmount)
-  const goingToDo = roundMoney(Math.max(did, pot))
+  const expectedPot = roundMoney(perUnit * Math.max(1, input.terms.reelCount))
+  const goingToDo = roundMoney(Math.max(did, expectedPot))
   const remainingUnits = Math.max(0, input.terms.reelCount - qualifiedUnits)
   return {
     did,
@@ -220,10 +247,10 @@ export function sumEstimates(parts: CommissionEstimate[]): CommissionEstimate {
   }
 }
 
-/** $ paid for 1,000 views if they hit the house deal exactly. */
+/** SAR paid for 1,000 views if each unit hits the threshold exactly. */
 export function dealCostPer1k(terms: CommissionTerms): number {
-  const views = Math.max(1, terms.reelCount * terms.viewsThreshold)
-  return (terms.commissionAmount / views) * 1000
+  const views = Math.max(1, terms.viewsThreshold)
+  return (commissionPerUnit(terms) / views) * 1000
 }
 
 export function buildUnits(
@@ -234,9 +261,11 @@ export function buildUnits(
     return submissions.map((s) => ({
       key: `v-${s.id}`,
       views: Math.max(0, s.views || 0),
+      chunks: 0,
       qualified: false,
       batchIndex: null,
       platforms: [s.platform],
+      submissionIds: [s.id],
     }))
   }
 
@@ -253,13 +282,69 @@ export function buildUnits(
     const views = list.reduce((sum, s) => sum + Math.max(0, s.views || 0), 0)
     const platforms = [...new Set(list.map((s) => s.platform))]
     const batchIndex = list.find((s) => s.batch_index != null)?.batch_index ?? null
-    return { key, views, qualified: false, batchIndex, platforms }
+    return {
+      key,
+      views,
+      chunks: 0,
+      qualified: false,
+      batchIndex,
+      platforms,
+      submissionIds: list.map((s) => s.id),
+    }
   })
 }
 
+export type SubmissionDetailInput = SubmissionUnitInput & {
+  video_date?: string | null
+  url?: string | null
+}
+
+/** Per-unit commission lines — only videos/batches that earned at least one view-block. */
+export function buildCommissionUnitLines(input: {
+  terms: CommissionTerms | null
+  submissions: SubmissionDetailInput[]
+}): CommissionUnitLine[] {
+  if (!input.terms) return []
+  const units = qualifyUnits(
+    buildUnits(input.submissions, input.terms.countMode),
+    input.terms.viewsThreshold,
+  )
+  const perUnit = commissionPerUnit(input.terms)
+  const byId = new Map(input.submissions.map((s) => [s.id, s]))
+
+  return units
+    .filter((u) => u.chunks > 0)
+    .map((u) => {
+      const details = u.submissionIds.map((id) => byId.get(id)).filter(Boolean) as SubmissionDetailInput[]
+      const dates = details
+        .map((d) => d.video_date)
+        .filter((d): d is string => Boolean(d))
+        .sort()
+      return {
+        key: u.key,
+        submissionIds: u.submissionIds,
+        platforms: u.platforms,
+        views: u.views,
+        chunks: u.chunks,
+        qualified: true,
+        commissionSar: roundMoney(u.chunks * perUnit),
+        batchIndex: u.batchIndex,
+        videoDate: dates[0] ?? null,
+        urls: details.map((d) => d.url).filter((url): url is string => Boolean(url)),
+      }
+    })
+    .sort((a, b) => {
+      if (b.commissionSar !== a.commissionSar) return b.commissionSar - a.commissionSar
+      if (b.views !== a.views) return b.views - a.views
+      return (b.videoDate ?? '').localeCompare(a.videoDate ?? '')
+    })
+}
+
 export function qualifyUnits(units: PerformanceUnit[], threshold: number): PerformanceUnit[] {
-  const floor = Math.max(0, threshold)
-  return units.map((u) => ({ ...u, qualified: u.views >= floor }))
+  return units.map((u) => {
+    const chunks = viewChunks(u.views, threshold)
+    return { ...u, chunks, qualified: chunks > 0 }
+  })
 }
 
 export function standingBand(score: number | null): StandingBand {
@@ -395,9 +480,9 @@ export function buildCommissionBoard(input: {
     const countMode = terms?.countMode ?? 'video'
     const units = terms
       ? qualifyUnits(buildUnits(person.submissions, countMode), terms.viewsThreshold)
-      : buildUnits(person.submissions, countMode).map((u) => ({ ...u, qualified: false }))
+      : buildUnits(person.submissions, countMode).map((u) => ({ ...u, chunks: 0, qualified: false }))
     const views = units.reduce((sum, u) => sum + u.views, 0)
-    const qualifiedUnits = units.filter((u) => u.qualified).length
+    const qualifiedUnits = units.reduce((sum, u) => sum + u.chunks, 0)
     const commissionEarned =
       terms != null
         ? Math.round(qualifiedUnits * commissionPerUnit(terms) * 100) / 100

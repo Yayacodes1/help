@@ -5,10 +5,12 @@ function CadenceRow({ label, usd }: { label: string; usd: number }) {
   return (
     <div>
       <p className="text-xs opacity-70">{label}</p>
-      <p className="mt-0.5 tabular-nums leading-snug">
-        {formatMoney(usdToSar(usd), 'SAR')} in riyal
+      <p className="mt-0.5 font-semibold tabular-nums leading-snug">
+        {formatMoney(usdToSar(usd), 'SAR')}
       </p>
-      <p className="tabular-nums leading-snug">{formatMoney(usd, 'USD')} in dollars</p>
+      <p className="text-xs tabular-nums leading-snug opacity-70">
+        {formatMoney(usd, 'USD')}
+      </p>
     </div>
   )
 }

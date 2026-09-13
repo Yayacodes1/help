@@ -73,6 +73,26 @@ function PlatformsField({ value = 'both' }: { value?: PlatformsMode | string }) 
   )
 }
 
+function FormSection({
+  title,
+  hint,
+  children,
+}: {
+  title: string
+  hint?: string
+  children: ReactNode
+}) {
+  return (
+    <div className="grid gap-2 rounded-lg border border-border/70 bg-muted/20 p-3">
+      <div>
+        <p className="text-xs font-semibold text-foreground">{title}</p>
+        {hint ? <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p> : null}
+      </div>
+      {children}
+    </div>
+  )
+}
+
 function QuotaFields({
   goalIg = 0,
   goalTt = 0,
@@ -112,11 +132,13 @@ function QuotaFields({
 function PayFields({
   base = 0,
   commission,
+  cadence = 'monthly',
   requireBase = false,
   variant = 'current',
 }: {
   base?: number
   commission?: number | null
+  cadence?: 'monthly' | 'biweekly'
   requireBase?: boolean
   variant?: 'current' | 'past'
 }) {
@@ -125,12 +147,12 @@ function PayFields({
     <div className="grid gap-2">
       <p className="text-[11px] text-muted-foreground">
         {isPast
-          ? 'Past contract: amounts here are what you already gave her. Saving records them as paid.'
-          : 'Current contract: base/commission are the deal terms. Saving keeps them as terms — use Mark paid anytime (even mid-contract or upfront) to add to Total paid.'}
+          ? 'Past contract: amounts in SAR are what you already gave her. Saving records them as paid.'
+          : 'Type the amount you pay, then choose whether that number is for the whole month or each 2-week wave. Month contracts split at day 14.'}
       </p>
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          {isPast ? 'Base I paid' : 'Base pay (terms)'}
+          {isPast ? 'Base I paid (SAR)' : 'Base pay · SAR'}
           <input
             type="number"
             min={0}
@@ -143,7 +165,7 @@ function PayFields({
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          {isPast ? 'Commission I paid' : 'Commission (terms)'}
+          {isPast ? 'Flat bonus I paid (SAR)' : 'Flat bonus · SAR (optional)'}
           <span className="font-normal">{isPast ? '(blank = none)' : '(blank keeps saved value)'}</span>
           <input
             type="number"
@@ -151,11 +173,42 @@ function PayFields({
             step="0.01"
             name="commission_amount"
             defaultValue={commission != null ? commission : ''}
-            placeholder={isPast ? '0.00' : 'Add later'}
+            placeholder={isPast ? '0.00' : 'None'}
             className={inputClass}
           />
         </label>
       </div>
+      <fieldset className="grid gap-1.5">
+        <legend className="text-xs font-medium text-foreground">This base pay is</legend>
+        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+          <input
+            type="radio"
+            name="base_pay_cadence"
+            value="biweekly"
+            defaultChecked={cadence === 'biweekly'}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="font-medium text-foreground">Biweekly</span>
+            {' — '}
+            I pay this every 2 weeks. A month contract = two Pays of this amount (e.g. 19 → Pay 19 + Pay 19).
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+          <input
+            type="radio"
+            name="base_pay_cadence"
+            value="monthly"
+            defaultChecked={cadence !== 'biweekly'}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="font-medium text-foreground">Monthly</span>
+            {' — '}
+            This is the full month. Each half gets half (e.g. 38 → Pay 19 + Pay 19).
+          </span>
+        </label>
+      </fieldset>
     </div>
   )
 }
@@ -179,22 +232,30 @@ function HitBar({ rate, label }: { rate: number; label: string }) {
 }
 
 function paySummaryLine(row: ContractCompareRow): string {
-  const { contract, paidAmount, expectedTotal, commissionMissing, balance } = row
+  const { contract, paidAmount, expectedTotal, balance } = row
   const base = Number(contract.base_amount) || 0
+  const cadence = contract.base_pay_cadence === 'biweekly' ? 'biweekly' : 'monthly'
   const parts: string[] = []
   if (base > 0) {
     parts.push(
       row.isActive && !row.isPast
-        ? `terms ${formatMoney(base)}`
-        : `base ${formatMoney(base)}`,
+        ? `terms ${formatMoney(base)} ${cadence}`
+        : `base ${formatMoney(base)} ${cadence}`,
     )
   }
-  if (!commissionMissing) {
-    parts.push(`commission ${formatMoney(Number(contract.commission_amount))}`)
-  } else if (!row.isPast) {
-    parts.push('commission not put in')
+  if (contract.commission_amount != null) {
+    parts.push(`flat bonus ${formatMoney(Number(contract.commission_amount))}`)
   }
-  if (expectedTotal != null) parts.push(`expected ${formatMoney(expectedTotal)}`)
+  if (contract.view_commission_amount != null) {
+    parts.push(
+      `view commission ${formatMoney(Number(contract.view_commission_amount))} every ${(
+        contract.views_threshold ?? 5000
+      ).toLocaleString()} views`,
+    )
+  } else if (!row.isPast) {
+    parts.push('view commission not set')
+  }
+  if (expectedTotal != null) parts.push(`period ${formatMoney(expectedTotal)}`)
   parts.push(`paid ${formatMoney(paidAmount)}`)
   if (balance > 0.009) {
     parts.push(`still due ${formatMoney(balance)}`)
@@ -298,9 +359,9 @@ function BiweeklyHalvesPay({
   const [first, second] = halves
   return (
     <div className="mt-2 rounded-lg border border-dashed border-border bg-muted/30 p-3">
-      <p className="text-[11px] font-medium text-foreground">Biweekly halves</p>
+      <p className="text-[11px] font-medium text-foreground">Pay waves (every 14 days)</p>
       <p className="mt-0.5 text-[11px] text-muted-foreground">
-        One bigger contract, two pay waves. Mark paid on each half — amounts auto-fill.
+        Month contract · midway after 14 days. Tap Pay on each wave when you send it.
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <HalfPayCard
@@ -400,30 +461,10 @@ function HalfPayCard({
           action={(fd) =>
             startTransition(() => recordContractPayment(creatorId, contractId, fd))
           }
-          className="mt-2 flex flex-wrap items-end gap-2"
+          className="mt-3"
         >
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Paid on
-            <input
-              type="date"
-              name="paid_on"
-              required
-              defaultValue={today}
-              className={inputClass}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Amount
-            <input
-              type="number"
-              name="amount"
-              min={0}
-              step="0.01"
-              required
-              defaultValue={half.balance}
-              className={inputClass}
-            />
-          </label>
+          <input type="hidden" name="paid_on" value={today} />
+          <input type="hidden" name="amount" value={half.balance} />
           <input
             type="hidden"
             name="note"
@@ -432,9 +473,9 @@ function HalfPayCard({
           <button
             type="submit"
             disabled={pending}
-            className="h-10 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+            className="h-11 w-full rounded-lg bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-60"
           >
-            Mark paid {formatMoney(half.balance)}
+            Pay {formatMoney(half.balance)}
           </button>
         </form>
       ) : null}
@@ -458,17 +499,9 @@ export function ContractsManager({
   // Past contracts where typed money is not yet fully in the payments list.
   const needsRecord = comparisons.filter((r) => {
     if (r.isActive && !r.isPast) return false
-    const terms =
-      (Number(r.contract.base_amount) || 0) +
-      (r.contract.commission_amount == null ? 0 : Number(r.contract.commission_amount) || 0)
-    return terms > 0.009 && r.paidAmount < terms - 0.009
+    return r.balance > 0.009
   })
-  const unpaidPastTotal = needsRecord.reduce((sum, r) => {
-    const terms =
-      (Number(r.contract.base_amount) || 0) +
-      (r.contract.commission_amount == null ? 0 : Number(r.contract.commission_amount) || 0)
-    return sum + Math.max(0, terms - r.paidAmount)
-  }, 0)
+  const unpaidPastTotal = needsRecord.reduce((sum, r) => sum + r.balance, 0)
 
   return (
     <div className="flex flex-col gap-4">
@@ -476,15 +509,21 @@ export function ContractsManager({
         <p className="font-medium text-foreground">How money works</p>
         <ol className="mt-2 list-decimal space-y-1 pl-4">
           <li>
-            <span className="text-foreground">Current</span>: base/commission = deal terms. Month-length
-            contracts split into <span className="text-foreground">1st / 2nd half</span> for biweekly pay —
-            Mark paid on each half (amount auto-fills).
+            <span className="text-foreground">Scheduled</span>: platforms + dates (biweekly halves when
+            the span is ~1 month).
           </li>
           <li>
-            <span className="text-foreground">Past</span>: saving amounts records them as paid. Or use
-            Mark paid / the banner below.
+            <span className="text-foreground">Videos</span>: daily IG/TT posting and contract goals.
           </li>
-          <li>Total paid only moves when a payment is recorded (Mark paid or Payments panel).</li>
+          <li>
+            <span className="text-foreground">Pay</span>: set base as monthly (full month ÷ 2) or
+            biweekly (each wave). Month contracts get a midway Pay after 14 days — tap Pay.
+          </li>
+          <li>
+            <span className="text-foreground">Commission</span>: SAR for every full view-block (e.g.
+            every 5,000 views). Separate from base pay.
+          </li>
+          <li>Total paid only moves when you tap Pay (or record in Payments).</li>
         </ol>
       </div>
 
@@ -615,16 +654,25 @@ export function ContractsManager({
               Start
             </button>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <PlatformsField />
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              Last day (for biweekly halves, ~1 month)
-              <input type="date" name="end_date" className={inputClass} />
-            </label>
-          </div>
-          <PayFields base={Number(stickyBase) || 0} requireBase variant="current" />
+          <FormSection title="Scheduled" hint="Platforms and end date for biweekly halves.">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <PlatformsField />
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                Last day (for biweekly halves, ~1 month)
+                <input type="date" name="end_date" className={inputClass} />
+              </label>
+            </div>
+          </FormSection>
+          <FormSection title="Videos" hint="Daily posting and IG / TikTok goals only.">
+            <QuotaFields variant="current" />
+          </FormSection>
+          <FormSection
+            title="Pay (base)"
+            hint="Fixed pay for the period. Flat bonus is optional."
+          >
+            <PayFields base={Number(stickyBase) || 0} requireBase variant="current" />
+          </FormSection>
           <CommissionTermsFields />
-          <QuotaFields variant="current" />
         </form>
       </TapOpenSection>
 
@@ -648,20 +696,26 @@ export function ContractsManager({
           >
             <p className="text-sm text-muted-foreground">No contracts yet — add the first one.</p>
             <input name="name" required defaultValue="Initial contract" className={inputClass} />
-            <PlatformsField />
-            <div className="grid grid-cols-2 gap-2">
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                First day
-                <input type="date" name="start_date" required defaultValue={today} className={inputClass} />
-              </label>
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                Last day (optional)
-                <input type="date" name="end_date" className={inputClass} />
-              </label>
-            </div>
-            <PayFields requireBase variant="current" />
+            <FormSection title="Scheduled" hint="Platforms and the date window.">
+              <PlatformsField />
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  First day
+                  <input type="date" name="start_date" required defaultValue={today} className={inputClass} />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  Last day (optional)
+                  <input type="date" name="end_date" className={inputClass} />
+                </label>
+              </div>
+            </FormSection>
+            <FormSection title="Videos" hint="Daily posting and IG / TikTok goals only.">
+              <QuotaFields variant="current" />
+            </FormSection>
+            <FormSection title="Pay (base)" hint="Fixed pay for the period. Flat bonus is optional.">
+              <PayFields requireBase variant="current" />
+            </FormSection>
             <CommissionTermsFields />
-            <QuotaFields variant="current" />
             <button
               type="submit"
               disabled={pending}
@@ -680,7 +734,6 @@ export function ContractsManager({
                   isPast,
                   paidAmount,
                   expectedTotal,
-                  commissionMissing,
                   balance,
                 } = row
                 const pastVariant = isPast && !isActive
@@ -719,48 +772,68 @@ export function ContractsManager({
                           : paidAmount > 0.009
                             ? ' · settled'
                             : ''}
-                        {commissionMissing ? ' · commission not put in' : ''}
+                        {contract.view_commission_amount == null && !isPast
+                          ? ' · view commission not set'
+                          : ''}
                         {isActive && !isPast ? ' · can Mark paid anytime' : ''}
                       </p>
-                      <PlatformsField value={contract.platforms} />
-                      <div className="grid grid-cols-2 gap-2">
-                        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                          First day
-                          <input
-                            type="date"
-                            name="start_date"
-                            required
-                            defaultValue={contract.start_date}
-                            className={inputClass}
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                          Last day
-                          <input
-                            type="date"
-                            name="end_date"
-                            defaultValue={contract.end_date ?? ''}
-                            className={inputClass}
-                          />
-                        </label>
-                      </div>
-                      <PayFields
-                        base={Number(contract.base_amount) || 0}
-                        commission={contract.commission_amount}
-                        variant={pastVariant ? 'past' : 'current'}
-                      />
+                      <FormSection
+                        title="Scheduled"
+                        hint="Platforms and the date window for this period."
+                      >
+                        <PlatformsField value={contract.platforms} />
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                            First day
+                            <input
+                              type="date"
+                              name="start_date"
+                              required
+                              defaultValue={contract.start_date}
+                              className={inputClass}
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                            Last day
+                            <input
+                              type="date"
+                              name="end_date"
+                              defaultValue={contract.end_date ?? ''}
+                              className={inputClass}
+                            />
+                          </label>
+                        </div>
+                      </FormSection>
+                      <FormSection
+                        title="Videos"
+                        hint="Daily posting and IG / TikTok goals only."
+                      >
+                        <QuotaFields
+                          goalIg={contract.goal_instagram}
+                          goalTt={contract.goal_tiktok}
+                          targetIg={contract.target_instagram}
+                          targetTt={contract.target_tiktok}
+                          variant={pastVariant ? 'past' : 'current'}
+                        />
+                      </FormSection>
+                      <FormSection
+                        title="Pay (base)"
+                        hint="Monthly = full month. Biweekly = each 14-day Pay. Flat bonus optional."
+                      >
+                        <PayFields
+                          base={Number(contract.base_amount) || 0}
+                          commission={contract.commission_amount}
+                          cadence={
+                            contract.base_pay_cadence === 'biweekly' ? 'biweekly' : 'monthly'
+                          }
+                          variant={pastVariant ? 'past' : 'current'}
+                        />
+                      </FormSection>
                       <CommissionTermsFields
                         countMode={contract.count_mode}
                         viewsThreshold={contract.views_threshold}
                         viewCommissionAmount={contract.view_commission_amount}
                         commissionReels={contract.commission_reels}
-                      />
-                      <QuotaFields
-                        goalIg={contract.goal_instagram}
-                        goalTt={contract.goal_tiktok}
-                        targetIg={contract.target_instagram}
-                        targetTt={contract.target_tiktok}
-                        variant={pastVariant ? 'past' : 'current'}
                       />
                       <div className="flex flex-wrap gap-2">
                         <button

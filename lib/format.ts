@@ -50,7 +50,10 @@ export function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-US').format(value ?? 0)
 }
 
-export function formatMoney(value: number, currency = 'USD'): string {
+/** Primary display currency for the app (Saudi riyal). */
+export const PRIMARY_CURRENCY = 'SAR' as const
+
+export function formatMoney(value: number, currency: string = PRIMARY_CURRENCY): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,

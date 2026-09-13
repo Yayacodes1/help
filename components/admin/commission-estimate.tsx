@@ -12,6 +12,7 @@ export function CommissionEstimateCards({
   panel,
   basePath,
   showCreator = true,
+  currency = 'SAR',
   labels,
 }: {
   estimate: CommissionEstimate
@@ -21,6 +22,7 @@ export function CommissionEstimateCards({
   panel: string
   basePath: string
   showCreator?: boolean
+  currency?: string
   labels: {
     scope: string
     allContracts: string
@@ -78,22 +80,22 @@ export function CommissionEstimateCards({
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <EstimateCard
-          value={formatMoney(estimate.did)}
+          value={formatMoney(estimate.did, currency)}
           label={labels.did}
           hint={labels.didHint}
         />
         <EstimateCard
-          value={formatMoney(estimate.goingToDo)}
+          value={formatMoney(estimate.goingToDo, currency)}
           label={labels.goingToDo}
           hint={labels.goingHint}
         />
         <EstimateCard
-          value={formatMoney(estimate.recorded)}
+          value={formatMoney(estimate.recorded, currency)}
           label={labels.recorded}
           hint={labels.recordedHint}
         />
         <EstimateCard
-          value={formatMoney(estimate.payNow)}
+          value={formatMoney(estimate.payNow, currency)}
           label={labels.payNow}
           hint={labels.payNowHint}
           emphasis={estimate.payNow > 0.009}
@@ -105,9 +107,11 @@ export function CommissionEstimateCards({
         {' · '}
         {formatNumber(estimate.views)} views
         {' · '}
-        {estimate.qualifiedUnits}/{estimate.units} {labels.units}
+        {estimate.qualifiedUnits} {labels.units}
+        {' · '}
+        {estimate.units} videos
         {estimate.remainingUnits > 0
-          ? ` · ${estimate.remainingUnits} still in deal`
+          ? ` · ${estimate.remainingUnits} blocks still in deal`
           : ''}
         {selected
           ? ` · ${showCreator ? `${selected.creatorName} · ` : ''}${selected.name}`

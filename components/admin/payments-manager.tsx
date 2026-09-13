@@ -43,6 +43,7 @@ export function PaymentsManager({
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="text-sm font-semibold">Total paid</h2>
           <p className="mt-2 text-2xl font-semibold tabular-nums">{formatMoney(total)}</p>
+          <p className="text-[11px] text-muted-foreground">Saudi riyals</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {payments.length === 0
               ? 'Empty — money typed on contracts was not recorded yet.'

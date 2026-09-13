@@ -33,9 +33,9 @@ function DualMoney({
   const sar = usdToSar(usd)
   return (
     <span className={emphasize ? 'font-semibold' : undefined}>
-      <span className="tabular-nums">{formatMoney(sar, 'SAR')}</span>
-      <span className="mx-1 text-muted-foreground">/</span>
-      <span className="tabular-nums">{formatMoney(usd, 'USD')}</span>
+      <span className="tabular-nums">{formatMoney(sar)}</span>
+      <span className="mx-1 text-muted-foreground">·</span>
+      <span className="tabular-nums text-muted-foreground">{formatMoney(usd, 'USD')}</span>
     </span>
   )
 }
@@ -46,7 +46,7 @@ function MoneyCell({ usd, emphasize }: { usd: number; emphasize?: boolean }) {
   return (
     <>
       <td className="px-3 py-2 text-right">
-        <span className={cls}>{formatMoney(sar, 'SAR')}</span>
+        <span className={cls}>{formatMoney(sar)}</span>
       </td>
       <td className="px-3 py-2 text-right">
         <span className={cls}>{formatMoney(usd, 'USD')}</span>
@@ -248,14 +248,14 @@ function PeopleTotals({ people }: { people: OutflowPersonTotal[] }) {
           <div className="mt-2 grid grid-cols-2 gap-3">
             <div>
               <p className="text-[11px] text-white/70">Biweekly total</p>
-              <p className="font-semibold tabular-nums">{formatMoney(usdToSar(allBiweekly), 'SAR')}</p>
+              <p className="font-semibold tabular-nums">{formatMoney(usdToSar(allBiweekly))}</p>
               <p className="text-sm font-medium tabular-nums text-white/90">
                 {formatMoney(allBiweekly, 'USD')}
               </p>
             </div>
             <div>
               <p className="text-[11px] text-white/70">Monthly total</p>
-              <p className="font-semibold tabular-nums">{formatMoney(usdToSar(allMonthly), 'SAR')}</p>
+              <p className="font-semibold tabular-nums">{formatMoney(usdToSar(allMonthly))}</p>
               <p className="text-sm font-medium tabular-nums text-white/90">
                 {formatMoney(allMonthly, 'USD')}
               </p>

@@ -107,6 +107,12 @@ export type Contract = {
   platforms: PlatformsMode
   /** Base pay for this contract period */
   base_amount: number
+  /**
+   * How to read base_amount:
+   * - monthly: full period pay (halves = half each)
+   * - biweekly: pay per 14-day wave (month contract = 2×)
+   */
+  base_pay_cadence: 'monthly' | 'biweekly'
   /** Commission (nullable until set later) */
   commission_amount: number | null
   /** Null = use house default */

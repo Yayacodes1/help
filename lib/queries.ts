@@ -18,6 +18,8 @@ import {
   buildContractHalves,
   contractHalfWindows,
   contractSupportsBiweeklyHalves,
+  normalizeBasePayCadence,
+  periodBaseTotal,
   type ContractHalfStatus,
 } from '@/lib/contract-halves'
 
@@ -387,6 +389,7 @@ export async function getContractsForCreator(creatorId: number): Promise<Contrac
            target_instagram, target_tiktok,
            platforms,
            base_amount::float AS base_amount,
+           COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
            commission_amount::float AS commission_amount,
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
@@ -410,6 +413,7 @@ export async function getActiveContract(
            target_instagram, target_tiktok,
            platforms,
            base_amount::float AS base_amount,
+           COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
            commission_amount::float AS commission_amount,
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
@@ -432,6 +436,7 @@ export async function getActiveContract(
            target_instagram, target_tiktok,
            platforms,
            base_amount::float AS base_amount,
+           COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
            commission_amount::float AS commission_amount,
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
@@ -635,16 +640,32 @@ export function targetVideoTotal(contract: Contract): number {
 }
 
 export function expectedContractPay(contract: Contract): number | null {
-  const base = Number(contract.base_amount) || 0
+  const everyDays = 14
+  const hasHalves =
+    !!contract.end_date &&
+    contractSupportsBiweeklyHalves(contract.start_date, contract.end_date, everyDays)
+  const base = periodBaseTotal(
+    Number(contract.base_amount) || 0,
+    normalizeBasePayCadence(contract.base_pay_cadence),
+    hasHalves,
+  )
   if (contract.commission_amount == null) {
     return base > 0 ? base : null
   }
   return base + Number(contract.commission_amount)
 }
 
-/** Minimum owed for balance math: base + commission (0 if TBD). */
+/** Minimum owed for balance math: period base + commission (0 if TBD). */
 export function minimumContractDue(contract: Contract): number {
-  const base = Number(contract.base_amount) || 0
+  const everyDays = 14
+  const hasHalves =
+    !!contract.end_date &&
+    contractSupportsBiweeklyHalves(contract.start_date, contract.end_date, everyDays)
+  const base = periodBaseTotal(
+    Number(contract.base_amount) || 0,
+    normalizeBasePayCadence(contract.base_pay_cadence),
+    hasHalves,
+  )
   const commission =
     contract.commission_amount == null ? 0 : Number(contract.commission_amount)
   return Math.max(0, base + commission)

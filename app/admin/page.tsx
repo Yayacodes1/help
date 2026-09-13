@@ -55,6 +55,7 @@ import { OutflowPanel } from '@/components/admin/outflow-panel'
 import { PayCadences } from '@/components/admin/pay-cadence'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { LanguageToggle } from '@/components/language-toggle'
+import { CreatorJumpSearch } from '@/components/admin/creator-jump-search'
 import { formatDate, formatMoney, formatNumber, formatYearMonth } from '@/lib/format'
 import { getOutflowSnapshot, type OutflowView } from '@/lib/outflow'
 import { getLocale } from '@/lib/locale'
@@ -387,23 +388,38 @@ export default async function AdminPage({
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 py-8">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-xl font-semibold tracking-tight">{t('adminDashboard')}</h1>
-        <div className="flex flex-wrap items-center gap-3">
-          <LanguageToggle
-            locale={locale}
-            labels={{ english: t('english'), arabic: t('arabic') }}
-          />
-          <RoleSelector
-            labels={{
-              creators: t('roleFilterCreators'),
-              reposters: t('roleFilterReposters'),
-              all: t('roleFilterAll'),
-            }}
-          />
-          <ProjectSelector projects={projects} />
-          <LogoutButton label={t('logOut')} />
+      <header className="mb-6 flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h1 className="text-xl font-semibold tracking-tight">{t('adminDashboard')}</h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <LanguageToggle
+              locale={locale}
+              labels={{ english: t('english'), arabic: t('arabic') }}
+            />
+            <RoleSelector
+              labels={{
+                creators: t('roleFilterCreators'),
+                reposters: t('roleFilterReposters'),
+                all: t('roleFilterAll'),
+              }}
+            />
+            <ProjectSelector projects={projects} />
+            <LogoutButton label={t('logOut')} />
+          </div>
         </div>
+        <CreatorJumpSearch
+          people={creators.map((c) => ({
+            id: c.id,
+            name: c.name,
+            role: c.role,
+            tiktok_username: c.tiktok_username,
+            instagram_username: c.instagram_username,
+          }))}
+          roleFilter={roleFilter}
+          projectId={projectId}
+          placeholder={t('jumpSearchPlaceholder')}
+          hint={t('jumpSearchHint')}
+        />
       </header>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">

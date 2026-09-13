@@ -260,6 +260,12 @@ export async function ensureCreatorTrackingColumns() {
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS views_threshold integer`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS view_commission_amount numeric(12, 2)`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS commission_reels integer`
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS base_pay_cadence text NOT NULL DEFAULT 'monthly'`
+  await sql`
+    UPDATE contracts
+    SET base_pay_cadence = 'monthly'
+    WHERE base_pay_cadence IS NULL OR base_pay_cadence = ''
+  `
 
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_id text`
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_index integer`

@@ -8,6 +8,29 @@ function roundMoney(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100
 }
 
+export type BasePayCadence = 'monthly' | 'biweekly'
+
+export function normalizeBasePayCadence(
+  value: string | null | undefined,
+): BasePayCadence {
+  return value === 'biweekly' ? 'biweekly' : 'monthly'
+}
+
+/**
+ * Period base total for a month-length (two-wave) contract.
+ * Biweekly amount → 2× for the month; monthly amount stays as entered.
+ */
+export function periodBaseTotal(
+  baseAmount: number,
+  cadence: BasePayCadence,
+  hasTwoHalves: boolean,
+): number {
+  const base = roundMoney(baseAmount)
+  if (base <= 0) return 0
+  if (hasTwoHalves && cadence === 'biweekly') return roundMoney(base * 2)
+  return base
+}
+
 export type HalfIndex = 1 | 2
 
 export type ContractHalfWindow = {
@@ -179,6 +202,7 @@ export function assignPaymentsToHalves(
 export function buildContractHalves(opts: {
   start: string
   end: string
+  /** Full period amount to split across the two waves (already cadence-adjusted). */
   dueTotal: number
   payments: HalfPayment[]
   everyDays?: number

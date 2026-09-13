@@ -65,6 +65,7 @@ export function TodayProgress({
                       href={adminPersonHref(c.id, {
                         role: linkRole ?? c.role,
                         projectId,
+                        panel: 'consistency',
                         from: 'progress',
                       })}
                       className="font-medium underline-offset-4 hover:underline"

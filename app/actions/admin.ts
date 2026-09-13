@@ -21,6 +21,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { normalizeHandle, parseLoginPlatform, parseOptionalHandle, resolveLoginPlatform } from '@/lib/usernames'
 import { HOUSE_COMMISSION, normalizeCountMode } from '@/lib/commission'
+import { normalizeBasePayCadence } from '@/lib/contract-halves'
 import type { CountMode } from '@/lib/db'
 
 async function requireAdmin() {
@@ -119,6 +120,9 @@ function parseContractQuotas(
   return {
     ...q,
     platforms,
+    basePayCadence: normalizeBasePayCadence(
+      (formData.get('base_pay_cadence') ?? '').toString(),
+    ),
     countMode: parseContractCountMode(formData.get('count_mode')),
     viewsThreshold: parseOptionalPositiveInt(formData.get('views_threshold')),
     viewCommissionAmount: parseOptionalAmount(formData.get('view_commission_amount')),
@@ -373,13 +377,13 @@ export async function createContract(creatorId: number, formData: FormData) {
     INSERT INTO contracts (
       creator_id, name, start_date, end_date,
       goal_instagram, goal_tiktok, target_instagram, target_tiktok,
-      platforms, base_amount, commission_amount,
+      platforms, base_amount, base_pay_cadence, commission_amount,
       count_mode, views_threshold, view_commission_amount, commission_reels
     )
     VALUES (
       ${creatorId}, ${name}, ${start}, ${end},
       ${q.goalInstagram}, ${q.goalTiktok}, ${q.targetInstagram}, ${q.targetTiktok},
-      ${q.platforms}, ${q.baseAmount}, ${q.commissionAmount},
+      ${q.platforms}, ${q.baseAmount}, ${q.basePayCadence}, ${q.commissionAmount},
       ${q.countMode}, ${q.viewsThreshold}, ${q.viewCommissionAmount}, ${q.commissionReels}
     )
   `
@@ -400,6 +404,7 @@ export async function createContract(creatorId: number, formData: FormData) {
           start,
           end,
           baseAmount: q.baseAmount,
+          basePayCadence: q.basePayCadence,
           commissionAmount: q.commissionAmount,
           today,
         })
@@ -441,13 +446,13 @@ export async function startNewContract(creatorId: number, formData: FormData) {
     INSERT INTO contracts (
       creator_id, name, start_date, end_date,
       goal_instagram, goal_tiktok, target_instagram, target_tiktok,
-      platforms, base_amount, commission_amount,
+      platforms, base_amount, base_pay_cadence, commission_amount,
       count_mode, views_threshold, view_commission_amount, commission_reels
     )
     VALUES (
       ${creatorId}, ${name}, ${start}, ${end},
       ${q.goalInstagram}, ${q.goalTiktok}, ${q.targetInstagram}, ${q.targetTiktok},
-      ${q.platforms}, ${q.baseAmount}, ${q.commissionAmount},
+      ${q.platforms}, ${q.baseAmount}, ${q.basePayCadence}, ${q.commissionAmount},
       ${q.countMode}, ${q.viewsThreshold}, ${q.viewCommissionAmount}, ${q.commissionReels}
     )
   `
@@ -467,14 +472,23 @@ async function syncPaymentFromEndedContractTerms(input: {
   start: string
   end: string
   baseAmount: number
+  basePayCadence?: string | null
   commissionAmount: number | null
   today: string
 }) {
   if (input.end > input.today) return
 
+  const { contractSupportsBiweeklyHalves, normalizeBasePayCadence, periodBaseTotal } =
+    await import('@/lib/contract-halves')
+  const hasHalves = contractSupportsBiweeklyHalves(input.start, input.end, 14)
+  const base = periodBaseTotal(
+    input.baseAmount,
+    normalizeBasePayCadence(input.basePayCadence),
+    hasHalves,
+  )
   const settleTo =
     Math.round(
-      (Math.max(0, input.baseAmount) +
+      (Math.max(0, base) +
         (input.commissionAmount == null
           ? 0
           : Math.max(0, Number(input.commissionAmount)))) *
@@ -535,7 +549,8 @@ export async function updateContract(id: number, creatorId: number, formData: Fo
         goal_instagram = ${q.goalInstagram}, goal_tiktok = ${q.goalTiktok},
         target_instagram = ${q.targetInstagram}, target_tiktok = ${q.targetTiktok},
         platforms = ${q.platforms},
-        base_amount = ${q.baseAmount}, commission_amount = ${q.commissionAmount},
+        base_amount = ${q.baseAmount}, base_pay_cadence = ${q.basePayCadence},
+        commission_amount = ${q.commissionAmount},
         count_mode = ${q.countMode}, views_threshold = ${q.viewsThreshold},
         view_commission_amount = ${q.viewCommissionAmount},
         commission_reels = ${q.commissionReels}
@@ -551,6 +566,7 @@ export async function updateContract(id: number, creatorId: number, formData: Fo
       start,
       end,
       baseAmount: q.baseAmount,
+      basePayCadence: q.basePayCadence,
       commissionAmount: q.commissionAmount,
       today,
     })
@@ -581,6 +597,7 @@ export async function recordPastContractsAsPaid(creatorId: number) {
            start_date::text AS start_date,
            end_date::text AS end_date,
            base_amount::float AS base_amount,
+           COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
            commission_amount::float AS commission_amount
     FROM contracts
     WHERE creator_id = ${creatorId}
@@ -591,6 +608,7 @@ export async function recordPastContractsAsPaid(creatorId: number) {
     start_date: string
     end_date: string | null
     base_amount: number
+    base_pay_cadence: string
     commission_amount: number | null
   }[]
 
@@ -610,6 +628,7 @@ export async function recordPastContractsAsPaid(creatorId: number) {
         start: row.start_date,
         end: closeEnd,
         baseAmount: Number(row.base_amount) || 0,
+        basePayCadence: row.base_pay_cadence,
         commissionAmount: row.commission_amount,
         today,
       })
@@ -621,6 +640,7 @@ export async function recordPastContractsAsPaid(creatorId: number) {
         start: row.start_date,
         end,
         baseAmount: Number(row.base_amount) || 0,
+        basePayCadence: row.base_pay_cadence,
         commissionAmount: row.commission_amount,
         today,
       })
