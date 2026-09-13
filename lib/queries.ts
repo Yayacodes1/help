@@ -14,6 +14,12 @@ import {
   videoCompletionRate,
   type PlatformsMode,
 } from '@/lib/platforms-mode'
+import {
+  buildContractHalves,
+  contractHalfWindows,
+  contractSupportsBiweeklyHalves,
+  type ContractHalfStatus,
+} from '@/lib/contract-halves'
 
 export async function getServerToday(): Promise<string> {
   const rows = (await sql`SELECT CURRENT_DATE::text AS today`) as { today: string }[]
@@ -614,6 +620,11 @@ export type ContractCompareRow = {
    */
   showBalanceDue: boolean
   isActive: boolean
+  /**
+   * Biweekly 1st/2nd half under this contract (month-length periods).
+   * Empty when the span is too short for two waves.
+   */
+  halves: ContractHalfStatus[]
 }
 
 export function targetVideoTotal(contract: Contract): number {
@@ -687,6 +698,31 @@ export async function getPaidForContract(
   return rows[0]?.total ?? 0
 }
 
+/** Individual payments attributed to a contract (linked or unlinked in the window). */
+export async function getPaymentsForContract(
+  creatorId: number,
+  contractId: number,
+  start: string,
+  end: string,
+): Promise<{ amount: number; paid_on: string; note: string | null }[]> {
+  return (await sql`
+    SELECT amount::float AS amount,
+           paid_on::text AS paid_on,
+           note
+    FROM payments
+    WHERE creator_id = ${creatorId}
+      AND (
+        contract_id = ${contractId}
+        OR (
+          contract_id IS NULL
+          AND paid_on >= ${start}::date
+          AND paid_on <= ${end}::date
+        )
+      )
+    ORDER BY paid_on ASC, id ASC
+  `) as { amount: number; paid_on: string; note: string | null }[]
+}
+
 /** Latest payment date for a contract (linked or unlinked in the period window). */
 export async function getLastPaidOnForContract(
   creatorId: number,
@@ -719,6 +755,10 @@ export async function getContractComparisons(
   const contracts = await getContractsForCreator(creator.id)
   const active = await getActiveContract(creator.id, today)
   const yearEnd = yearRange(today).end
+  const everyDays =
+    creator.pay_every_days && creator.pay_every_days > 0
+      ? Math.floor(creator.pay_every_days)
+      : 14
 
   return Promise.all(
     contracts.map(async (contract) => {
@@ -737,6 +777,12 @@ export async function getContractComparisons(
         windowEnd,
       )
       const paidAmount = await getPaidForContract(
+        creator.id,
+        contract.id,
+        contract.start_date,
+        windowEnd,
+      )
+      const payments = await getPaymentsForContract(
         creator.id,
         contract.id,
         contract.start_date,
@@ -773,6 +819,32 @@ export async function getContractComparisons(
       const commissionMissing = contract.commission_amount == null
       const minDue = minimumContractDue(contract)
       const balance = Math.max(0, Math.round((minDue - paidAmount) * 100) / 100)
+
+      let halves: ContractHalfStatus[] = []
+      if (
+        contract.end_date &&
+        contractSupportsBiweeklyHalves(contract.start_date, contract.end_date, everyDays)
+      ) {
+        const [w1, w2] = contractHalfWindows(
+          contract.start_date,
+          contract.end_date,
+          everyDays,
+        )
+        const [firstVideos, secondVideos] = await Promise.all([
+          getContractVideoCounts(creator.id, w1.start, w1.end, { slackDays: false }),
+          getContractVideoCounts(creator.id, w2.start, w2.end, { slackDays: false }),
+        ])
+        halves = buildContractHalves({
+          start: contract.start_date,
+          end: contract.end_date,
+          dueTotal: minDue,
+          payments,
+          everyDays,
+          firstVideos,
+          secondVideos,
+        })
+      }
+
       return {
         contract,
         consistency,
@@ -793,6 +865,7 @@ export async function getContractComparisons(
         /** Always true — you can record pay on current contracts anytime (including upfront). */
         showBalanceDue: true,
         isActive,
+        halves,
       }
     }),
   )

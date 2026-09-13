@@ -14,6 +14,10 @@ import {
 } from '@/app/actions/admin'
 import { formatDate, formatMoney } from '@/lib/format'
 import { CommissionTermsFields } from '@/components/admin/commission-terms-fields'
+import {
+  halfPaymentNote,
+  type ContractHalfStatus,
+} from '@/lib/contract-halves'
 
 const inputClass =
   'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -213,7 +217,20 @@ function MarkPaidButton({
   pending: boolean
   startTransition: (fn: () => void) => void
 }) {
-  const { contract, balance, paidAmount, isActive, isPast } = row
+  const { contract, balance, paidAmount, isActive, isPast, halves } = row
+  if (halves.length === 2) {
+    return (
+      <BiweeklyHalvesPay
+        creatorId={creatorId}
+        today={today}
+        contractId={contract.id}
+        contractName={contract.name}
+        halves={halves}
+        pending={pending}
+        startTransition={startTransition}
+      />
+    )
+  }
   if (balance <= 0.009) return null
   const mid = isActive && !isPast
   return (
@@ -261,6 +278,170 @@ function MarkPaidButton({
   )
 }
 
+function BiweeklyHalvesPay({
+  creatorId,
+  today,
+  contractId,
+  contractName,
+  halves,
+  pending,
+  startTransition,
+}: {
+  creatorId: number
+  today: string
+  contractId: number
+  contractName: string
+  halves: ContractHalfStatus[]
+  pending: boolean
+  startTransition: (fn: () => void) => void
+}) {
+  const [first, second] = halves
+  return (
+    <div className="mt-2 rounded-lg border border-dashed border-border bg-muted/30 p-3">
+      <p className="text-[11px] font-medium text-foreground">Biweekly halves</p>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">
+        One bigger contract, two pay waves. Mark paid on each half — amounts auto-fill.
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <HalfPayCard
+          creatorId={creatorId}
+          today={today}
+          contractId={contractId}
+          contractName={contractName}
+          half={first}
+          sibling={null}
+          pending={pending}
+          startTransition={startTransition}
+        />
+        <HalfPayCard
+          creatorId={creatorId}
+          today={today}
+          contractId={contractId}
+          contractName={contractName}
+          half={second}
+          sibling={first}
+          pending={pending}
+          startTransition={startTransition}
+        />
+      </div>
+    </div>
+  )
+}
+
+function HalfPayCard({
+  creatorId,
+  today,
+  contractId,
+  contractName,
+  half,
+  sibling,
+  pending,
+  startTransition,
+}: {
+  creatorId: number
+  today: string
+  contractId: number
+  contractName: string
+  half: ContractHalfStatus
+  /** When set (2nd half), show 1st-half video counts alongside this half. */
+  sibling: ContractHalfStatus | null
+  pending: boolean
+  startTransition: (fn: () => void) => void
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold tracking-tight">{half.label}</h3>
+        <span className="text-[11px] tabular-nums text-muted-foreground">
+          {formatDate(half.start)} → {formatDate(half.end)}
+        </span>
+      </div>
+
+      {sibling ? (
+        <div className="mt-2 space-y-1 text-[11px] text-muted-foreground">
+          <p>
+            <span className="font-medium text-foreground">1st half videos:</span>{' '}
+            {sibling.videoCount} (IG {sibling.postedInstagram} · TT {sibling.postedTiktok})
+          </p>
+          <p>
+            <span className="font-medium text-foreground">2nd half videos:</span>{' '}
+            {half.videoCount} (IG {half.postedInstagram} · TT {half.postedTiktok})
+          </p>
+        </div>
+      ) : (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          {half.videoCount} videos (IG {half.postedInstagram} · TT {half.postedTiktok})
+        </p>
+      )}
+
+      {half.paidAmount > 0.009 ? (
+        <p className="mt-2 text-sm font-medium tabular-nums text-foreground">
+          Paid {formatMoney(half.paidAmount)}
+          {half.lastPaidOn ? (
+            <span className="font-normal text-muted-foreground">
+              {' '}
+              on {formatDate(half.lastPaidOn)}
+            </span>
+          ) : null}
+          {half.settled ? (
+            <span className="ml-1 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-secondary-foreground">
+              settled
+            </span>
+          ) : null}
+        </p>
+      ) : (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Due {formatMoney(half.dueAmount)} · not paid yet
+        </p>
+      )}
+
+      {half.balance > 0.009 ? (
+        <form
+          action={(fd) =>
+            startTransition(() => recordContractPayment(creatorId, contractId, fd))
+          }
+          className="mt-2 flex flex-wrap items-end gap-2"
+        >
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Paid on
+            <input
+              type="date"
+              name="paid_on"
+              required
+              defaultValue={today}
+              className={inputClass}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Amount
+            <input
+              type="number"
+              name="amount"
+              min={0}
+              step="0.01"
+              required
+              defaultValue={half.balance}
+              className={inputClass}
+            />
+          </label>
+          <input
+            type="hidden"
+            name="note"
+            value={halfPaymentNote(half.index, contractName)}
+          />
+          <button
+            type="submit"
+            disabled={pending}
+            className="h-10 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+          >
+            Mark paid {formatMoney(half.balance)}
+          </button>
+        </form>
+      ) : null}
+    </div>
+  )
+}
+
 export function ContractsManager({
   creatorId,
   today,
@@ -295,9 +476,9 @@ export function ContractsManager({
         <p className="font-medium text-foreground">How money works</p>
         <ol className="mt-2 list-decimal space-y-1 pl-4">
           <li>
-            <span className="text-foreground">Current</span>: base/commission = deal terms. You can{' '}
-            <span className="text-foreground">Mark paid anytime</span> (upfront or while it’s running).
-            TT/IG totals = goals.
+            <span className="text-foreground">Current</span>: base/commission = deal terms. Month-length
+            contracts split into <span className="text-foreground">1st / 2nd half</span> for biweekly pay —
+            Mark paid on each half (amount auto-fills).
           </li>
           <li>
             <span className="text-foreground">Past</span>: saving amounts records them as paid. Or use
@@ -352,6 +533,7 @@ export function ContractsManager({
                 isPast,
                 isActive,
                 manualHits,
+                halves,
               } = row
               return (
                 <div key={contract.id} className="flex flex-col gap-1.5">
@@ -393,6 +575,19 @@ export function ContractsManager({
                     daily IG {contract.goal_instagram}/d · TT {contract.goal_tiktok}/d
                   </p>
                   <p className="text-[11px] font-medium text-foreground">{paySummaryLine(row)}</p>
+                  {halves.length === 2 ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      1st half: {halves[0].videoCount} videos
+                      {halves[0].paidAmount > 0.009
+                        ? ` · paid ${formatMoney(halves[0].paidAmount)}`
+                        : ` · due ${formatMoney(halves[0].dueAmount)}`}
+                      {' · '}
+                      2nd half: {halves[1].videoCount} videos
+                      {halves[1].paidAmount > 0.009
+                        ? ` · paid ${formatMoney(halves[1].paidAmount)}`
+                        : ` · due ${formatMoney(halves[1].dueAmount)}`}
+                    </p>
+                  ) : null}
                 </div>
               )
             })}
@@ -423,7 +618,7 @@ export function ContractsManager({
           <div className="grid gap-2 sm:grid-cols-2">
             <PlatformsField />
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              Last day (optional)
+              Last day (for biweekly halves, ~1 month)
               <input type="date" name="end_date" className={inputClass} />
             </label>
           </div>
@@ -596,6 +791,15 @@ export function ContractsManager({
                       pending={pending}
                       startTransition={startTransition}
                     />
+                    {row.halves.length === 0 &&
+                    !contract.end_date &&
+                    (Number(contract.base_amount) > 0 ||
+                      contract.commission_amount != null ||
+                      balance > 0.009) ? (
+                      <p className="mt-2 text-[11px] text-muted-foreground">
+                        Tip: set a last day about a month out to unlock 1st / 2nd half Mark paid.
+                      </p>
+                    ) : null}
                   </li>
                 )
               },
