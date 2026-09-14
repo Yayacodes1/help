@@ -6,7 +6,7 @@ import { Camera, Clock, Lock, Music2, Send, CheckCircle2, AlertCircle, Link2 } f
 import { submitVideos } from '@/app/actions/creator'
 import { formatDateTime } from '@/lib/format'
 import { PLATFORM_META } from '@/lib/platforms'
-import type { CountMode, Platform } from '@/lib/db'
+import type { Platform } from '@/lib/db'
 import type { Locale } from '@/lib/i18n'
 
 const PLATFORM_ICON: Record<Platform, typeof Camera> = {
@@ -32,13 +32,6 @@ type Labels = {
   pickProject: string
   recordedAt: string
   recordedAtHint: string
-  batchTitle?: string
-  batchHint?: string
-  batchLabel?: string
-  addBatch?: string
-  instagram?: string
-  tiktok?: string
-  singlesHint?: string
 }
 
 function useServerClock(serverNowIso: string) {
@@ -65,7 +58,6 @@ export function SubmitForm({
   defaultProjectId,
   serverNow,
   locale,
-  countMode = 'video',
 }: {
   username: string
   fields: PlatformField[]
@@ -74,14 +66,12 @@ export function SubmitForm({
   defaultProjectId?: number | null
   serverNow: string
   locale: Locale
-  countMode?: CountMode
 }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
   const action = submitVideos.bind(null, username)
   const [state, formAction, pending] = useActionState<State, FormData>(action, null)
   const now = useServerClock(serverNow)
-  const [batchCount, setBatchCount] = useState(2)
 
   useEffect(() => {
     if (state?.ok) {
@@ -89,7 +79,6 @@ export function SubmitForm({
       const keep = select?.value
       formRef.current?.reset()
       if (select && keep) select.value = keep
-      setBatchCount(2)
       router.refresh()
     }
   }, [state, router])
@@ -101,25 +90,25 @@ export function SubmitForm({
           No projects are set up yet. Ask admin to add Notek and Miqat.
         </p>
       ) : (
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="font-semibold text-foreground">{labels.project}</span>
-        <span className="text-xs text-muted-foreground">{labels.projectHint}</span>
-        <select
-          name="project_id"
-          required
-          defaultValue={defaultProjectId ?? ''}
-          className="mt-1 h-11 rounded-xl border border-border bg-card px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-ring"
-        >
-          <option value="" disabled>
-            {labels.pickProject}
-          </option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-semibold text-foreground">{labels.project}</span>
+          <span className="text-xs text-muted-foreground">{labels.projectHint}</span>
+          <select
+            name="project_id"
+            required
+            defaultValue={defaultProjectId ?? ''}
+            className="mt-1 h-11 rounded-xl border border-border bg-card px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="" disabled>
+              {labels.pickProject}
             </option>
-          ))}
-        </select>
-      </label>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
 
       <div className="grid grid-cols-2 gap-2">
@@ -157,62 +146,6 @@ export function SubmitForm({
         })}
       </div>
 
-      {countMode === 'batch' ? (
-        <div className="flex flex-col gap-3">
-          <div className="text-right">
-            <p className="font-semibold text-card-foreground">{labels.batchTitle ?? 'Batches'}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {labels.batchHint ??
-                'Same video on Instagram and TikTok goes in one batch. Views are added together.'}
-            </p>
-          </div>
-          {Array.from({ length: batchCount }, (_, i) => (
-            <div
-              key={i}
-              className="rounded-2xl border border-border bg-card p-4 text-right shadow-sm"
-            >
-              <p className="text-sm font-semibold">
-                {labels.batchLabel ?? 'Batch'} {i + 1}
-              </p>
-              <div className="mt-3 grid gap-2">
-                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                  {labels.instagram ?? 'Instagram'}
-                  <input
-                    name={`batch_ig_${i}`}
-                    dir="ltr"
-                    placeholder="https://www.instagram.com/reel/…"
-                    className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                  {labels.tiktok ?? 'TikTok'}
-                  <input
-                    name={`batch_tt_${i}`}
-                    dir="ltr"
-                    placeholder="https://vt.tiktok.com/…"
-                    className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                  />
-                </label>
-              </div>
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={() => setBatchCount((n) => Math.min(20, n + 1))}
-            className="h-10 rounded-xl border border-border text-sm font-medium hover:bg-accent"
-          >
-            {labels.addBatch ?? 'Add another batch'}
-          </button>
-          <p className="text-xs text-muted-foreground">{labels.singlesHint ?? labels.pasteHint}</p>
-          <textarea
-            name="links"
-            rows={3}
-            dir="ltr"
-            placeholder={'https://www.instagram.com/reel/…'}
-            className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-        </div>
-      ) : (
       <div className="rounded-2xl border border-border bg-card p-4 text-right shadow-sm transition-shadow duration-300 focus-within:shadow-md">
         <div className="flex items-center gap-2.5">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary text-foreground">
@@ -229,7 +162,6 @@ export function SubmitForm({
           className="mt-2 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
       </div>
-      )}
 
       {state && (
         <p

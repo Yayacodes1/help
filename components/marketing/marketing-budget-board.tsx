@@ -101,6 +101,10 @@ export function MarketingBudgetBoard({
                         Sent on
                         <input type="date" name="sent_on" defaultValue={today} className={inputClass} />
                       </label>
+                      <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-[10px] text-muted-foreground">
+                        Note
+                        <input name="note" placeholder="Optional" className={inputClass} />
+                      </label>
                       <button
                         type="submit"
                         disabled={pending}
@@ -261,6 +265,10 @@ export function MarketingBudgetBoard({
               <input name="title" placeholder="September ads" className={inputClass} />
             </label>
           </div>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Note
+            <input name="note" placeholder="Optional context…" className={inputClass} />
+          </label>
           {Array.from({ length: reasonRows }, (_, i) => (
             <div key={i} className="grid gap-2 sm:grid-cols-[1fr_140px]">
               <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -440,6 +448,7 @@ export function MarketingBudgetBoard({
               <li key={r.id}>
                 {r.status} · {r.title || `#${r.id}`} · {formatMoney(r.total_amount, r.currency)}
                 {r.needed_by ? ` · by ${formatDate(r.needed_by)}` : ''}
+                {r.note ? ` · ${r.note}` : ''}
               </li>
             ))}
           </ul>

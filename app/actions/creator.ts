@@ -2,8 +2,7 @@
 
 import { sql } from '@/lib/db'
 import { getCreatorByLoginHandle, getCreatorByName } from '@/lib/queries'
-import { classifyMediaLinks, detectPlatformFromUrl, normalizeMediaUrl } from '@/lib/media-url'
-import type { Platform } from '@/lib/db'
+import { classifyMediaLinks } from '@/lib/media-url'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { normalizeHandle, parseLoginPlatform } from '@/lib/usernames'
@@ -56,51 +55,7 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
     .filter(Boolean)
     .join('\n')
 
-  const { rows, rejected } = classifyMediaLinks(unified || legacy)
-
-  type PendingInsert = {
-    platform: Platform
-    url: string
-    batchId: string | null
-    batchIndex: number | null
-  }
-  const pending: PendingInsert[] = rows.map((row) => ({
-    ...row,
-    batchId: null,
-    batchIndex: null,
-  }))
-
-  for (let i = 0; i < 40; i++) {
-    const igRaw = (formData.get(`batch_ig_${i}`) ?? '').toString().trim()
-    const ttRaw = (formData.get(`batch_tt_${i}`) ?? '').toString().trim()
-    if (!igRaw && !ttRaw) continue
-    const batchId = crypto.randomUUID()
-    const batchIndex = i + 1
-    for (const [raw, expected] of [
-      [igRaw, 'instagram'],
-      [ttRaw, 'tiktok'],
-    ] as const) {
-      if (!raw) continue
-      const url = normalizeMediaUrl(raw)
-      if (!url) {
-        return { ok: false, message: `Batch ${batchIndex}: that link is not a URL.` }
-      }
-      const platform = detectPlatformFromUrl(url)
-      if (!platform) {
-        return {
-          ok: false,
-          message: `Batch ${batchIndex}: use an Instagram or TikTok link.`,
-        }
-      }
-      if (platform !== expected) {
-        return {
-          ok: false,
-          message: `Batch ${batchIndex}: put the ${expected === 'instagram' ? 'Instagram' : 'TikTok'} link in the ${expected === 'instagram' ? 'Instagram' : 'TikTok'} field.`,
-        }
-      }
-      pending.push({ platform, url, batchId, batchIndex })
-    }
-  }
+  const { rows: pending, rejected } = classifyMediaLinks(unified || legacy)
 
   if (pending.length === 0) {
     if (rejected.length > 0) {
@@ -150,7 +105,7 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
     await sql`
       INSERT INTO submissions (
         creator_id, project_id, platform, url, video_date, created_at,
-        batch_id, batch_index, views, views_error, platform_posted_at
+        views, views_error, platform_posted_at
       )
       VALUES (
         ${creator.id},
@@ -159,8 +114,6 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
         ${finalUrl},
         COALESCE(${videoDate}::date, CURRENT_DATE),
         NOW(),
-        ${row.batchId},
-        ${row.batchIndex},
         ${views},
         ${viewsError},
         ${platformPostedAt}::timestamptz
@@ -174,11 +127,9 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
     rejected.length > 0 ? ` Skipped ${rejected.length} unrecognized link(s).` : ''
   const ig = pending.filter((r) => r.platform === 'instagram').length
   const tt = pending.filter((r) => r.platform === 'tiktok').length
-  const batches = new Set(pending.map((r) => r.batchId).filter(Boolean)).size
-  const batchNote = batches > 0 ? ` · ${batches} batch${batches > 1 ? 'es' : ''}` : ''
   return {
     ok: true,
-    message: `Added ${pending.length} video${pending.length > 1 ? 's' : ''} (IG ${ig} · TT ${tt}${batchNote}).${skipped}`,
+    message: `Added ${pending.length} video${pending.length > 1 ? 's' : ''} (IG ${ig} · TT ${tt}).${skipped}`,
   }
 }
 

@@ -18,14 +18,9 @@ import {
   getCreatorCountsByPlatformOnDate,
   getCreatorStats,
   getCreatorConsistency,
-  getLatestPayment,
-  getPaySummary,
-  getPaymentsForCreator,
-  getCreatorPaidTotal,
   goalsForContract,
 } from '@/lib/queries'
 import { getLeagueBoard } from '@/lib/ranking'
-import { normalizeCountMode } from '@/lib/commission'
 import { RankingBoard } from '@/components/ranking-board'
 import { StrikeBanner } from '@/components/strike-banner'
 import { operationalDayFromIso } from '@/lib/operational-day'
@@ -34,7 +29,7 @@ import { loginHandleFor } from '@/lib/usernames'
 import { PLATFORMS } from '@/lib/db'
 import { goalFor } from '@/lib/platforms'
 import { yearRange } from '@/lib/campaign'
-import { formatDate, formatMoney } from '@/lib/format'
+import { formatDate } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 
@@ -81,10 +76,6 @@ export default async function SubmitPage({
     consistency,
     active,
     comparisons,
-    latestPayment,
-    pay,
-    payments,
-    paidTotal,
     projects,
     league,
     strikeSummary,
@@ -95,10 +86,6 @@ export default async function SubmitPage({
     getCreatorConsistency(creator, today),
     getActiveContract(creator.id, today),
     getContractComparisons(creator, today),
-    getLatestPayment(creator.id),
-    getPaySummary(creator, today),
-    getPaymentsForCreator(creator.id),
-    getCreatorPaidTotal(creator.id),
     getAllProjects(),
     creator.role === 'reposter'
       ? getLeagueBoard({ role: 'reposter' })
@@ -107,7 +94,6 @@ export default async function SubmitPage({
       ? getCreatorStrikeSummary(creator.id, opToday)
       : Promise.resolve(null),
   ])
-  const countMode = normalizeCountMode(active?.count_mode) ?? 'video'
 
   const dailyGoals = goalsForContract(creator, active)
   const goalShape = {
@@ -130,7 +116,7 @@ export default async function SubmitPage({
   }
 
   const defaultPanel =
-    panel && ['today', 'contract', 'pay', 'streaks'].includes(panel) ? panel : 'today'
+    panel && ['today', 'contract', 'streaks'].includes(panel) ? panel : 'today'
 
   return (
     <div className="min-h-dvh bg-background">
@@ -254,7 +240,6 @@ export default async function SubmitPage({
                       defaultProjectId={creator.project_id}
                       serverNow={serverNow}
                       locale={locale}
-                      countMode={countMode}
                       labels={{
                         pasteLinks: t('pasteLinks'),
                         pasteHint: t('pasteLinksHint'),
@@ -265,13 +250,6 @@ export default async function SubmitPage({
                         pickProject: t('pickProject'),
                         recordedAt: t('submitTimeLabel'),
                         recordedAtHint: t('submitTimeHint'),
-                        batchTitle: t('submitBatchTitle'),
-                        batchHint: t('submitBatchHint'),
-                        batchLabel: t('submitBatchLabel'),
-                        addBatch: t('submitAddBatch'),
-                        instagram: t('instagram'),
-                        tiktok: t('tiktok'),
-                        singlesHint: t('submitSinglesHint'),
                       }}
                     />
                   </section>
@@ -306,7 +284,6 @@ export default async function SubmitPage({
                         const {
                           contract,
                           isActive,
-                          isPast,
                           manualHits,
                           videoRate,
                           displayRate,
@@ -395,131 +372,10 @@ export default async function SubmitPage({
                                     } ${t('videosWord')}`
                                   : `${t('daysCommitment')} ${consistency.hitDays}/${consistency.requiredDays} · ${row.videoCount} ${t('videosWord')}`}
                             </p>
-
-                            <div className="mt-3 rounded-lg border border-border bg-background/60 p-3 text-sm">
-                              <p>
-                                Base{' '}
-                                <span className="font-semibold tabular-nums">
-                                  {formatMoney(Number(contract.base_amount) || 0)}
-                                </span>
-                                {isActive && !isPast ? ` (${t('termsPay').toLowerCase()})` : ''}
-                                {' · '}
-                                Commission{' '}
-                                <span className="font-semibold tabular-nums">
-                                  {row.commissionMissing
-                                    ? t('commissionMissing')
-                                    : formatMoney(Number(contract.commission_amount))}
-                                </span>
-                              </p>
-                              <p className="mt-1 text-muted-foreground">
-                                {t('expectedPay')}:{' '}
-                                <span className="font-medium text-foreground tabular-nums">
-                                  {row.expectedTotal != null
-                                    ? formatMoney(row.expectedTotal)
-                                    : '—'}
-                                </span>
-                                {' · '}
-                                {t('contractPaid')}:{' '}
-                                <span className="font-medium text-foreground tabular-nums">
-                                  {formatMoney(row.paidAmount)}
-                                </span>
-                                {row.balance > 0.009
-                                  ? ` · ${t('stillDue')} ${formatMoney(row.balance)}`
-                                  : ''}
-                                {isActive && !isPast ? (
-                                  <span className="mt-1 block text-xs">{t('inProgressTerms')}</span>
-                                ) : null}
-                              </p>
-                            </div>
                           </div>
                         )
                       })}
                     </>
-                  )}
-                </div>
-              ),
-            },
-            {
-              id: 'pay',
-              title: t('panelPay'),
-              summary: formatMoney(paidTotal),
-              hint: latestPayment
-                ? `${t('lastPayment')} ${formatDate(latestPayment.paid_on)}`
-                : pay.nextPayAt
-                  ? `${t('nextExpectedPay')} ${formatDate(pay.nextPayAt)}`
-                  : t('none'),
-              children: (
-                <div className="flex flex-col gap-4">
-                  <div className="rounded-xl border border-border bg-card p-4">
-                    <p className="text-sm text-muted-foreground">{t('totalPaid')}</p>
-                    <p className="mt-1 text-2xl font-semibold tabular-nums">
-                      {formatMoney(paidTotal)}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {t('paidFromPaymentsOnly')}
-                    </p>
-                    {latestPayment ? (
-                      <p className="mt-3 text-sm text-muted-foreground">
-                        {t('lastPayment')}:{' '}
-                        <span className="font-medium text-foreground tabular-nums">
-                          {formatMoney(latestPayment.amount)}
-                        </span>
-                        {' · '}
-                        {formatDate(latestPayment.paid_on)}
-                        {latestPayment.note ? ` · ${latestPayment.note}` : ''}
-                      </p>
-                    ) : (
-                      <p className="mt-3 text-sm text-muted-foreground">{t('noPaymentYet')}</p>
-                    )}
-                    {pay.nextPayAt && (
-                      <p className="mt-3 text-sm">
-                        {t('nextExpectedPay')}:{' '}
-                        <span className="font-medium">{formatDate(pay.nextPayAt)}</span>
-                        {pay.isDue ? ` (${t('due')})` : ''}
-                      </p>
-                    )}
-                    {active && (
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {t('currentContract')}: {active.name}
-                        {' · '}
-                        {active.end_date
-                          ? `${t('contractEnds')} ${formatDate(active.end_date)}`
-                          : t('openEnded')}
-                      </p>
-                    )}
-                  </div>
-
-                  {payments.length > 0 && (
-                    <div className="rounded-xl border border-border bg-card p-4">
-                      <h3 className="text-sm font-semibold">{t('paymentHistory')}</h3>
-                      <ul className="mt-3 flex flex-col divide-y divide-border">
-                        {payments.map((p) => (
-                          <li
-                            key={p.id}
-                            className="flex flex-wrap items-baseline justify-between gap-2 py-2 text-sm"
-                          >
-                            <div>
-                              <span className="font-semibold tabular-nums">
-                                {formatMoney(p.amount)}
-                              </span>
-                              <span className="text-muted-foreground">
-                                {' · '}
-                                {formatDate(p.paid_on)}
-                              </span>
-                              {p.contract_name && (
-                                <span className="text-muted-foreground">
-                                  {' · '}
-                                  {p.contract_name}
-                                </span>
-                              )}
-                              {p.note && (
-                                <p className="text-xs text-muted-foreground">{p.note}</p>
-                              )}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
                   )}
                 </div>
               ),
