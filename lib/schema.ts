@@ -127,7 +127,7 @@ export async function ensureCreatorTrackingColumns() {
   // When TikTok/IG says the video went live (from TikHub). Display + optional video_date source.
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS platform_posted_at timestamptz`
 
-  // Posted time is server-owned. Creators (and later edits) cannot change it.
+  // Keep posted timing stable after insert (creators choose date/time on submit).
   try {
     await sql`
       CREATE OR REPLACE FUNCTION lock_submission_timing()

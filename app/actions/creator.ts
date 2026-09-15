@@ -7,7 +7,10 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { normalizeHandle, parseLoginPlatform } from '@/lib/usernames'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
-import { operationalDayFromIso } from '@/lib/operational-day'
+import { OPERATIONAL_TZ } from '@/lib/operational-day'
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const TIME_RE = /^\d{2}:\d{2}(:\d{2})?$/
 
 // Public gate: verify the TikTok username belongs to a registered creator,
 // then unlock the submission form for them.
@@ -67,32 +70,31 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
     return { ok: false, message: 'Paste at least one Instagram or TikTok video link.' }
   }
 
-  const videoDateFallback =
-    creator.role === 'reposter'
-      ? operationalDayFromIso(new Date().toISOString())
-      : null
+  const videoDateRaw = (formData.get('video_date') ?? '').toString().trim()
+  const postTimeRaw = (formData.get('post_time') ?? '').toString().trim()
+  if (!DATE_RE.test(videoDateRaw)) {
+    return { ok: false, message: 'Pick the date you are posting for.' }
+  }
+  if (!TIME_RE.test(postTimeRaw)) {
+    return { ok: false, message: 'Pick the time you posted.' }
+  }
+  const videoDate = videoDateRaw
+  const postTime = postTimeRaw.length === 5 ? `${postTimeRaw}:00` : postTimeRaw
 
   for (const row of pending) {
     let views = 0
     let viewsError: string | null = null
     let platformPostedAt: string | null = null
-    let videoDate = videoDateFallback
     let finalUrl = row.url
 
     if (process.env.TIKHUB_API_KEY?.trim()) {
       try {
         const { fetchViewsDetailed } = await import('@/lib/tikhub')
-        const { videoDateFromPostedAt } = await import('@/lib/submission-meta')
         const result = await fetchViewsDetailed(row.platform, row.url)
         if (result.ok) {
           views = result.views
           if (result.resolvedUrl) finalUrl = result.resolvedUrl
-          if (result.postedAt) {
-            platformPostedAt = result.postedAt
-            if (creator.role !== 'reposter') {
-              videoDate = videoDateFromPostedAt(result.postedAt)
-            }
-          }
+          if (result.postedAt) platformPostedAt = result.postedAt
         } else {
           viewsError = result.reason.slice(0, 400)
         }
@@ -112,8 +114,8 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
         ${projectId},
         ${row.platform},
         ${finalUrl},
-        COALESCE(${videoDate}::date, CURRENT_DATE),
-        NOW(),
+        ${videoDate}::date,
+        ((${videoDate}::date + ${postTime}::time) AT TIME ZONE ${OPERATIONAL_TZ}),
         ${views},
         ${viewsError},
         ${platformPostedAt}::timestamptz

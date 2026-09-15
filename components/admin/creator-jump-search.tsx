@@ -37,6 +37,23 @@ function pushRecent(id: number) {
   }
 }
 
+function removeRecent(id: number) {
+  try {
+    const next = readRecent().filter((x) => x !== id)
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next))
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearRecent() {
+  try {
+    localStorage.removeItem(RECENT_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
 function matches(person: JumpPerson, q: string): boolean {
   const needle = q.trim().toLowerCase().replace(/^@+/, '')
   if (!needle) return false
@@ -118,18 +135,25 @@ export function CreatorJumpSearch({
     return () => document.removeEventListener('mousedown', onDoc)
   }, [])
 
+  const recentPeople = useMemo(() => {
+    const byId = new Map(people.map((p) => [p.id, p]))
+    return recentIds.map((id) => byId.get(id)).filter(Boolean) as JumpPerson[]
+  }, [people, recentIds])
+
   const filtered = useMemo(() => {
     const q = query.trim()
     if (q) return people.filter((p) => matches(p, q)).slice(0, 12)
-    const byId = new Map(people.map((p) => [p.id, p]))
-    const recent = recentIds.map((id) => byId.get(id)).filter(Boolean) as JumpPerson[]
-    if (recent.length > 0) return recent
+    if (recentPeople.length > 0) return recentPeople
     return people.slice(0, 8)
-  }, [people, query, recentIds])
+  }, [people, query, recentPeople])
 
   useEffect(() => {
     setActive(0)
   }, [query, open])
+
+  useEffect(() => {
+    setActive((i) => Math.min(i, Math.max(0, filtered.length - 1)))
+  }, [filtered.length])
 
   function go(person: JumpPerson, panel?: string) {
     pushRecent(person.id)
@@ -144,6 +168,16 @@ export function CreatorJumpSearch({
         from: 'manage',
       }),
     )
+  }
+
+  function removeOneRecent(id: number) {
+    removeRecent(id)
+    setRecentIds(readRecent())
+  }
+
+  function deleteAllRecent() {
+    clearRecent()
+    setRecentIds([])
   }
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
@@ -163,7 +197,7 @@ export function CreatorJumpSearch({
     }
   }
 
-  const showingRecent = !query.trim() && recentIds.length > 0
+  const showingRecent = !query.trim() && recentPeople.length > 0
 
   return (
     <div ref={rootRef} className="relative w-full min-w-[12rem] max-w-sm flex-1">
@@ -218,25 +252,41 @@ export function CreatorJumpSearch({
                 {filtered.map((person, i) => {
                   const handles = handleLine(person)
                   return (
-                    <li key={person.id}>
-                      <button
-                        type="button"
-                        onMouseEnter={() => setActive(i)}
-                        onClick={() => go(person)}
-                        className={`flex w-full flex-col gap-0.5 px-3 py-2 text-start ${
-                          i === active ? 'bg-accent' : 'hover:bg-accent/60'
-                        }`}
-                      >
-                        <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                          {person.name}
-                          <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-secondary-foreground">
-                            {person.role === 'reposter' ? 'reposter' : 'creator'}
+                    <li
+                      key={person.id}
+                      className={i === active ? 'bg-accent' : 'hover:bg-accent/60'}
+                      onMouseEnter={() => setActive(i)}
+                    >
+                      <div className="flex items-start gap-1">
+                        <button
+                          type="button"
+                          onClick={() => go(person)}
+                          className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2 text-start"
+                        >
+                          <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                            {person.name}
+                            <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-secondary-foreground">
+                              {person.role === 'reposter' ? 'reposter' : 'creator'}
+                            </span>
                           </span>
-                        </span>
-                        {handles ? (
-                          <span className="truncate text-xs text-muted-foreground">{handles}</span>
+                          {handles ? (
+                            <span className="truncate text-xs text-muted-foreground">{handles}</span>
+                          ) : null}
+                        </button>
+                        {showingRecent ? (
+                          <button
+                            type="button"
+                            aria-label={`Remove ${person.name} from recent searches`}
+                            className="me-2 mt-2 shrink-0 rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              removeOneRecent(person.id)
+                            }}
+                          >
+                            <X className="size-3.5" />
+                          </button>
                         ) : null}
-                      </button>
+                      </div>
                       {i === active ? (
                         <div className="flex flex-wrap gap-1 px-3 pb-2">
                           <QuickBtn label="Contracts" onClick={() => go(person, 'contracts')} />
@@ -248,6 +298,15 @@ export function CreatorJumpSearch({
                   )
                 })}
               </ul>
+              {showingRecent ? (
+                <button
+                  type="button"
+                  onClick={deleteAllRecent}
+                  className="w-full border-t border-border px-3 py-2.5 text-start text-xs font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                >
+                  Delete all recent searches
+                </button>
+              ) : null}
             </>
           )}
         </div>

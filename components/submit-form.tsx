@@ -1,13 +1,11 @@
 'use client'
 
-import { useActionState, useEffect, useRef, useState } from 'react'
+import { useActionState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Clock, Lock, Music2, Send, CheckCircle2, AlertCircle, Link2 } from 'lucide-react'
+import { Camera, Clock, Music2, Send, CheckCircle2, AlertCircle, Link2 } from 'lucide-react'
 import { submitVideos } from '@/app/actions/creator'
-import { formatDateTime } from '@/lib/format'
 import { PLATFORM_META } from '@/lib/platforms'
 import type { Platform } from '@/lib/db'
-import type { Locale } from '@/lib/i18n'
 
 const PLATFORM_ICON: Record<Platform, typeof Camera> = {
   instagram: Camera,
@@ -30,24 +28,9 @@ type Labels = {
   project: string
   projectHint: string
   pickProject: string
-  recordedAt: string
-  recordedAtHint: string
-}
-
-function useServerClock(serverNowIso: string) {
-  const [now, setNow] = useState(() => new Date(serverNowIso))
-
-  useEffect(() => {
-    const base = new Date(serverNowIso).getTime()
-    if (Number.isNaN(base)) return
-    const origin = Date.now()
-    const tick = () => setNow(new Date(base + (Date.now() - origin)))
-    tick()
-    const id = window.setInterval(tick, 1000)
-    return () => window.clearInterval(id)
-  }, [serverNowIso])
-
-  return now
+  postDate: string
+  postTime: string
+  postWhenHint: string
 }
 
 export function SubmitForm({
@@ -56,29 +39,34 @@ export function SubmitForm({
   labels,
   projects,
   defaultProjectId,
-  serverNow,
-  locale,
+  videoDate,
+  defaultTime,
 }: {
   username: string
   fields: PlatformField[]
   labels: Labels
   projects: { id: number; name: string }[]
   defaultProjectId?: number | null
-  serverNow: string
-  locale: Locale
+  videoDate: string
+  defaultTime: string
 }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
   const action = submitVideos.bind(null, username)
   const [state, formAction, pending] = useActionState<State, FormData>(action, null)
-  const now = useServerClock(serverNow)
 
   useEffect(() => {
     if (state?.ok) {
       const select = formRef.current?.querySelector<HTMLSelectElement>('select[name="project_id"]')
       const keep = select?.value
+      const dateInput = formRef.current?.querySelector<HTMLInputElement>('input[name="video_date"]')
+      const keepDate = dateInput?.value
+      const timeInput = formRef.current?.querySelector<HTMLInputElement>('input[name="post_time"]')
+      const keepTime = timeInput?.value
       formRef.current?.reset()
       if (select && keep) select.value = keep
+      if (dateInput && keepDate) dateInput.value = keepDate
+      if (timeInput && keepTime) timeInput.value = keepTime
       router.refresh()
     }
   }, [state, router])
@@ -183,14 +171,32 @@ export function SubmitForm({
 
       <div className="rounded-xl border border-border bg-secondary/40 px-4 py-3">
         <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-          <Lock className="h-3.5 w-3.5" />
-          <span>{labels.recordedAt}</span>
+          <Clock className="h-3.5 w-3.5" />
+          <span>{labels.postWhenHint}</span>
         </div>
-        <p className="mt-1.5 flex items-center gap-2 text-base font-semibold tabular-nums text-foreground">
-          <Clock className="h-4 w-4 shrink-0 text-primary" />
-          <time dateTime={now.toISOString()}>{formatDateTime(now, locale)}</time>
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">{labels.recordedAtHint}</p>
+        <div className="mt-2 grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-foreground">{labels.postDate}</span>
+            <input
+              type="date"
+              name="video_date"
+              required
+              defaultValue={videoDate}
+              className="h-11 rounded-xl border border-border bg-card px-3 text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-foreground">{labels.postTime}</span>
+            <input
+              type="time"
+              name="post_time"
+              required
+              step={60}
+              defaultValue={defaultTime}
+              className="h-11 rounded-xl border border-border bg-card px-3 text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring"
+            />
+          </label>
+        </div>
       </div>
 
       <button

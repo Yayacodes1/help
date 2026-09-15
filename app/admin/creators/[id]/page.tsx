@@ -267,13 +267,6 @@ export default async function CreatorDetailPage({
                   {consistency.missDays} · {consistency.partialDays} · {consistency.currentStreak} /{' '}
                   {consistency.bestStreak}
                 </p>
-                {'previousPeriod' in consistency && consistency.previousPeriod ? (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {t('lastStreakPeriod')}: {consistency.previousPeriod.bestStreak}{' '}
-                    {t('days')} · {Math.round(consistency.previousPeriod.hitRate * 100)}%.{' '}
-                    {t('lastStreakPeriodHint')}
-                  </p>
-                ) : null}
               </div>
             ),
           },

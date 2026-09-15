@@ -14,6 +14,7 @@ import {
   getCreatorByName,
   getServerToday,
   getServerNowIso,
+  getServerTimeHm,
   getSubmissionsForCreatorOnDate,
   getCreatorCountsByPlatformOnDate,
   getCreatorStats,
@@ -56,7 +57,11 @@ export default async function SubmitPage({
 
   const login = loginHandleFor(creator)
   const username = login.handle || creator.name
-  const [calendarToday, serverNow] = await Promise.all([getServerToday(), getServerNowIso()])
+  const [calendarToday, serverNow, defaultTime] = await Promise.all([
+    getServerToday(),
+    getServerNowIso(),
+    getServerTimeHm(),
+  ])
   const opToday = operationalDayFromIso(serverNow)
   const today = creator.role === 'reposter' ? opToday : calendarToday
   if (creator.role === 'reposter') {
@@ -220,7 +225,6 @@ export default async function SubmitPage({
                     )}
                   </section>
 
-                  {isToday ? (
                   <section className="flex flex-col gap-3">
                     <div className="flex items-center gap-2">
                       <Send className="h-4 w-4 text-primary" />
@@ -234,12 +238,13 @@ export default async function SubmitPage({
                       {t('tiktok')} {dailyGoals.goalTiktok}
                     </p>
                     <SubmitForm
+                      key={`${date}-${defaultTime}`}
                       username={username}
                       fields={fields}
                       projects={projects}
                       defaultProjectId={creator.project_id}
-                      serverNow={serverNow}
-                      locale={locale}
+                      videoDate={date}
+                      defaultTime={defaultTime}
                       labels={{
                         pasteLinks: t('pasteLinks'),
                         pasteHint: t('pasteLinksHint'),
@@ -248,12 +253,12 @@ export default async function SubmitPage({
                         project: t('submitProject'),
                         projectHint: t('submitProjectHint'),
                         pickProject: t('pickProject'),
-                        recordedAt: t('submitTimeLabel'),
-                        recordedAtHint: t('submitTimeHint'),
+                        postDate: t('postDate'),
+                        postTime: t('postTime'),
+                        postWhenHint: t('submitTimeHint'),
                       }}
                     />
                   </section>
-                  ) : null}
 
                   <section className="flex flex-col gap-3">
                     <h2 className="text-sm font-semibold text-foreground">{t('todaysVideos')}</h2>
@@ -397,13 +402,6 @@ export default async function SubmitPage({
                     </p>
                   ) : null}
                   <CreatorStats stats={displayStats} locale={locale} />
-                  {'previousPeriod' in consistency && consistency.previousPeriod ? (
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      {t('lastStreakPeriod')}: {consistency.previousPeriod.bestStreak}{' '}
-                      {t('days')} · {Math.round(consistency.previousPeriod.hitRate * 100)}%.{' '}
-                      {t('lastStreakPeriodHint')}
-                    </p>
-                  ) : null}
                 </div>
               ),
             },

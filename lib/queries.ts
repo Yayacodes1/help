@@ -9,7 +9,6 @@ import {
   nextPayDate,
   type ConsistencySummary,
 } from '@/lib/consistency'
-import { ensureStreakEpoch, previousEpochWindow } from '@/lib/streak-epoch'
 import {
   normalizePlatforms,
   videoCompletionRate,
@@ -36,12 +35,27 @@ export async function getOperationalToday(): Promise<string> {
   return operationalDayFromIso(now)
 }
 
-/** UTC instant from the database — used as a live preview; inserts still use NOW(). */
+/** UTC instant from the database — used to default the submit time picker. */
 export async function getServerNowIso(): Promise<string> {
   const rows = (await sql`
     SELECT to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS now
   `) as { now: string }[]
   return rows[0]?.now ?? new Date().toISOString()
+}
+
+/** Wall-clock HH:MM in the operational timezone for `<input type="time">`. */
+export async function getServerTimeHm(): Promise<string> {
+  const { OPERATIONAL_TZ } = await import('@/lib/operational-day')
+  const now = await getServerNowIso()
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: OPERATIONAL_TZ,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(now))
+  const hour = parts.find((p) => p.type === 'hour')?.value ?? '00'
+  const minute = parts.find((p) => p.type === 'minute')?.value ?? '00'
+  return `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`
 }
 
 export async function getCreatorByToken(token: string): Promise<Creator | null> {
@@ -561,44 +575,24 @@ export function goalsForContract(
 export async function getCreatorConsistency(
   creator: Creator,
   today: string,
-): Promise<ConsistencySummary & { previousPeriod?: ConsistencySummary }> {
+): Promise<ConsistencySummary> {
   const active = await getActiveContract(creator.id, today)
   const goals = goalsForContract(creator, active)
-  const epoch = await ensureStreakEpoch(today)
+  // Streaks / consistency follow the active contract window (not a global 30-day epoch).
+  const window = contractWindow(creator, today, active)
 
-  // Streaks / consistency board use the global 30-day epoch (reset for everyone).
-  const consistency = await getConsistencyForWindow(
+  return getConsistencyForWindow(
     creator,
-    epoch.start,
-    epoch.end,
+    window.start,
+    window.end,
     today,
     goals,
     {
-      streakFrom: epoch.start,
-      streakEpochStart: epoch.start,
-      streakEpochEnd: epoch.end,
+      streakFrom: window.start,
+      streakEpochStart: window.start,
+      streakEpochEnd: window.end,
     },
   )
-
-  // After a roll: score the last 30 days, leaving the first day out of streak math.
-  const prev = previousEpochWindow(epoch.start, epoch.days)
-  if (prev.end < epoch.start && prev.start <= prev.end) {
-    const previousPeriod = await getConsistencyForWindow(
-      creator,
-      prev.start,
-      prev.end,
-      prev.end,
-      goals,
-      {
-        streakFrom: prev.streakFrom,
-        streakEpochStart: prev.start,
-        streakEpochEnd: prev.end,
-      },
-    )
-    return { ...consistency, previousPeriod }
-  }
-
-  return consistency
 }
 
 export type ContractProgress = {
