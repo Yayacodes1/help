@@ -57,12 +57,21 @@ export async function getCommissionBoard(opts: {
   const to = opts.to
   const today = opts.today
 
+  // Project filter follows the link (submissions.project_id), not only the
+  // creator's home project — so Miqat posts never inflate Notek totals.
   const people = (await sql`
     SELECT id, name, role
     FROM creators
     WHERE (${role}::text IS NULL OR role = ${role})
-      AND (${projectId}::int IS NULL OR project_id = ${projectId})
       AND (${creatorId}::int IS NULL OR id = ${creatorId})
+      AND (
+        ${projectId}::int IS NULL
+        OR project_id = ${projectId}
+        OR EXISTS (
+          SELECT 1 FROM submissions sx
+          WHERE sx.creator_id = creators.id AND sx.project_id = ${projectId}
+        )
+      )
     ORDER BY name ASC
   `) as { id: number; name: string; role: string }[]
 
@@ -79,7 +88,6 @@ export async function getCommissionBoard(opts: {
       WHERE s.video_date >= ${from}::date
         AND s.video_date <= ${to}::date
         AND (${role}::text IS NULL OR cr.role = ${role})
-        AND (${projectId}::int IS NULL OR cr.project_id = ${projectId})
         AND (${creatorId}::int IS NULL OR cr.id = ${creatorId})
         AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
     `,
@@ -90,8 +98,15 @@ export async function getCommissionBoard(opts: {
       WHERE p.paid_on >= ${from}::date
         AND p.paid_on <= ${to}::date
         AND (${role}::text IS NULL OR cr.role = ${role})
-        AND (${projectId}::int IS NULL OR cr.project_id = ${projectId})
         AND (${creatorId}::int IS NULL OR cr.id = ${creatorId})
+        AND (
+          ${projectId}::int IS NULL
+          OR cr.project_id = ${projectId}
+          OR EXISTS (
+            SELECT 1 FROM submissions sx
+            WHERE sx.creator_id = cr.id AND sx.project_id = ${projectId}
+          )
+        )
       GROUP BY p.creator_id
     `,
     sql`
@@ -104,8 +119,15 @@ export async function getCommissionBoard(opts: {
       WHERE c.start_date <= ${today}::date
         AND (c.end_date IS NULL OR c.end_date >= ${today}::date)
         AND (${role}::text IS NULL OR cr.role = ${role})
-        AND (${projectId}::int IS NULL OR cr.project_id = ${projectId})
         AND (${creatorId}::int IS NULL OR cr.id = ${creatorId})
+        AND (
+          ${projectId}::int IS NULL
+          OR cr.project_id = ${projectId}
+          OR EXISTS (
+            SELECT 1 FROM submissions sx
+            WHERE sx.creator_id = cr.id AND sx.project_id = ${projectId}
+          )
+        )
       ORDER BY c.creator_id, c.start_date DESC, c.id DESC
     `,
   ])
@@ -200,8 +222,15 @@ export async function getCommissionEstimate(opts: {
     FROM contracts c
     JOIN creators cr ON cr.id = c.creator_id
     WHERE (${role}::text IS NULL OR cr.role = ${role})
-      AND (${projectId}::int IS NULL OR cr.project_id = ${projectId})
       AND (${creatorId}::int IS NULL OR cr.id = ${creatorId})
+      AND (
+        ${projectId}::int IS NULL
+        OR cr.project_id = ${projectId}
+        OR EXISTS (
+          SELECT 1 FROM submissions sx
+          WHERE sx.creator_id = cr.id AND sx.project_id = ${projectId}
+        )
+      )
     ORDER BY cr.name ASC, c.start_date DESC, c.id DESC
   `) as ContractRow[]
 
@@ -241,9 +270,9 @@ export async function getCommissionEstimate(opts: {
         AND (c.end_date IS NULL OR s.video_date <= c.end_date)
       JOIN creators cr ON cr.id = s.creator_id
       WHERE (${role}::text IS NULL OR cr.role = ${role})
-        AND (${projectId}::int IS NULL OR cr.project_id = ${projectId})
         AND (${creatorId}::int IS NULL OR cr.id = ${creatorId})
         AND (${filterId}::int IS NULL OR c.id = ${filterId})
+        AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
       ORDER BY s.id, c.start_date DESC, c.id DESC
     `,
     sql`
@@ -260,9 +289,16 @@ export async function getCommissionEstimate(opts: {
           )
         )
       WHERE (${role}::text IS NULL OR cr.role = ${role})
-        AND (${projectId}::int IS NULL OR cr.project_id = ${projectId})
         AND (${creatorId}::int IS NULL OR cr.id = ${creatorId})
         AND (${filterId}::int IS NULL OR c.id = ${filterId})
+        AND (
+          ${projectId}::int IS NULL
+          OR cr.project_id = ${projectId}
+          OR EXISTS (
+            SELECT 1 FROM submissions sx
+            WHERE sx.creator_id = cr.id AND sx.project_id = ${projectId}
+          )
+        )
       GROUP BY c.id
     `,
   ])
