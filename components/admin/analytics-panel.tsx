@@ -22,6 +22,7 @@ import type {
   DailyAnalyticsRow,
 } from '@/lib/analytics'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
+import { CONTEST, contestPrizeEstimate, isContestRange } from '@/lib/contest'
 
 const IG = '#E1306C'
 const TT = '#0F766E'
@@ -50,6 +51,11 @@ type Labels = {
   chartBar: string
   chartLog: string
   chartLinear: string
+  contestPreset: string
+  contestHint: string
+  contestPrize: string
+  contestPodium: string
+  contestViewsBonus: string
 }
 
 function indexDaily(rows: DailyAnalyticsRow[]) {
@@ -252,14 +258,28 @@ export function AnalyticsPanel({
     ? multiChartData.length > 0 && creatorSeries.length > 0
     : platformChartData.length > 0
 
-  function navigate(nextFrom: string, nextTo: string, nextCreator: number | '') {
+  const contestActive = isContestRange(from, to)
+
+  function navigate(
+    nextFrom: string,
+    nextTo: string,
+    nextCreator: number | '',
+    opts?: { role?: string },
+  ) {
     const params = new URLSearchParams(window.location.search)
     params.set('panel', 'analytics')
     params.set('aFrom', nextFrom)
     params.set('aTo', nextTo)
     if (nextCreator === '') params.delete('aCreator')
     else params.set('aCreator', String(nextCreator))
+    if (opts?.role) params.set('role', opts.role)
     window.location.search = params.toString()
+  }
+
+  function activateContest() {
+    setFrom(CONTEST.from)
+    setTo(CONTEST.to)
+    navigate(CONTEST.from, CONTEST.to, creatorId, { role: 'reposter' })
   }
 
   const toggleClass = (active: boolean) =>
@@ -299,16 +319,32 @@ export function AnalyticsPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      <DateRangePresets
-        today={today}
-        from={from}
-        to={to}
-        onSelect={(nextFrom, nextTo) => {
-          setFrom(nextFrom)
-          setTo(nextTo)
-          navigate(nextFrom, nextTo, creatorId)
-        }}
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <DateRangePresets
+          today={today}
+          from={from}
+          to={to}
+          onSelect={(nextFrom, nextTo) => {
+            setFrom(nextFrom)
+            setTo(nextTo)
+            navigate(nextFrom, nextTo, creatorId)
+          }}
+        />
+        <button
+          type="button"
+          onClick={activateContest}
+          className={`h-9 rounded-lg border px-3 text-sm font-medium transition-colors ${
+            contestActive
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-border hover:bg-accent'
+          }`}
+        >
+          {labels.contestPreset}
+        </button>
+      </div>
+      {contestActive ? (
+        <p className="text-sm text-muted-foreground">{labels.contestHint}</p>
+      ) : null}
       <form
         method="get"
         className="flex flex-wrap items-end gap-3"
@@ -576,8 +612,11 @@ export function AnalyticsPanel({
         ) : (
           <ul className="divide-y divide-border rounded-lg border border-border">
             {leaderboard.map((row, i) => {
+              const rank = i + 1
               const active = selectedCreatorId === row.creator_id
               const color = colorForCreator(row.creator_id)
+              const prize =
+                contestActive ? contestPrizeEstimate(rank, row.views) : null
               return (
                 <li key={row.creator_id}>
                   <button
@@ -595,7 +634,7 @@ export function AnalyticsPanel({
                         style={{ backgroundColor: color }}
                         aria-hidden
                       />
-                      {i + 1}. {row.creator_name}
+                      {rank}. {row.creator_name}
                     </span>
                     <span className="tabular-nums text-muted-foreground">
                       {formatNumber(row.views)} {labels.views.toLowerCase()} · {row.videos}{' '}
@@ -606,6 +645,15 @@ export function AnalyticsPanel({
                       <span className="ml-2" style={{ color: TT }}>
                         TT {formatNumber(row.views_tiktok)}
                       </span>
+                      {prize ? (
+                        <span className="ml-2 font-medium text-foreground">
+                          {labels.contestPrize} {prize.total} SAR
+                          <span className="ml-1 font-normal text-muted-foreground">
+                            ({prize.podium} {labels.contestPodium} + {prize.viewsBonus}{' '}
+                            {labels.contestViewsBonus})
+                          </span>
+                        </span>
+                      ) : null}
                     </span>
                   </button>
                 </li>

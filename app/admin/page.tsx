@@ -516,6 +516,11 @@ export default async function AdminPage({
                   chartBar: t('chartBar'),
                   chartLog: t('chartLog'),
                   chartLinear: t('chartLinear'),
+                  contestPreset: t('contestPreset'),
+                  contestHint: t('contestHint'),
+                  contestPrize: t('contestPrize'),
+                  contestPodium: t('contestPodium'),
+                  contestViewsBonus: t('contestViewsBonus'),
                 }}
               />
             ),
