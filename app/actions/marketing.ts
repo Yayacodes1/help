@@ -24,6 +24,13 @@ function parseText(value: FormDataEntryValue | null, max = 500): string | null {
   return raw ? raw.slice(0, max) : null
 }
 
+function parseProjectId(value: FormDataEntryValue | null): number | null {
+  const raw = (value ?? '').toString().trim()
+  if (!raw) return null
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 function revalidateMarketing() {
   revalidatePath('/admin')
 }
@@ -36,10 +43,11 @@ export async function createMarketingTransfer(formData: FormData) {
   const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
   const label = parseText(formData.get('label'), 200)
   const note = parseText(formData.get('note'), 2000)
+  const projectId = parseProjectId(formData.get('project_id'))
   if (!sentOn || amount <= 0) return
   await sql`
-    INSERT INTO marketing_transfers (sent_on, amount, currency, label, note)
-    VALUES (${sentOn}, ${amount}, ${currency}, ${label}, ${note})
+    INSERT INTO marketing_transfers (sent_on, amount, currency, label, note, project_id)
+    VALUES (${sentOn}, ${amount}, ${currency}, ${label}, ${note}, ${projectId})
   `
   revalidateMarketing()
 }
@@ -51,11 +59,13 @@ export async function updateMarketingTransfer(id: number, formData: FormData) {
   const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
   const label = parseText(formData.get('label'), 200)
   const note = parseText(formData.get('note'), 2000)
+  const projectId = parseProjectId(formData.get('project_id'))
   if (!sentOn || amount <= 0) return
   await sql`
     UPDATE marketing_transfers
     SET sent_on = ${sentOn}, amount = ${amount}, currency = ${currency},
-        label = ${label}, note = ${note}
+        label = ${label}, note = ${note},
+        project_id = COALESCE(${projectId}, project_id)
     WHERE id = ${id}
   `
   revalidateMarketing()
@@ -75,10 +85,11 @@ export async function createMarketingExpense(formData: FormData) {
   const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
   const label = parseText(formData.get('label'), 200) || 'Expense'
   const note = parseText(formData.get('note'), 2000)
+  const projectId = parseProjectId(formData.get('project_id'))
   if (!spentOn || amount <= 0) return
   await sql`
-    INSERT INTO marketing_expenses (spent_on, amount, currency, label, note)
-    VALUES (${spentOn}, ${amount}, ${currency}, ${label}, ${note})
+    INSERT INTO marketing_expenses (spent_on, amount, currency, label, note, project_id)
+    VALUES (${spentOn}, ${amount}, ${currency}, ${label}, ${note}, ${projectId})
   `
   revalidateMarketing()
 }
@@ -90,11 +101,13 @@ export async function updateMarketingExpense(id: number, formData: FormData) {
   const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
   const label = parseText(formData.get('label'), 200) || 'Expense'
   const note = parseText(formData.get('note'), 2000)
+  const projectId = parseProjectId(formData.get('project_id'))
   if (!spentOn || amount <= 0) return
   await sql`
     UPDATE marketing_expenses
     SET spent_on = ${spentOn}, amount = ${amount}, currency = ${currency},
-        label = ${label}, note = ${note}
+        label = ${label}, note = ${note},
+        project_id = COALESCE(${projectId}, project_id)
     WHERE id = ${id}
   `
   revalidateMarketing()
@@ -116,6 +129,7 @@ export async function createMarketingRequest(formData: FormData) {
   const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
   const title = parseText(formData.get('title'), 200)
   const note = parseText(formData.get('note'), 2000)
+  const projectId = parseProjectId(formData.get('project_id'))
 
   const items: { amount: number; reason: string }[] = []
   for (let i = 0; i < 20; i++) {
@@ -131,8 +145,8 @@ export async function createMarketingRequest(formData: FormData) {
   if (items.length === 0) return
 
   const rows = (await sql`
-    INSERT INTO marketing_requests (needed_by, currency, status, title, note)
-    VALUES (${neededBy}, ${currency}, 'open', ${title}, ${note})
+    INSERT INTO marketing_requests (needed_by, currency, status, title, note, project_id)
+    VALUES (${neededBy}, ${currency}, 'open', ${title}, ${note}, ${projectId})
     RETURNING id
   `) as { id: number }[]
   const requestId = rows[0]?.id
@@ -163,8 +177,14 @@ export async function fulfillMarketingRequest(id: number, formData: FormData) {
   const note = parseText(formData.get('note'), 2000)
 
   const reqRows = (await sql`
-    SELECT id, currency, status, title FROM marketing_requests WHERE id = ${id} LIMIT 1
-  `) as { id: number; currency: string; status: string; title: string | null }[]
+    SELECT id, currency, status, title, project_id FROM marketing_requests WHERE id = ${id} LIMIT 1
+  `) as {
+    id: number
+    currency: string
+    status: string
+    title: string | null
+    project_id: number | null
+  }[]
   const req = reqRows[0]
   if (!req || req.status !== 'open') return
 
@@ -179,8 +199,8 @@ export async function fulfillMarketingRequest(id: number, formData: FormData) {
   const transferLabel = label || req.title || `Request #${id}`
 
   await sql`
-    INSERT INTO marketing_transfers (sent_on, amount, currency, label, note)
-    VALUES (${sentOn}, ${total}, ${currency}, ${transferLabel}, ${note})
+    INSERT INTO marketing_transfers (sent_on, amount, currency, label, note, project_id)
+    VALUES (${sentOn}, ${total}, ${currency}, ${transferLabel}, ${note}, ${req.project_id})
   `
   await sql`UPDATE marketing_requests SET status = 'fulfilled' WHERE id = ${id}`
   revalidateMarketing()

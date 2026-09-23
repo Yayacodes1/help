@@ -67,18 +67,36 @@ export async function getProjectViewsBoard(opts: {
   from?: string | null
   to?: string | null
   role?: ParticipantRole | null
+  projectId?: number | null
+  /** When true (Miyqat), roster includes every creator/reposter. */
+  includeAllPeople?: boolean
 } = {}): Promise<ProjectViewsBoard> {
   const today = await getServerToday()
   const { from, to } = normalizeRange(opts.from, opts.to, today)
   const role = opts.role ?? null
+  const projectId = opts.projectId ?? null
+  const includeAllPeople = opts.includeAllPeople ?? false
 
   const [projectRows, roster, aggs] = await Promise.all([
     sql`
-      SELECT id, name FROM projects ORDER BY name ASC
+      SELECT id, name FROM projects
+      WHERE (${projectId}::int IS NULL OR id = ${projectId})
+      ORDER BY name ASC
     `,
     sql`
       SELECT id, name, role FROM creators
       WHERE (${role}::text IS NULL OR role = ${role})
+        AND (
+          ${projectId}::int IS NULL
+          OR ${includeAllPeople}::boolean
+          OR role = 'reposter'
+          OR project_id = ${projectId}
+          OR project_id IS NULL
+          OR EXISTS (
+            SELECT 1 FROM submissions sx
+            WHERE sx.creator_id = creators.id AND sx.project_id = ${projectId}
+          )
+        )
       ORDER BY name ASC
     `,
     sql`
@@ -93,7 +111,19 @@ export async function getProjectViewsBoard(opts: {
         ON s.creator_id = c.id
         AND s.video_date >= ${from}::date
         AND s.video_date <= ${to}::date
+        AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
       WHERE (${role}::text IS NULL OR c.role = ${role})
+        AND (
+          ${projectId}::int IS NULL
+          OR ${includeAllPeople}::boolean
+          OR c.role = 'reposter'
+          OR c.project_id = ${projectId}
+          OR c.project_id IS NULL
+          OR EXISTS (
+            SELECT 1 FROM submissions sx
+            WHERE sx.creator_id = c.id AND sx.project_id = ${projectId}
+          )
+        )
       GROUP BY c.id, s.project_id, s.platform
     `,
   ])
@@ -123,6 +153,12 @@ export async function getProjectViewsBoard(opts: {
     if (!person) continue
     const views = Number(row.views) || 0
     const videos = Number(row.videos) || 0
+    // When scoped to one project, skip unassigned / other-project rows entirely.
+    if (projectId != null && row.project_id !== projectId) {
+      if (row.project_id != null || videos === 0) continue
+      // unassigned rows ignored under a project filter
+      continue
+    }
     person.views += views
     person.videos += videos
     if (row.platform === 'instagram') person.viewsInstagram += views

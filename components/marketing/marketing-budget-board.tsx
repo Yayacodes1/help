@@ -32,12 +32,15 @@ export function MarketingBudgetBoard({
   transfers,
   expenses,
   requests,
+  projectId,
 }: {
   today: string
   balances: MarketingBalance[]
   transfers: MarketingTransfer[]
   expenses: MarketingExpense[]
   requests: RequestWithItems[]
+  /** Current header project — new rows are tagged to it. */
+  projectId?: number | null
 }) {
   const [pending, startTransition] = useTransition()
   const [editingTransfer, setEditingTransfer] = useState<number | null>(null)
@@ -46,12 +49,22 @@ export function MarketingBudgetBoard({
   const transferFormRef = useRef<HTMLFormElement>(null)
   const expenseFormRef = useRef<HTMLFormElement>(null)
   const requestFormRef = useRef<HTMLFormElement>(null)
+  const projectField =
+    projectId != null ? (
+      <input type="hidden" name="project_id" value={projectId} />
+    ) : null
 
   const openRequests = requests.filter((r) => r.status === 'open')
   const pastRequests = requests.filter((r) => r.status !== 'open')
 
   return (
     <div className="flex flex-col gap-6">
+      {projectId == null && (
+        <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          Showing all projects. Pick Miyqat or Notek in the header to add and view budget for one
+          project only.
+        </p>
+      )}
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {balances.length === 0 ? (
           <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
@@ -151,6 +164,7 @@ export function MarketingBudgetBoard({
           }
           className="mt-3 grid gap-2 sm:grid-cols-2"
         >
+          {projectField}
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Sent on
             <input type="date" name="sent_on" required defaultValue={today} className={inputClass} />
@@ -199,6 +213,7 @@ export function MarketingBudgetBoard({
           }
           className="mt-3 grid gap-2 sm:grid-cols-2"
         >
+          {projectField}
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Spent on
             <input type="date" name="spent_on" required defaultValue={today} className={inputClass} />
@@ -248,6 +263,7 @@ export function MarketingBudgetBoard({
           }
           className="mt-3 flex flex-col gap-2"
         >
+          {projectField}
           <div className="grid gap-2 sm:grid-cols-3">
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
               Needed by

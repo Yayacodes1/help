@@ -101,7 +101,7 @@ export function RankingFilters({
             <button
               key={p.id}
               type="button"
-              onClick={() => push({ rankProject: String(p.id) })}
+              onClick={() => push({ project: String(p.id), rankProject: null })}
               className={toggleClass(projectId === p.id)}
             >
               {p.name}
@@ -109,7 +109,7 @@ export function RankingFilters({
           ))}
           <button
             type="button"
-            onClick={() => push({ rankProject: null })}
+            onClick={() => push({ project: null, rankProject: null })}
             className={toggleClass(projectId == null)}
           >
             {labels.allProjects}

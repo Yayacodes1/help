@@ -280,9 +280,14 @@ export async function getCreatorsWithProgressOnDate(
   date: string,
   projectId?: number,
   role?: ParticipantRole | null,
+  opts?: { includeAllReposters?: boolean; includeAllCreators?: boolean },
 ): Promise<CreatorProgress[]> {
   const pid = projectId ?? null
   const roleFilter = role ?? null
+  // Miyqat: show every reposter + every creator (homes not assigned yet).
+  // Other projects: all reposters still, creators by home / unassigned / posts.
+  const includeAllReposters = opts?.includeAllReposters ?? pid != null
+  const includeAllCreators = opts?.includeAllCreators ?? false
   return (await sql`
     SELECT
       c.id, c.name, c.token, c.project_id, c.created_at, c.role,
@@ -301,7 +306,10 @@ export async function getCreatorsWithProgressOnDate(
     WHERE (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
       AND (
         ${pid}::int IS NULL
+        OR (c.role = 'reposter' AND ${includeAllReposters}::boolean)
+        OR (c.role <> 'reposter' AND ${includeAllCreators}::boolean)
         OR c.project_id = ${pid}
+        OR (c.role <> 'reposter' AND c.project_id IS NULL)
         OR EXISTS (
           SELECT 1 FROM submissions sx
           WHERE sx.creator_id = c.id AND sx.project_id = ${pid}

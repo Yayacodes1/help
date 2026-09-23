@@ -71,6 +71,7 @@ import { getProjectViewsBoard } from '@/lib/project-views'
 import { ProjectViewsPanel } from '@/components/admin/project-views-panel'
 import { getCommissionBoard, getCommissionEstimate } from '@/lib/commission-data'
 import { CommissionBoardPanel } from '@/components/admin/commission-board'
+import { isMiyqatProjectName, findProjectById } from '@/lib/project-scope'
 
 export const dynamic = 'force-dynamic'
 
@@ -184,8 +185,8 @@ export default async function AdminPage({
 
   const rankMonth = parseYearMonth(sp.rankMonth, today)
   const { start: rankFrom, end: rankTo } = rankingMonthRange(rankMonth, today)
-  const rankProjectRaw = sp.rankProject ? Number(sp.rankProject) : NaN
-  const rankProjectId = Number.isFinite(rankProjectRaw) && rankProjectRaw > 0 ? rankProjectRaw : null
+  // Ranking follows the header project filter (Miyqat / Notek / all).
+  const rankProjectId = projectId != null && Number.isFinite(projectId) ? projectId : null
   const rankRole =
     sp.rankRole === 'creator' || sp.rankRole === 'reposter' || sp.rankRole === 'all'
       ? sp.rankRole
@@ -197,6 +198,13 @@ export default async function AdminPage({
   const cmContractRaw = Number(sp.cmContract)
   const cmContractId =
     Number.isFinite(cmContractRaw) && cmContractRaw > 0 ? cmContractRaw : null
+
+  // Resolve project name after projects load — provisional flags; refined below.
+  const projectsEarly = await getAllProjects()
+  const selectedProject = findProjectById(projectsEarly, projectId ?? null)
+  const miyqatScope = selectedProject != null && isMiyqatProjectName(selectedProject.name)
+  const includeAllReposters = projectId != null
+  const includeAllCreators = miyqatScope
 
   const [
     submissions,
@@ -225,8 +233,11 @@ export default async function AdminPage({
     commissionEstimate,
   ] = await Promise.all([
     getAdminSubmissions(filters),
-    getAllProjects(),
-    getCreatorsWithProgressOnDate(selectedDay, projectId, roleSql),
+    Promise.resolve(projectsEarly),
+    getCreatorsWithProgressOnDate(selectedDay, projectId, roleSql, {
+      includeAllReposters,
+      includeAllCreators,
+    }),
     getPaymentsInRange(payFrom, payTo, undefined, roleSql),
     getPaymentsTotalInRange(payFrom, payTo, undefined, roleSql),
     getAllPaidTotal(projectId, roleSql),
@@ -263,11 +274,20 @@ export default async function AdminPage({
       platform: tvPlatform,
       limit: 50,
     }),
-    getMarketingBalances(),
-    listMarketingTransfers(),
-    listMarketingExpenses(),
-    listMarketingRequests(),
-    getOutflowSnapshot({ from: ofFrom, to: ofTo, view: ofView, countMode: 'base' }),
+    getMarketingBalances(projectId ?? null),
+    listMarketingTransfers(projectId ?? null),
+    listMarketingExpenses(projectId ?? null),
+    listMarketingRequests(null, projectId ?? null),
+    getOutflowSnapshot({
+      from: ofFrom,
+      to: ofTo,
+      view: ofView,
+      countMode: 'base',
+      projectId: projectId ?? null,
+      includeAllCreators,
+      includeAllReposters,
+      repostersOnly: true,
+    }),
     getLeagueBoard({
       from: rankFrom,
       to: rankTo,
@@ -278,11 +298,14 @@ export default async function AdminPage({
       from: pvFrom,
       to: pvTo,
       role: pvKindSql,
+      projectId: projectId ?? null,
+      includeAllPeople: miyqatScope,
     }),
     pvCreatorId != null
       ? getAdminSubmissions({
           creatorId: pvCreatorId,
           role: pvKindSql,
+          projectId,
           from: pvFrom,
           to: pvTo,
         })
@@ -304,11 +327,13 @@ export default async function AdminPage({
   ])
   const pvModeRaw = sp.pvMode
   const pvMode: 'combined' | number =
-    pvModeRaw &&
-    pvModeRaw !== 'combined' &&
-    projectViews.projects.some((p) => String(p.id) === pvModeRaw)
-      ? Number(pvModeRaw)
-      : 'combined'
+    projectId != null && Number.isFinite(projectId)
+      ? projectId
+      : pvModeRaw &&
+          pvModeRaw !== 'combined' &&
+          projectViews.projects.some((p) => String(p.id) === pvModeRaw)
+        ? Number(pvModeRaw)
+        : 'combined'
   const projectViewsHint = projectViews.projects
     .slice(0, 2)
     .map((p) => `${p.name} ${formatNumber(projectViews.totals.viewsByProject[p.id] ?? 0)}`)
@@ -811,6 +836,7 @@ export default async function AdminPage({
                 transfers={marketingTransfers}
                 expenses={marketingExpenses}
                 requests={marketingRequests}
+                projectId={projectId ?? null}
               />
             ),
           },

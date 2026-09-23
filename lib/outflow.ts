@@ -160,13 +160,26 @@ export async function getOutflowSnapshot(opts: {
   to: string
   view?: OutflowView
   countMode?: OutflowCountMode
+  /** Header project filter — scopes people to that project. */
+  projectId?: number | null
+  /** Miyqat: include every creator in the people set. */
+  includeAllCreators?: boolean
+  /** Always include every reposter under a project filter. */
+  includeAllReposters?: boolean
+  /** Marketing-by-month panel: only reposter pay (ignore creators). */
+  repostersOnly?: boolean
 }): Promise<OutflowSnapshot> {
   const from = opts.from
   const to = opts.to
-  const view: OutflowView = opts.view ?? 'total'
+  const view: OutflowView = opts.repostersOnly
+    ? 'reposters'
+    : (opts.view ?? 'total')
   const countMode: OutflowCountMode = opts.countMode === 'all' ? 'all' : 'base'
   const roleFilter: ParticipantRole | null =
     view === 'creators' ? 'creator' : view === 'reposters' ? 'reposter' : null
+  const projectId = opts.projectId ?? null
+  const includeAllCreators = opts.includeAllCreators ?? false
+  const includeAllReposters = opts.includeAllReposters ?? projectId != null
 
   const payments = (await sql`
     SELECT p.id, p.paid_on::text AS paid_on, p.amount::float AS amount, p.note,
@@ -179,14 +192,36 @@ export async function getOutflowSnapshot(opts: {
     WHERE p.paid_on >= ${from}::date
       AND p.paid_on <= ${to}::date
       AND (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
+      AND (
+        ${projectId}::int IS NULL
+        OR (c.role = 'reposter' AND ${includeAllReposters}::boolean)
+        OR (c.role <> 'reposter' AND ${includeAllCreators}::boolean)
+        OR c.project_id = ${projectId}
+        OR (c.role <> 'reposter' AND c.project_id IS NULL)
+        OR EXISTS (
+          SELECT 1 FROM submissions sx
+          WHERE sx.creator_id = c.id AND sx.project_id = ${projectId}
+        )
+      )
     ORDER BY p.paid_on ASC, c.name ASC, p.id ASC
   `) as OutflowPaymentRow[]
 
   const peopleRows = (await sql`
-    SELECT id AS creator_id, name AS creator_name, role
-    FROM creators
-    WHERE (${roleFilter}::text IS NULL OR role = ${roleFilter})
-    ORDER BY name ASC
+    SELECT c.id AS creator_id, c.name AS creator_name, c.role
+    FROM creators c
+    WHERE (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
+      AND (
+        ${projectId}::int IS NULL
+        OR (c.role = 'reposter' AND ${includeAllReposters}::boolean)
+        OR (c.role <> 'reposter' AND ${includeAllCreators}::boolean)
+        OR c.project_id = ${projectId}
+        OR (c.role <> 'reposter' AND c.project_id IS NULL)
+        OR EXISTS (
+          SELECT 1 FROM submissions sx
+          WHERE sx.creator_id = c.id AND sx.project_id = ${projectId}
+        )
+      )
+    ORDER BY c.name ASC
   `) as { creator_id: number; creator_name: string; role: string }[]
 
   type ContractQueryRow = Omit<
@@ -205,6 +240,17 @@ export async function getOutflowSnapshot(opts: {
     FROM contracts ct
     JOIN creators c ON c.id = ct.creator_id
     WHERE (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
+      AND (
+        ${projectId}::int IS NULL
+        OR (c.role = 'reposter' AND ${includeAllReposters}::boolean)
+        OR (c.role <> 'reposter' AND ${includeAllCreators}::boolean)
+        OR c.project_id = ${projectId}
+        OR (c.role <> 'reposter' AND c.project_id IS NULL)
+        OR EXISTS (
+          SELECT 1 FROM submissions sx
+          WHERE sx.creator_id = c.id AND sx.project_id = ${projectId}
+        )
+      )
     ORDER BY c.id ASC, ct.start_date DESC, ct.id DESC
   `) as ContractQueryRow[]
 
@@ -220,6 +266,17 @@ export async function getOutflowSnapshot(opts: {
     WHERE ct.start_date <= ${to}::date
       AND (ct.end_date IS NULL OR ct.end_date >= ${from}::date)
       AND (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
+      AND (
+        ${projectId}::int IS NULL
+        OR (c.role = 'reposter' AND ${includeAllReposters}::boolean)
+        OR (c.role <> 'reposter' AND ${includeAllCreators}::boolean)
+        OR c.project_id = ${projectId}
+        OR (c.role <> 'reposter' AND c.project_id IS NULL)
+        OR EXISTS (
+          SELECT 1 FROM submissions sx
+          WHERE sx.creator_id = c.id AND sx.project_id = ${projectId}
+        )
+      )
     ORDER BY p.paid_on ASC, p.id ASC
   `) as { contract_id: number; paid_on: string; amount: number }[]
 

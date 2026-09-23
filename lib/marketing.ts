@@ -10,6 +10,7 @@ export type MarketingTransfer = {
   currency: MarketingCurrency
   label: string | null
   note: string | null
+  project_id: number | null
   created_at: string
 }
 
@@ -20,6 +21,7 @@ export type MarketingExpense = {
   currency: MarketingCurrency
   label: string
   note: string | null
+  project_id: number | null
   created_at: string
 }
 
@@ -30,6 +32,7 @@ export type MarketingRequest = {
   status: 'open' | 'fulfilled' | 'cancelled'
   title: string | null
   note: string | null
+  project_id: number | null
   created_at: string
   total_amount: number
 }
@@ -94,23 +97,63 @@ export async function ensureMarketingTables() {
   await sql`CREATE INDEX IF NOT EXISTS marketing_transfers_sent_on_idx ON marketing_transfers (sent_on)`
   await sql`CREATE INDEX IF NOT EXISTS marketing_expenses_spent_on_idx ON marketing_expenses (spent_on)`
   await sql`CREATE INDEX IF NOT EXISTS marketing_requests_status_idx ON marketing_requests (status)`
+
+  await sql`ALTER TABLE marketing_transfers ADD COLUMN IF NOT EXISTS project_id integer`
+  await sql`ALTER TABLE marketing_expenses ADD COLUMN IF NOT EXISTS project_id integer`
+  await sql`ALTER TABLE marketing_requests ADD COLUMN IF NOT EXISTS project_id integer`
+
+  // Legacy rows (no project) → Notek so Notek filter keeps historical budget.
+  await sql`
+    UPDATE marketing_transfers t
+    SET project_id = p.id
+    FROM projects p
+    WHERE t.project_id IS NULL
+      AND (lower(p.name) LIKE '%not%' OR lower(p.name) LIKE '%note%')
+  `
+  await sql`
+    UPDATE marketing_expenses e
+    SET project_id = p.id
+    FROM projects p
+    WHERE e.project_id IS NULL
+      AND (lower(p.name) LIKE '%not%' OR lower(p.name) LIKE '%note%')
+  `
+  await sql`
+    UPDATE marketing_requests r
+    SET project_id = p.id
+    FROM projects p
+    WHERE r.project_id IS NULL
+      AND (lower(p.name) LIKE '%not%' OR lower(p.name) LIKE '%note%')
+  `
 }
 
 export function normalizeCurrency(value: string | null | undefined): MarketingCurrency {
   return value === 'SAR' ? 'SAR' : 'USD'
 }
 
-export async function getMarketingBalances(): Promise<MarketingBalance[]> {
+export async function getMarketingBalances(
+  projectId?: number | null,
+): Promise<MarketingBalance[]> {
+  const pid = projectId ?? null
   const rows = (await sql`
     WITH currencies AS (
       SELECT DISTINCT currency FROM marketing_transfers
+      WHERE (${pid}::int IS NULL OR project_id = ${pid})
       UNION
       SELECT DISTINCT currency FROM marketing_expenses
+      WHERE (${pid}::int IS NULL OR project_id = ${pid})
     )
     SELECT
       c.currency,
-      COALESCE((SELECT SUM(t.amount) FROM marketing_transfers t WHERE t.currency = c.currency), 0)::float AS sent,
-      COALESCE((SELECT SUM(e.amount) FROM marketing_expenses e WHERE e.currency = c.currency), 0)::float AS spent
+      COALESCE((
+        SELECT SUM(t.amount) FROM marketing_transfers t
+        WHERE t.currency = c.currency
+          AND (${pid}::int IS NULL OR t.project_id = ${pid})
+      ), 0)::float AS sent,
+      COALESCE((
+        SELECT SUM(e.amount) FROM marketing_expenses e
+        WHERE e.currency = c.currency
+          AND (${pid}::int IS NULL OR e.project_id = ${pid})
+      ), 0)::float AS spent
     FROM currencies c
     ORDER BY c.currency ASC
   `) as { currency: string; sent: number; spent: number }[]
@@ -123,33 +166,45 @@ export async function getMarketingBalances(): Promise<MarketingBalance[]> {
   })
 }
 
-export async function listMarketingTransfers(): Promise<MarketingTransfer[]> {
+export async function listMarketingTransfers(
+  projectId?: number | null,
+): Promise<MarketingTransfer[]> {
+  const pid = projectId ?? null
   return (await sql`
     SELECT id, sent_on::text AS sent_on, amount::float AS amount, currency,
-           label, note, created_at
+           label, note, project_id, created_at
     FROM marketing_transfers
+    WHERE (${pid}::int IS NULL OR project_id = ${pid})
     ORDER BY sent_on DESC, id DESC
   `) as MarketingTransfer[]
 }
 
-export async function listMarketingExpenses(): Promise<MarketingExpense[]> {
+export async function listMarketingExpenses(
+  projectId?: number | null,
+): Promise<MarketingExpense[]> {
+  const pid = projectId ?? null
   return (await sql`
     SELECT id, spent_on::text AS spent_on, amount::float AS amount, currency,
-           label, note, created_at
+           label, note, project_id, created_at
     FROM marketing_expenses
+    WHERE (${pid}::int IS NULL OR project_id = ${pid})
     ORDER BY spent_on DESC, id DESC
   `) as MarketingExpense[]
 }
 
 export async function listMarketingRequests(
   status?: 'open' | 'fulfilled' | 'cancelled' | null,
+  projectId?: number | null,
 ): Promise<(MarketingRequest & { items: MarketingRequestItem[] })[]> {
   const statusFilter = status ?? null
+  const pid = projectId ?? null
   const requests = (await sql`
-    SELECT r.id, r.needed_by::text AS needed_by, r.currency, r.status, r.title, r.note, r.created_at,
+    SELECT r.id, r.needed_by::text AS needed_by, r.currency, r.status, r.title, r.note,
+           r.project_id, r.created_at,
            COALESCE((SELECT SUM(i.amount) FROM marketing_request_items i WHERE i.request_id = r.id), 0)::float AS total_amount
     FROM marketing_requests r
     WHERE (${statusFilter}::text IS NULL OR r.status = ${statusFilter})
+      AND (${pid}::int IS NULL OR r.project_id = ${pid})
     ORDER BY
       CASE r.status WHEN 'open' THEN 0 WHEN 'fulfilled' THEN 1 ELSE 2 END,
       r.needed_by ASC NULLS LAST,
