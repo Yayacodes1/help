@@ -248,9 +248,11 @@ export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<A
 }
 
 export async function getAllProjects(): Promise<Project[]> {
-  return (await sql`
+  const rows = (await sql`
     SELECT id, name, created_at FROM projects ORDER BY name ASC
   `) as Project[]
+  const { sortProjects } = await import('@/lib/project-order')
+  return sortProjects(rows)
 }
 
 export type CreatorWithProject = Creator & { project_name: string | null }

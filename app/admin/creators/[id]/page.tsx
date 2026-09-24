@@ -411,6 +411,12 @@ export default async function CreatorDetailPage({
               <CreatorVideosPanel
                 creatorId={creator.id}
                 today={today}
+                projects={projects}
+                defaultProjectId={
+                  sp.project && Number.isFinite(Number(sp.project))
+                    ? Number(sp.project)
+                    : creator.project_id
+                }
                 submissions={submissions.map((s) => ({
                   ...s,
                   creator_name: creator.name,
@@ -425,6 +431,8 @@ export default async function CreatorDetailPage({
                   noMatch: t('noVideosMatch'),
                   refreshViews: t('refreshViews'),
                   refreshThisVideo: t('refreshThisVideo'),
+                  allProjects: t('allProjects'),
+                  pickProject: t('pickProject'),
                 }}
               />
             ),

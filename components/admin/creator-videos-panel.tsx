@@ -5,6 +5,7 @@ import { SubmissionsTable } from '@/components/admin/submissions-table'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { AddCreatorVideoForm } from '@/components/admin/add-creator-video-form'
 import { formatNumber } from '@/lib/format'
+import { sortProjects } from '@/lib/project-order'
 
 type PlatformFilter = 'both' | 'instagram' | 'tiktok'
 
@@ -23,15 +24,21 @@ type Submission = {
   views_error?: string | null
 }
 
+type ProjectOption = { id: number; name: string }
+
 export function CreatorVideosPanel({
   creatorId,
   submissions,
+  projects,
+  defaultProjectId,
   emptyLabel,
   today,
   labels,
 }: {
   creatorId: number
   submissions: Submission[]
+  projects: ProjectOption[]
+  defaultProjectId?: number | null
   emptyLabel: string
   today: string
   labels: {
@@ -43,10 +50,17 @@ export function CreatorVideosPanel({
     noMatch: string
     refreshViews: string
     refreshThisVideo: string
+    allProjects: string
+    pickProject: string
   }
 }) {
   const [platform, setPlatform] = useState<PlatformFilter>('both')
-  const [project, setProject] = useState<string>('all')
+  const orderedProjects = useMemo(() => sortProjects(projects), [projects])
+  const initialProject =
+    defaultProjectId != null && orderedProjects.some((p) => p.id === defaultProjectId)
+      ? String(defaultProjectId)
+      : 'all'
+  const [project, setProject] = useState<string>(initialProject)
 
   const counts = useMemo(() => {
     let instagram = 0
@@ -72,18 +86,10 @@ export function CreatorVideosPanel({
     }
   }, [submissions])
 
-  const projectNames = useMemo(() => {
-    const names = new Set<string>()
-    for (const s of submissions) {
-      if (s.project_name) names.add(s.project_name)
-    }
-    return [...names].sort()
-  }, [submissions])
-
   const filtered = useMemo(() => {
     return submissions.filter((s) => {
       if (platform !== 'both' && s.platform !== platform) return false
-      if (project !== 'all' && (s.project_name ?? '') !== project) return false
+      if (project !== 'all' && String(s.project_id ?? '') !== project) return false
       return true
     })
   }, [submissions, platform, project])
@@ -137,17 +143,17 @@ export function CreatorVideosPanel({
             )
           })}
         </div>
-        {projectNames.length > 0 ? (
+        {orderedProjects.length > 0 ? (
           <select
             value={project}
             onChange={(e) => setProject(e.target.value)}
             className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
-            aria-label="Filter by project"
+            aria-label={labels.pickProject}
           >
-            <option value="all">All projects</option>
-            {projectNames.map((name) => (
-              <option key={name} value={name}>
-                {name}
+            <option value="all">{labels.allProjects}</option>
+            {orderedProjects.map((p) => (
+              <option key={p.id} value={String(p.id)}>
+                {p.name}
               </option>
             ))}
           </select>
@@ -176,7 +182,13 @@ export function CreatorVideosPanel({
         />
       </Suspense>
 
-      <AddCreatorVideoForm creatorId={creatorId} today={today} />
+      <AddCreatorVideoForm
+        creatorId={creatorId}
+        today={today}
+        projects={orderedProjects}
+        defaultProjectId={defaultProjectId}
+        pickProjectLabel={labels.pickProject}
+      />
 
       <SubmissionsTable
         submissions={filtered}
@@ -185,6 +197,8 @@ export function CreatorVideosPanel({
         showProject={true}
         editableViews={false}
         allowManageVideos
+        editableProject
+        projects={orderedProjects}
         refreshLabel={labels.refreshThisVideo}
       />
     </div>

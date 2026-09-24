@@ -6,9 +6,15 @@ import { addCreatorSubmission } from '@/app/actions/admin'
 export function AddCreatorVideoForm({
   creatorId,
   today,
+  projects = [],
+  defaultProjectId,
+  pickProjectLabel = 'Choose a project',
 }: {
   creatorId: number
   today: string
+  projects?: Array<{ id: number; name: string }>
+  defaultProjectId?: number | null
+  pickProjectLabel?: string
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const [pending, startTransition] = useTransition()
@@ -32,12 +38,28 @@ export function AddCreatorVideoForm({
     >
       <p className="text-xs font-semibold text-foreground">Add or replace with a new video</p>
       <p className="text-[11px] text-muted-foreground">
-        Paste an Instagram or TikTok link. When TikHub can read the video, Posted uses the
-        TikTok/IG publish date and time (and that day for the calendar date). Otherwise the
-        date picker is used. To swap one video for another, use Replace on that row — or
-        delete it and add here.
+        Paste an Instagram or TikTok link and pick Miqat or Notek. When TikHub can read the
+        video, Posted uses the publish date. Otherwise the date picker is used.
       </p>
       <div className="flex flex-wrap gap-2">
+        {projects.length > 0 ? (
+          <select
+            name="project_id"
+            required
+            defaultValue={defaultProjectId ?? ''}
+            className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={pickProjectLabel}
+          >
+            <option value="" disabled>
+              {pickProjectLabel}
+            </option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <input
           type="url"
           name="url"

@@ -4,19 +4,29 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import type { TopVideoRow } from '@/lib/analytics'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
+import { PanelProjectFilter } from '@/components/admin/panel-project-filter'
 import { formatDate, formatNumber } from '@/lib/format'
 import { adminPersonHref } from '@/lib/admin-href'
 
 export function TopVideosPanel({
   videos,
+  projects,
+  projectId,
   today,
   defaultFrom,
   defaultTo,
+  labels,
 }: {
   videos: TopVideoRow[]
+  projects: Array<{ id: number; name: string }>
+  projectId?: number | null
   today: string
   defaultFrom: string
   defaultTo: string
+  labels: {
+    allProjects: string
+    chooseProject: string
+  }
 }) {
   const router = useRouter()
   const params = useSearchParams()
@@ -36,6 +46,13 @@ export function TopVideosPanel({
 
   return (
     <div className="flex flex-col gap-3">
+      <PanelProjectFilter
+        projects={projects}
+        projectId={projectId}
+        panel="topvideos"
+        promptWhenAll
+        labels={labels}
+      />
       <DateRangePresets
         today={today}
         from={from}

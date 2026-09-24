@@ -101,7 +101,19 @@ export function RankingFilters({
             <button
               key={p.id}
               type="button"
-              onClick={() => push({ project: String(p.id), rankProject: null })}
+              onClick={() => {
+                const next = new URLSearchParams(params.toString())
+                next.set('panel', 'ranking')
+                next.set('project', String(p.id))
+                next.delete('rankProject')
+                if (/miq|miy/i.test(p.name)) {
+                  const role = next.get('role')
+                  if (!role || role === 'creator') next.set('role', 'all')
+                }
+                next.delete('creator')
+                next.delete('aCreator')
+                router.push(`/admin?${next.toString()}`)
+              }}
               className={toggleClass(projectId === p.id)}
             >
               {p.name}

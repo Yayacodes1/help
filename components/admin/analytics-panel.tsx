@@ -22,6 +22,7 @@ import type {
   DailyAnalyticsRow,
 } from '@/lib/analytics'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
+import { PanelProjectFilter } from '@/components/admin/panel-project-filter'
 import { CONTEST, contestPrizeEstimate, isContestRange } from '@/lib/contest'
 
 const IG = '#E1306C'
@@ -56,6 +57,8 @@ type Labels = {
   contestPrize: string
   contestPodium: string
   contestViewsBonus: string
+  allProjects: string
+  chooseProject: string
 }
 
 function indexDaily(rows: DailyAnalyticsRow[]) {
@@ -146,6 +149,8 @@ export function AnalyticsPanel({
   byCreatorDaily,
   leaderboard,
   creators,
+  projects,
+  projectId,
   selectedCreatorId,
   today,
   defaultFrom,
@@ -157,6 +162,8 @@ export function AnalyticsPanel({
   byCreatorDaily: CreatorDailyViewsRow[]
   leaderboard: CreatorViewsRow[]
   creators: CreatorOption[]
+  projects: Array<{ id: number; name: string }>
+  projectId?: number | null
   selectedCreatorId: number | null
   today: string
   defaultFrom: string
@@ -319,6 +326,16 @@ export function AnalyticsPanel({
 
   return (
     <div className="flex flex-col gap-4">
+      <PanelProjectFilter
+        projects={projects}
+        projectId={projectId}
+        panel="analytics"
+        promptWhenAll
+        labels={{
+          allProjects: labels.allProjects,
+          chooseProject: labels.chooseProject,
+        }}
+      />
       <div className="flex flex-wrap items-center gap-2">
         <DateRangePresets
           today={today}

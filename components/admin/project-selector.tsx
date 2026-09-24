@@ -3,17 +3,31 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { FolderKanban } from 'lucide-react'
 import type { Project } from '@/lib/db'
+import { isMiyqatProjectName } from '@/lib/project-scope'
+import { sortProjects } from '@/lib/project-order'
 
 export function ProjectSelector({ projects }: { projects: Project[] }) {
   const router = useRouter()
   const params = useSearchParams()
+  const ordered = sortProjects(projects)
 
   function onChange(value: string) {
     const next = new URLSearchParams(params.toString())
     if (value) next.set('project', value)
     else next.delete('project')
-    // Reset creator filter when switching projects so it stays consistent.
+    // Reset person filters when switching projects so lists stay consistent.
     next.delete('creator')
+    next.delete('aCreator')
+    next.delete('pvPerson')
+
+    // Miqat posts are almost all from reposters; staying on the default
+    // "Creators" role makes Videos / Analytics look empty.
+    const picked = ordered.find((p) => String(p.id) === value)
+    const role = params.get('role')
+    if (picked && isMiyqatProjectName(picked.name) && (!role || role === 'creator')) {
+      next.set('role', 'all')
+    }
+
     router.push(`/admin?${next.toString()}`)
   }
 
@@ -27,7 +41,7 @@ export function ProjectSelector({ projects }: { projects: Project[] }) {
         className="h-10 appearance-none rounded-lg border border-input bg-background pl-9 pr-8 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <option value="">All projects</option>
-        {projects.map((p) => (
+        {ordered.map((p) => (
           <option key={p.id} value={p.id}>
             {p.name}
           </option>

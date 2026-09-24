@@ -492,6 +492,8 @@ export default async function AdminPage({
                 byCreatorDaily={byCreatorDaily}
                 leaderboard={leaderboard}
                 creators={creators.map((c) => ({ id: c.id, name: c.name }))}
+                projects={projects}
+                projectId={projectId}
                 selectedCreatorId={aCreatorId}
                 today={today}
                 defaultFrom={aFrom}
@@ -521,6 +523,8 @@ export default async function AdminPage({
                   contestPrize: t('contestPrize'),
                   contestPodium: t('contestPodium'),
                   contestViewsBonus: t('contestViewsBonus'),
+                  allProjects: t('allProjects'),
+                  chooseProject: t('chooseProject'),
                 }}
               />
             ),
@@ -583,6 +587,7 @@ export default async function AdminPage({
                 selectedCreatorId={pvCreatorId}
                 mode={pvMode}
                 kind={pvKind}
+                projectId={projectId}
                 today={today}
                 defaultFrom={pvFrom}
                 defaultTo={pvTo}
@@ -611,6 +616,8 @@ export default async function AdminPage({
                   tiktok: t('tiktok'),
                   search: t('projectViewsSearch'),
                   noVideosMatch: t('noVideosMatch'),
+                  allProjects: t('allProjects'),
+                  chooseProject: t('chooseProject'),
                 }}
               />
             ),
@@ -624,9 +631,15 @@ export default async function AdminPage({
               <Suspense fallback={<p className="text-sm text-muted-foreground">…</p>}>
                 <TopVideosPanel
                   videos={topVideos}
+                  projects={projects}
+                  projectId={projectId}
                   today={today}
                   defaultFrom={tvFrom}
                   defaultTo={tvTo}
+                  labels={{
+                    allProjects: t('allProjects'),
+                    chooseProject: t('chooseProject'),
+                  }}
                 />
               </Suspense>
             ),
@@ -698,10 +711,21 @@ export default async function AdminPage({
               <div className="flex flex-col gap-3">
                 <FiltersBar
                   creators={creators}
+                  projects={projects}
+                  projectId={projectId}
                   today={today}
                   defaultFrom={monthStart}
                   defaultTo={monthEnd}
+                  labels={{
+                    allProjects: t('allProjects'),
+                    chooseProject: t('chooseProject'),
+                  }}
                 />
+                {miyqatScope && roleFilter === 'creator' && submissions.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                    {t('miqatRoleHint')}
+                  </p>
+                ) : null}
                 <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
                   <Suspense
                     fallback={

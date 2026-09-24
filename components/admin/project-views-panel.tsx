@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Check, Copy, Download, Search } from 'lucide-react'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
+import { PanelProjectFilter } from '@/components/admin/panel-project-filter'
 import { SubmissionsTable } from '@/components/admin/submissions-table'
 import { formatNumber } from '@/lib/format'
 import { adminPersonHref } from '@/lib/admin-href'
@@ -36,6 +37,8 @@ type Labels = {
   tiktok: string
   search: string
   noVideosMatch: string
+  allProjects: string
+  chooseProject: string
 }
 
 function csvEscape(value: string | number): string {
@@ -74,6 +77,7 @@ export function ProjectViewsPanel({
   selectedCreatorId,
   mode,
   kind,
+  projectId,
   today,
   defaultFrom,
   defaultTo,
@@ -84,6 +88,7 @@ export function ProjectViewsPanel({
   selectedCreatorId: number | null
   mode: 'combined' | number
   kind: RoleFilter
+  projectId?: number | null
   today: string
   defaultFrom: string
   defaultTo: string
@@ -104,6 +109,17 @@ export function ProjectViewsPanel({
     for (const [key, value] of Object.entries(patch)) {
       if (value == null || value === '') next.delete(key)
       else next.set(key, value)
+    }
+    const nextProject = patch.project
+    if (nextProject) {
+      const name = board.projects.find((p) => String(p.id) === nextProject)?.name ?? ''
+      if (/miq|miy/i.test(name)) {
+        const role = next.get('role')
+        if (!role || role === 'creator') next.set('role', 'all')
+      }
+      next.delete('creator')
+      next.delete('aCreator')
+      next.delete('pvPerson')
     }
     router.push(`/admin?${next.toString()}`)
   }
@@ -183,6 +199,16 @@ export function ProjectViewsPanel({
 
   return (
     <div className="flex flex-col gap-4">
+      <PanelProjectFilter
+        projects={board.projects}
+        projectId={projectId}
+        panel="projectviews"
+        promptWhenAll
+        labels={{
+          allProjects: labels.allProjects,
+          chooseProject: labels.chooseProject,
+        }}
+      />
       <DateRangePresets
         today={today}
         from={from}
@@ -263,22 +289,24 @@ export function ProjectViewsPanel({
         <div
           className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-muted/30 p-1"
           role="group"
-          aria-label="Project"
+          aria-label="Focus"
         >
-          {board.projects.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => push({ pvMode: String(p.id) })}
-              className={toggleClass(mode === p.id)}
-            >
-              {p.name}
-            </button>
-          ))}
+          {projectId == null
+            ? board.projects.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => push({ pvMode: String(p.id) })}
+                  className={toggleClass(mode === p.id)}
+                >
+                  {p.name}
+                </button>
+              ))
+            : null}
           <button
             type="button"
-            onClick={() => push({ pvMode: 'combined' })}
-            className={toggleClass(mode === 'combined')}
+            onClick={() => push({ pvMode: 'combined', project: null })}
+            className={toggleClass(mode === 'combined' && projectId == null)}
           >
             {labels.combined}
           </button>
@@ -305,6 +333,22 @@ export function ProjectViewsPanel({
 
       {board.projects.length === 0 ? (
         <p className="text-sm text-muted-foreground">{labels.empty}</p>
+      ) : projectId != null ? (
+        <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
+          <div className="text-lg font-semibold tabular-nums">
+            {formatNumber(board.totals.views)}
+          </div>
+          <div className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {board.projects.find((p) => p.id === projectId)?.name ?? 'Project'}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {formatNumber(board.totals.videos)} {labels.videos}
+            {' · '}
+            {labels.instagram} {formatNumber(board.totals.viewsInstagram)}
+            {' · '}
+            {labels.tiktok} {formatNumber(board.totals.viewsTiktok)}
+          </p>
+        </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
           {board.projects.map((p) => {
@@ -313,7 +357,12 @@ export function ProjectViewsPanel({
               <button
                 key={p.id}
                 type="button"
-                onClick={() => push({ pvMode: String(p.id) })}
+                onClick={() =>
+                  push({
+                    project: String(p.id),
+                    pvMode: String(p.id),
+                  })
+                }
                 className={`rounded-lg border p-3 text-left transition-colors ${
                   active ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-accent/40'
                 }`}
@@ -332,7 +381,7 @@ export function ProjectViewsPanel({
           })}
           <button
             type="button"
-            onClick={() => push({ pvMode: 'combined' })}
+            onClick={() => push({ project: null, pvMode: 'combined' })}
             className={`rounded-lg border p-3 text-left transition-colors ${
               mode === 'combined'
                 ? 'border-primary bg-primary/5'

@@ -916,6 +916,20 @@ export async function addCreatorSubmission(creatorId: number, formData: FormData
   `) as { id: number; project_id: number | null }[]
   if (!creator[0]) return { ok: false as const, message: 'Creator not found.' }
 
+  const projectRaw = (formData.get('project_id') ?? '').toString().trim()
+  const parsedProject = projectRaw ? Number(projectRaw) : NaN
+  let projectId: number | null = creator[0].project_id
+  if (Number.isFinite(parsedProject) && parsedProject > 0) {
+    const exists = (await sql`
+      SELECT id FROM projects WHERE id = ${parsedProject} LIMIT 1
+    `) as { id: number }[]
+    if (!exists[0]) return { ok: false as const, message: 'That project is not available.' }
+    projectId = parsedProject
+  }
+  if (projectId == null) {
+    return { ok: false as const, message: 'Choose Miqat or Notek for this video.' }
+  }
+
   let views = 0
   let viewsError: string | null = null
   let platformPostedAt: string | null = null
@@ -949,7 +963,7 @@ export async function addCreatorSubmission(creatorId: number, formData: FormData
     )
     VALUES (
       ${creatorId},
-      ${creator[0].project_id},
+      ${projectId},
       ${platform},
       ${finalUrl},
       ${videoDate}::date,

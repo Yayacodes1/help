@@ -1,19 +1,29 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
-import type { Creator } from '@/lib/db'
+import type { Creator, Project } from '@/lib/db'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
+import { PanelProjectFilter } from '@/components/admin/panel-project-filter'
 
 export function FiltersBar({
   creators,
+  projects,
+  projectId,
   today,
   defaultFrom,
   defaultTo,
+  labels,
 }: {
   creators: Creator[]
+  projects: Pick<Project, 'id' | 'name'>[]
+  projectId?: number | null
   today: string
   defaultFrom: string
   defaultTo: string
+  labels: {
+    allProjects: string
+    chooseProject: string
+  }
 }) {
   const router = useRouter()
   const params = useSearchParams()
@@ -61,6 +71,13 @@ export function FiltersBar({
 
   return (
     <div className="flex flex-col gap-3">
+      <PanelProjectFilter
+        projects={projects}
+        projectId={projectId}
+        panel="videos"
+        promptWhenAll
+        labels={labels}
+      />
       <DateRangePresets today={today} from={from} to={to} onSelect={setRange} />
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1">

@@ -78,9 +78,10 @@ export async function getProjectViewsBoard(opts: {
   const includeAllPeople = opts.includeAllPeople ?? false
 
   const [projectRows, roster, aggs] = await Promise.all([
+    // Always list every project so the UI can switch Miqat ↔ Notek even when
+    // the header is already scoped to one of them.
     sql`
       SELECT id, name FROM projects
-      WHERE (${projectId}::int IS NULL OR id = ${projectId})
       ORDER BY name ASC
     `,
     sql`
