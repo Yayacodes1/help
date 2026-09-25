@@ -3,6 +3,7 @@
 import { useTransition } from 'react'
 import type { Creator, Project } from '@/lib/db'
 import { updateCreator } from '@/app/actions/admin'
+import { BrandHandleFields } from '@/components/person-handles'
 
 const inputClass =
   'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -51,6 +52,12 @@ export function CreatorContractForm({
             />
           </label>
         </div>
+        <BrandHandleFields
+          notekTiktok={creator.notek_tiktok_username}
+          notekInstagram={creator.notek_instagram_username}
+          miqatTiktok={creator.miqat_tiktok_username}
+          miqatInstagram={creator.miqat_instagram_username}
+        />
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Login account
           <select

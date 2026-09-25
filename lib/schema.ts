@@ -164,6 +164,10 @@ export async function ensureCreatorTrackingColumns() {
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS tiktok_username text`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS instagram_username text`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS login_platform text`
+  await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS notek_tiktok_username text`
+  await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS notek_instagram_username text`
+  await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS miqat_tiktok_username text`
+  await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS miqat_instagram_username text`
   await sql`
     UPDATE creators
     SET tiktok_username = name

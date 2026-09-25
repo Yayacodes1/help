@@ -17,6 +17,23 @@ export function displayHandle(value: string | null | undefined): string | null {
   return cleaned || null
 }
 
+export function tiktokProfileUrl(handle: string | null | undefined): string | null {
+  const h = displayHandle(handle)
+  return h ? `https://www.tiktok.com/@${encodeURIComponent(h)}` : null
+}
+
+export function instagramProfileUrl(handle: string | null | undefined): string | null {
+  const h = displayHandle(handle)
+  return h ? `https://www.instagram.com/${encodeURIComponent(h)}/` : null
+}
+
+export type BrandSocialHandles = {
+  notek_tiktok_username?: string | null
+  notek_instagram_username?: string | null
+  miqat_tiktok_username?: string | null
+  miqat_instagram_username?: string | null
+}
+
 export function parseLoginPlatform(value: unknown): LoginPlatform | null {
   const raw = typeof value === 'string' ? value : value?.toString()
   return raw === 'instagram' || raw === 'tiktok' ? raw : null

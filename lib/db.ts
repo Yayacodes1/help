@@ -40,6 +40,11 @@ export type Creator = {
   notes: string | null
   tiktok_username: string | null
   instagram_username: string | null
+  /** Brand-specific profiles (same person, Notek vs Miqat accounts). */
+  notek_tiktok_username: string | null
+  notek_instagram_username: string | null
+  miqat_tiktok_username: string | null
+  miqat_instagram_username: string | null
   /** Which social handle they log in with and that appears on the ranking. */
   login_platform: Platform
 }

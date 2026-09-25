@@ -8,7 +8,7 @@ import type { ParticipantRole, RoleFilter } from '@/lib/participant-role'
 import { createCreator, deleteCreator, updateCreator } from '@/app/actions/admin'
 import { RoleQuickSelect } from '@/components/admin/role-quick-select'
 import { BulkReposterPay } from '@/components/admin/bulk-reposter-pay'
-import { PersonHandlesLine } from '@/components/person-handles'
+import { BrandHandleFields, PersonHandlesLine } from '@/components/person-handles'
 import { adminPersonHref } from '@/lib/admin-href'
 import Link from 'next/link'
 
@@ -119,52 +119,68 @@ export function CreatorsManager({
     tiktok,
     instagram,
     loginPlatform,
+    notekTiktok,
+    notekInstagram,
+    miqatTiktok,
+    miqatInstagram,
   }: {
     name?: string
     tiktok?: string | null
     instagram?: string | null
     loginPlatform?: string | null
+    notekTiktok?: string | null
+    notekInstagram?: string | null
+    miqatTiktok?: string | null
+    miqatInstagram?: string | null
   }) {
     return (
-      <div className="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Display name
-          <input
-            name="name"
-            defaultValue={name ?? ''}
-            placeholder="Optional if a handle is set"
-            className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          TikTok username
-          <input
-            name="tiktok_username"
-            defaultValue={tiktok ?? ''}
-            placeholder="@tiktok"
-            className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Instagram username
-          <input
-            name="instagram_username"
-            defaultValue={instagram ?? ''}
-            placeholder="@instagram"
-            className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Login account
-          <select
-            name="login_platform"
-            defaultValue={loginPlatform === 'instagram' ? 'instagram' : 'tiktok'}
-            className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="tiktok">TikTok</option>
-            <option value="instagram">Instagram</option>
-          </select>
-        </label>
+      <div className="grid w-full gap-2">
+        <div className="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Display name
+            <input
+              name="name"
+              defaultValue={name ?? ''}
+              placeholder="Optional if a handle is set"
+              className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            TikTok username
+            <input
+              name="tiktok_username"
+              defaultValue={tiktok ?? ''}
+              placeholder="@tiktok"
+              className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Instagram username
+            <input
+              name="instagram_username"
+              defaultValue={instagram ?? ''}
+              placeholder="@instagram"
+              className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Login account
+            <select
+              name="login_platform"
+              defaultValue={loginPlatform === 'instagram' ? 'instagram' : 'tiktok'}
+              className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="tiktok">TikTok</option>
+              <option value="instagram">Instagram</option>
+            </select>
+          </label>
+        </div>
+        <BrandHandleFields
+          notekTiktok={notekTiktok}
+          notekInstagram={notekInstagram}
+          miqatTiktok={miqatTiktok}
+          miqatInstagram={miqatInstagram}
+        />
       </div>
     )
   }
@@ -252,6 +268,10 @@ export function CreatorsManager({
                     tiktok={c.tiktok_username}
                     instagram={c.instagram_username}
                     loginPlatform={c.login_platform}
+                    notekTiktok={c.notek_tiktok_username}
+                    notekInstagram={c.notek_instagram_username}
+                    miqatTiktok={c.miqat_tiktok_username}
+                    miqatInstagram={c.miqat_instagram_username}
                   />
                   <div className="flex flex-wrap items-center gap-2">
                     <select name="project_id" defaultValue={c.project_id ?? ''} className={selectClass}>

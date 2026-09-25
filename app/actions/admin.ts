@@ -193,13 +193,26 @@ export async function deleteProject(id: number) {
 function parsePersonHandles(formData: FormData, fallbackName: string) {
   const tiktok = parseOptionalHandle(formData.get('tiktok_username'))
   const instagram = parseOptionalHandle(formData.get('instagram_username'))
+  const notekTiktok = parseOptionalHandle(formData.get('notek_tiktok_username'))
+  const notekInstagram = parseOptionalHandle(formData.get('notek_instagram_username'))
+  const miqatTiktok = parseOptionalHandle(formData.get('miqat_tiktok_username'))
+  const miqatInstagram = parseOptionalHandle(formData.get('miqat_instagram_username'))
   const nameRaw = normalizeHandle((formData.get('name') ?? '').toString())
   const name = nameRaw || tiktok || instagram || fallbackName
   const login_platform = resolveLoginPlatform(
     { name, tiktok_username: tiktok, instagram_username: instagram },
     parseLoginPlatform(formData.get('login_platform')),
   )
-  return { name, tiktok, instagram, login_platform }
+  return {
+    name,
+    tiktok,
+    instagram,
+    login_platform,
+    notekTiktok,
+    notekInstagram,
+    miqatTiktok,
+    miqatInstagram,
+  }
 }
 
 async function handleIsTaken(
@@ -239,7 +252,16 @@ async function handleIsTaken(
 
 export async function createCreator(formData: FormData) {
   await requireAdmin()
-  const { name, tiktok, instagram, login_platform } = parsePersonHandles(formData, '')
+  const {
+    name,
+    tiktok,
+    instagram,
+    login_platform,
+    notekTiktok,
+    notekInstagram,
+    miqatTiktok,
+    miqatInstagram,
+  } = parsePersonHandles(formData, '')
   const projectIdRaw = (formData.get('project_id') ?? '').toString()
   const projectId = projectIdRaw ? Number(projectIdRaw) : null
   if (!name || (!tiktok && !instagram)) return
@@ -260,11 +282,14 @@ export async function createCreator(formData: FormData) {
   const rows = (await sql`
     INSERT INTO creators (
       name, token, project_id, role, goal_instagram, goal_tiktok, platforms,
-      last_paid_at, pay_every_days, notes, tiktok_username, instagram_username, login_platform
+      last_paid_at, pay_every_days, notes, tiktok_username, instagram_username, login_platform,
+      notek_tiktok_username, notek_instagram_username,
+      miqat_tiktok_username, miqat_instagram_username
     )
     VALUES (
       ${name}, ${token}, ${projectId}, ${role}, ${goals.goalInstagram}, ${goals.goalTiktok}, ${platforms},
-      ${lastPaidAt}, ${payEveryDays}, ${notes}, ${tiktok}, ${instagram}, ${login_platform}
+      ${lastPaidAt}, ${payEveryDays}, ${notes}, ${tiktok}, ${instagram}, ${login_platform},
+      ${notekTiktok}, ${notekInstagram}, ${miqatTiktok}, ${miqatInstagram}
     )
     RETURNING id
   `) as { id: number }[]
@@ -290,7 +315,16 @@ export async function createCreator(formData: FormData) {
 
 export async function updateCreator(id: number, formData: FormData) {
   await requireAdmin()
-  const { name, tiktok, instagram, login_platform } = parsePersonHandles(formData, '')
+  const {
+    name,
+    tiktok,
+    instagram,
+    login_platform,
+    notekTiktok,
+    notekInstagram,
+    miqatTiktok,
+    miqatInstagram,
+  } = parsePersonHandles(formData, '')
   const projectIdRaw = (formData.get('project_id') ?? '').toString()
   const projectId = projectIdRaw ? Number(projectIdRaw) : null
   if (!name || (!tiktok && !instagram)) return
@@ -316,7 +350,11 @@ export async function updateCreator(id: number, formData: FormData) {
         notes = ${notes},
         tiktok_username = ${tiktok},
         instagram_username = ${instagram},
-        login_platform = ${login_platform}
+        login_platform = ${login_platform},
+        notek_tiktok_username = ${notekTiktok},
+        notek_instagram_username = ${notekInstagram},
+        miqat_tiktok_username = ${miqatTiktok},
+        miqat_instagram_username = ${miqatInstagram}
     WHERE id = ${id}
   `
   revalidatePath('/admin')
