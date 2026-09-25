@@ -28,7 +28,7 @@ export function ProjectSelector({ projects }: { projects: Project[] }) {
       next.set('role', 'all')
     }
 
-    router.push(`/admin?${next.toString()}`)
+    router.push(`/admin?${next.toString()}`, { scroll: false })
   }
 
   return (

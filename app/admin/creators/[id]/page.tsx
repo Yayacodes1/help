@@ -280,22 +280,25 @@ export default async function CreatorDetailPage({
                     ? t('strikesCorrectiveFlag')
                     : t('strikeCount'),
                   children: (
-                    <StrikesManager
-                      creatorId={creator.id}
-                      today={opToday}
-                      strikes={strikeSummary.strikes}
-                      labels={{
-                        title: t('strikesTitle'),
-                        hint: t('strikesHint'),
-                        date: t('strikeDate'),
-                        reason: t('strikeReason'),
-                        add: t('strikeAdd'),
-                        remove: t('strikeRemove'),
-                        empty: t('strikeEmpty'),
-                        auto: t('strikeSourceAuto'),
-                        manual: t('strikeSourceManual'),
-                      }}
-                    />
+                    <div className="flex flex-col gap-4">
+                      <StrikesManager
+                        creatorId={creator.id}
+                        today={opToday}
+                        strikes={strikeSummary.strikes}
+                        labels={{
+                          title: t('strikesTitle'),
+                          hint: t('strikesHint'),
+                          date: t('strikeDate'),
+                          reason: t('strikeReason'),
+                          add: t('strikeAdd'),
+                          remove: t('strikeRemove'),
+                          empty: t('strikeEmpty'),
+                          auto: t('strikeSourceAuto'),
+                          manual: t('strikeSourceManual'),
+                        }}
+                      />
+                      <BreaksManager creatorId={creator.id} today={today} breaks={breaks} />
+                    </div>
                   ),
                 },
               ]
@@ -312,7 +315,9 @@ export default async function CreatorDetailPage({
                   today={today}
                   comparisons={comparisons}
                 />
-                <BreaksManager creatorId={creator.id} today={today} breaks={breaks} />
+                {!strikeSummary ? (
+                  <BreaksManager creatorId={creator.id} today={today} breaks={breaks} />
+                ) : null}
               </div>
             ),
           },

@@ -28,7 +28,7 @@ export function RoleSelector({
     // Reset creator filter when switching role so it stays consistent.
     next.delete('creator')
     next.delete('aCreator')
-    router.push(`/admin?${next.toString()}`)
+    router.push(`/admin?${next.toString()}`, { scroll: false })
   }
 
   return (

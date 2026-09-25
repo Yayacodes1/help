@@ -49,7 +49,7 @@ export function PanelProjectFilter({
     next.delete('creator')
     next.delete('aCreator')
     next.delete('pvPerson')
-    router.push(`/admin?${next.toString()}`)
+    router.push(`/admin?${next.toString()}`, { scroll: false })
   }
 
   const toggleClass = (active: boolean) =>

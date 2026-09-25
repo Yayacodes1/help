@@ -36,7 +36,7 @@ export function FiltersBar({
     if (value) next.set(key, value)
     else next.delete(key)
     next.set('panel', 'videos')
-    router.push(`/admin?${next.toString()}`)
+    router.push(`/admin?${next.toString()}`, { scroll: false })
   }
 
   function setRange(nextFrom: string, nextTo: string) {
@@ -46,7 +46,7 @@ export function FiltersBar({
     if (nextTo) next.set('to', nextTo)
     else next.delete('to')
     next.set('panel', 'videos')
-    router.push(`/admin?${next.toString()}`)
+    router.push(`/admin?${next.toString()}`, { scroll: false })
   }
 
   // Clearing keeps the selected project and role (owned by the top-level selectors).
@@ -57,7 +57,7 @@ export function FiltersBar({
     if (project) next.set('project', project)
     if (role) next.set('role', role)
     next.set('panel', 'videos')
-    router.push(`/admin?${next.toString()}`)
+    router.push(`/admin?${next.toString()}`, { scroll: false })
   }
 
   const inputClass =

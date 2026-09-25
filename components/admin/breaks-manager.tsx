@@ -1,9 +1,10 @@
 'use client'
 
-import { useTransition } from 'react'
+import { useTransition, useState } from 'react'
 import type { ScheduleBreak } from '@/lib/db'
 import { createScheduleBreak, deleteScheduleBreak } from '@/app/actions/admin'
 import { formatDate } from '@/lib/format'
+import { addDays } from '@/lib/campaign'
 
 export function BreaksManager({
   creatorId,
@@ -15,13 +16,17 @@ export function BreaksManager({
   breaks: ScheduleBreak[]
 }) {
   const [pending, startTransition] = useTransition()
+  const [start, setStart] = useState(today)
+  const [days, setDays] = useState(1)
+  const endPreview = days >= 1 ? addDays(start, days - 1) : start
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <h2 className="text-sm font-semibold">Scheduled breaks</h2>
+      <h2 className="text-sm font-semibold">Break / rest days</h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Break days do not count as misses and do not break the streak. If the current contract has
-        an end date, it is extended by the length of the break.
+        Break and rest are the same: those days do not count as misses and do not add
+        strikes. If the current contract has an end date, it is extended by the length of
+        the break.
       </p>
       <form
         className="mt-3 grid gap-2 sm:grid-cols-4"
@@ -33,25 +38,39 @@ export function BreaksManager({
             type="date"
             name="start_date"
             required
-            defaultValue={today}
+            value={start}
+            onChange={(e) => setStart(e.target.value || today)}
             className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          To
+          Days
           <input
-            type="date"
-            name="end_date"
+            type="number"
+            name="days"
+            min={1}
+            max={90}
             required
-            defaultValue={today}
+            value={days}
+            onChange={(e) => setDays(Math.max(1, Number(e.target.value) || 1))}
             className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2">
+          Through (auto)
+          <input
+            type="date"
+            name="end_date"
+            value={endPreview}
+            readOnly
+            className="h-10 rounded-lg border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-4">
           Reason (optional)
           <input
             name="reason"
-            placeholder="Vacation, illness…"
+            placeholder="Break / rest, vacation, illness…"
             className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
           />
         </label>
@@ -60,7 +79,7 @@ export function BreaksManager({
           disabled={pending}
           className="h-10 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-60 sm:col-span-4"
         >
-          {pending ? 'Saving…' : 'Add break'}
+          {pending ? 'Saving…' : 'Add break / rest'}
         </button>
       </form>
 

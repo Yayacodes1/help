@@ -15,7 +15,7 @@ const STATUS_LABEL: Record<DayStatus, string> = {
   miss: 'Missed',
   none: 'No goal',
   future: 'Upcoming',
-  break: 'Break',
+  break: 'Break / rest',
 }
 
 export function ConsistencyCalendar({ days }: { days: DayProgress[] }) {

@@ -543,6 +543,12 @@ export async function updateContract(id: number, creatorId: number, formData: Fo
       : undefined,
   )
 
+  const maxStrikesRaw = Number(formData.get('max_strikes'))
+  const maxStrikes =
+    Number.isFinite(maxStrikesRaw) && maxStrikesRaw >= 1 && maxStrikesRaw <= 20
+      ? Math.floor(maxStrikesRaw)
+      : null
+
   await sql`
     UPDATE contracts
     SET name = ${name}, start_date = ${start}, end_date = ${end},
@@ -553,7 +559,8 @@ export async function updateContract(id: number, creatorId: number, formData: Fo
         commission_amount = ${q.commissionAmount},
         count_mode = ${q.countMode}, views_threshold = ${q.viewsThreshold},
         view_commission_amount = ${q.viewCommissionAmount},
-        commission_reels = ${q.commissionReels}
+        commission_reels = ${q.commissionReels},
+        max_strikes = COALESCE(${maxStrikes}, max_strikes)
     WHERE id = ${id} AND creator_id = ${creatorId}
   `
 
@@ -990,7 +997,11 @@ function inclusiveDayCount(start: string, end: string): number {
 export async function createScheduleBreak(creatorId: number, formData: FormData) {
   await requireAdmin()
   const start = parseOptionalDate(formData.get('start_date'))
-  const end = parseOptionalDate(formData.get('end_date'))
+  let end = parseOptionalDate(formData.get('end_date'))
+  const daysRaw = Number(formData.get('days'))
+  if (start && Number.isFinite(daysRaw) && daysRaw >= 1) {
+    end = addDays(start, Math.floor(daysRaw) - 1)
+  }
   if (!start || !end || end < start) return
   const reasonRaw = (formData.get('reason') ?? '').toString().trim()
   const reason = reasonRaw ? reasonRaw.slice(0, 500) : null
@@ -1137,4 +1148,74 @@ export async function removeLatestStrike(creatorId: number) {
     WHERE id = ${rows[0].id} AND creator_id = ${creatorId}
   `
   revalidateStrikePaths(creatorId)
+}
+
+/** Waive all active strikes for the current contract (or all if no contract). */
+export async function resetCreatorStrikes(creatorId: number) {
+  await requireAdmin()
+  const today = await getServerToday()
+  const contract = (await sql`
+    SELECT id FROM contracts
+    WHERE creator_id = ${creatorId}
+      AND start_date <= ${today}::date
+      AND (end_date IS NULL OR end_date >= ${today}::date)
+    ORDER BY start_date DESC, id DESC
+    LIMIT 1
+  `) as { id: number }[]
+  const contractId = contract[0]?.id ?? null
+  if (contractId) {
+    await sql`
+      UPDATE creator_strikes
+      SET status = 'waived'
+      WHERE creator_id = ${creatorId}
+        AND status = 'active'
+        AND (contract_id = ${contractId} OR contract_id IS NULL)
+    `
+  } else {
+    await sql`
+      UPDATE creator_strikes
+      SET status = 'waived'
+      WHERE creator_id = ${creatorId} AND status = 'active'
+    `
+  }
+  revalidateStrikePaths(creatorId)
+}
+
+/** Waive every active reposter strike. */
+export async function resetAllReposterStrikes() {
+  await requireAdmin()
+  await sql`
+    UPDATE creator_strikes cs
+    SET status = 'waived'
+    FROM creators c
+    WHERE cs.creator_id = c.id
+      AND c.role = 'reposter'
+      AND cs.status = 'active'
+  `
+  revalidatePath('/admin')
+  revalidatePath('/submit')
+}
+
+export async function updateContractMaxStrikes(contractId: number, formData: FormData) {
+  await requireAdmin()
+  const raw = Number(formData.get('max_strikes'))
+  if (!Number.isFinite(raw) || raw < 1 || raw > 20) return
+  const maxStrikes = Math.floor(raw)
+  const rows = (await sql`
+    UPDATE contracts
+    SET max_strikes = ${maxStrikes}
+    WHERE id = ${contractId}
+    RETURNING creator_id
+  `) as { creator_id: number }[]
+  const creatorId = rows[0]?.creator_id
+  if (creatorId) revalidateStrikePaths(creatorId)
+  else revalidatePath('/admin')
+}
+
+/** Board-level break: creator_id + start + days (or end_date). */
+export async function createBoardScheduleBreak(formData: FormData) {
+  await requireAdmin()
+  const creatorId = Number(formData.get('creator_id'))
+  if (!Number.isFinite(creatorId) || creatorId < 1) return
+  await createScheduleBreak(creatorId, formData)
 }

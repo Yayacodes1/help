@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { refreshViews, type RefreshViewsScope } from '@/lib/refresh-views'
 import { revalidatePath } from 'next/cache'
+import { refreshViews, type RefreshViewsScope } from '@/lib/refresh-views'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -26,33 +26,43 @@ async function run(req: Request) {
   const { syncReposterStrikes } = await import('@/lib/strikes')
   const { ensureCreatorTrackingColumns } = await import('@/lib/schema')
   const { sendDailyAttendanceTelegram } = await import('@/lib/attendance')
+  const { ensureStreakEpoch } = await import('@/lib/streak-epoch')
+
   await ensureCreatorTrackingColumns()
   const opToday = await getOperationalToday()
   const strikesAdded = await syncReposterStrikes({ today: opToday })
-  const { ensureStreakEpoch } = await import('@/lib/streak-epoch')
   const streakEpoch = await ensureStreakEpoch(await getServerToday())
   const telegram = await sendDailyAttendanceTelegram(opToday)
 
-  if (!process.env.TIKHUB_API_KEY?.trim()) {
-    revalidatePath('/admin')
-    revalidatePath('/submit')
-    return NextResponse.json({
-      error: 'TIKHUB_API_KEY is not set',
-      strikesAdded,
-      streakEpoch,
-      telegram,
-    }, { status: 500 })
+  const url = new URL(req.url)
+  const skipViews = url.searchParams.get('skipViews') === '1'
+  let views: Awaited<ReturnType<typeof refreshViews>> | null = null
+  let viewsError: string | null = null
+
+  if (!skipViews) {
+    if (!process.env.TIKHUB_API_KEY?.trim()) {
+      viewsError = 'TIKHUB_API_KEY is not set'
+    } else {
+      const scopeParam = url.searchParams.get('scope')
+      const scope: RefreshViewsScope = scopeParam === 'all' ? 'all' : 'recent'
+      views = await refreshViews(scope, { delayMs: 80, limit: 40 })
+    }
   }
 
-  const url = new URL(req.url)
-  const scopeParam = url.searchParams.get('scope')
-  // Default: today + yesterday once daily (Hobby allows 1 cron/day). Pass ?scope=all for rare full backfills.
-  const scope: RefreshViewsScope = scopeParam === 'all' ? 'all' : 'recent'
-
-  const result = await refreshViews(scope, { delayMs: 80, limit: 40 })
   revalidatePath('/admin')
   revalidatePath('/submit')
-  return NextResponse.json({ ...result, strikesAdded, streakEpoch, telegram })
+
+  return NextResponse.json({
+    ok: telegram.ok,
+    opToday,
+    day: telegram.day,
+    strikesAdded,
+    streakEpoch,
+    telegramSkipped: telegram.skipped ?? false,
+    telegramError: telegram.error ?? null,
+    views,
+    viewsError,
+  })
 }
 
 export async function GET(req: Request) {

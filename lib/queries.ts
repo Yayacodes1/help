@@ -28,7 +28,7 @@ export async function getServerToday(): Promise<string> {
   return rows[0].today
 }
 
-/** 5am–5am posting day in Riyadh (used for reposter strikes). */
+/** Midnight–midnight posting day in Riyadh (used for reposter strikes). */
 export async function getOperationalToday(): Promise<string> {
   const { operationalDayFromIso } = await import('@/lib/operational-day')
   const now = await getServerNowIso()
@@ -419,7 +419,8 @@ export async function getContractsForCreator(creatorId: number): Promise<Contrac
            commission_amount::float AS commission_amount,
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
-           commission_reels
+           commission_reels,
+           COALESCE(max_strikes, 3)::int AS max_strikes
     FROM contracts
     WHERE creator_id = ${creatorId}
     ORDER BY start_date DESC, id DESC
@@ -443,7 +444,8 @@ export async function getActiveContract(
            commission_amount::float AS commission_amount,
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
-           commission_reels
+           commission_reels,
+           COALESCE(max_strikes, 3)::int AS max_strikes
     FROM contracts
     WHERE creator_id = ${creatorId}
       AND start_date <= ${today}::date
@@ -466,7 +468,8 @@ export async function getActiveContract(
            commission_amount::float AS commission_amount,
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
-           commission_reels
+           commission_reels,
+           COALESCE(max_strikes, 3)::int AS max_strikes
     FROM contracts
     WHERE creator_id = ${creatorId}
     ORDER BY start_date DESC, id DESC

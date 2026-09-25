@@ -817,6 +817,22 @@ export function ContractsManager({
                         />
                       </FormSection>
                       <FormSection
+                        title="Strikes"
+                        hint="Max strikes allowed in this contract before corrective action."
+                      >
+                        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                          Max strikes
+                          <input
+                            type="number"
+                            name="max_strikes"
+                            min={1}
+                            max={20}
+                            defaultValue={contract.max_strikes ?? 3}
+                            className={inputClass}
+                          />
+                        </label>
+                      </FormSection>
+                      <FormSection
                         title="Pay (base)"
                         hint="Monthly = full month. Biweekly = each 14-day Pay. Flat bonus optional."
                       >

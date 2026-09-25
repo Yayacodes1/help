@@ -1,10 +1,16 @@
 import { addDays } from '@/lib/campaign'
 
-/** Posting day used for reposter strikes. 5:00 AM Riyadh → 5:00 AM next day. */
+/** Posting day used for reposter strikes. Midnight → midnight (Riyadh). */
 export const OPERATIONAL_TZ = 'Asia/Riyadh'
-export const OPERATIONAL_ROLLOVER_HOUR = 5
+export const OPERATIONAL_ROLLOVER_HOUR = 0
 export const CORRECTIVE_STRIKE_COUNT = 3
 export const STRIKE_LOOKBACK_DAYS = 3
+
+/** Max strikes for a contract; falls back to CORRECTIVE_STRIKE_COUNT. */
+export function strikeLimit(max: number | null | undefined): number {
+  const n = Number(max)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : CORRECTIVE_STRIKE_COUNT
+}
 
 function partNumber(
   parts: Intl.DateTimeFormatPart[],
@@ -29,8 +35,8 @@ export function calendarDayInTimeZone(iso: string, tz: string): string {
 }
 
 /**
- * Operational posting day: the local calendar date, shifted back one day
- * when the local clock is still before 5:00 AM.
+ * Operational posting day: the local calendar date in Riyadh.
+ * With rollover hour 0, this is simply the Riyadh calendar day (midnight cutoff).
  */
 export function operationalDayFromIso(
   iso: string,

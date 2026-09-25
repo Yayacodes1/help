@@ -8,7 +8,6 @@ import {
   getAllPaidTotal,
   getAllProjects,
   getCreatorsWithProgressOnDate,
-  getMissesFromProgress,
   getPaymentDueList,
   getPaymentsInRange,
   getPaymentsTotalInRange,
@@ -41,7 +40,7 @@ import { RoleSelector } from '@/components/admin/role-selector'
 import { TodayProgress } from '@/components/admin/today-progress'
 import { DayNavigator } from '@/components/admin/day-navigator'
 import { LogoutButton } from '@/components/admin/logout-button'
-import { MissList } from '@/components/admin/miss-list'
+import { AttentionBoard } from '@/components/admin/attention-board'
 import { PanelBoard } from '@/components/admin/panel-board'
 import { SubmissionsTable } from '@/components/admin/submissions-table'
 import { PaymentsPeriodPanel } from '@/components/admin/payments-period-panel'
@@ -67,11 +66,14 @@ import { RankingBoard } from '@/components/ranking-board'
 import { RankingFilters } from '@/components/admin/ranking-filters'
 import { StrikesPanel } from '@/components/admin/strikes-panel'
 import { getReposterStrikeBoard, syncReposterStrikes } from '@/lib/strikes'
+import { getAttendanceForDay } from '@/lib/attendance'
 import { getProjectViewsBoard } from '@/lib/project-views'
 import { ProjectViewsPanel } from '@/components/admin/project-views-panel'
 import { getCommissionBoard, getCommissionEstimate } from '@/lib/commission-data'
 import { CommissionBoardPanel } from '@/components/admin/commission-board'
-import { isMiyqatProjectName, findProjectById } from '@/lib/project-scope'
+import { isMiyqatProjectName, findProjectById, findMiyqatProject } from '@/lib/project-scope'
+import { CONTEST } from '@/lib/contest'
+import { MiqatContestPanel } from '@/components/admin/miqat-contest-panel'
 
 export const dynamic = 'force-dynamic'
 
@@ -199,12 +201,13 @@ export default async function AdminPage({
   const cmContractId =
     Number.isFinite(cmContractRaw) && cmContractRaw > 0 ? cmContractRaw : null
 
-  // Resolve project name after projects load — provisional flags; refined below.
   const projectsEarly = await getAllProjects()
   const selectedProject = findProjectById(projectsEarly, projectId ?? null)
   const miyqatScope = selectedProject != null && isMiyqatProjectName(selectedProject.name)
   const includeAllReposters = projectId != null
   const includeAllCreators = miyqatScope
+  const miqatProject = findMiyqatProject(projectsEarly)
+  const miqatId = miqatProject?.id ?? null
 
   const [
     submissions,
@@ -226,6 +229,7 @@ export default async function AdminPage({
     marketingRequests,
     outflow,
     league,
+    contestBoard,
     projectViews,
     projectViewVideos,
     strikeBoard,
@@ -294,6 +298,14 @@ export default async function AdminPage({
       projectId: rankProjectId,
       role: rankRoleSql,
     }),
+    miqatId != null
+      ? getLeagueBoard({
+          from: CONTEST.from,
+          to: CONTEST.to,
+          projectId: miqatId,
+          role: 'reposter',
+        })
+      : Promise.resolve(null),
     getProjectViewsBoard({
       from: pvFrom,
       to: pvTo,
@@ -339,7 +351,15 @@ export default async function AdminPage({
     .map((p) => `${p.name} ${formatNumber(projectViews.totals.viewsByProject[p.id] ?? 0)}`)
     .join(' · ')
   const creators = await attachTracking(creatorsBase, today)
-  const misses = getMissesFromProgress(creators)
+  const creatorIds = new Set(creators.map((c) => c.id))
+  const attendancePeople = (await getAttendanceForDay(selectedDay)).filter((p) => {
+    if (!creatorIds.has(p.id)) return false
+    if (roleFilter === 'creator' || roleFilter === 'reposter') return p.role === roleFilter
+    return true
+  })
+  const attentionCount = attendancePeople.filter(
+    (p) => p.status === 'miss' || p.status === 'partial',
+  ).length
   const openMarketingRequests = marketingRequests.filter((r) => r.status === 'open').length
   const marketingLeft = marketingBalances.reduce((sum, b) => sum + b.left, 0)
 
@@ -387,6 +407,7 @@ export default async function AdminPage({
     sp.panel &&
     [
       'analytics',
+      'miqatcontest',
       'ranking',
       'projectviews',
       'topvideos',
@@ -407,7 +428,7 @@ export default async function AdminPage({
           ? 'paydue'
           : strikeBoard.needsCorrective > 0
             ? 'strikes'
-            : misses.length > 0
+            : attentionCount > 0
               ? 'attention'
               : 'analytics'
 
@@ -518,13 +539,36 @@ export default async function AdminPage({
                   chartBar: t('chartBar'),
                   chartLog: t('chartLog'),
                   chartLinear: t('chartLinear'),
-                  contestPreset: t('contestPreset'),
-                  contestHint: t('contestHint'),
-                  contestPrize: t('contestPrize'),
-                  contestPodium: t('contestPodium'),
-                  contestViewsBonus: t('contestViewsBonus'),
                   allProjects: t('allProjects'),
                   chooseProject: t('chooseProject'),
+                }}
+              />
+            ),
+          },
+          {
+            id: 'miqatcontest',
+            title: t('contestDashboard'),
+            summary: contestBoard?.rows[0]
+              ? formatNumber(contestBoard.rows[0].views)
+              : '0',
+            hint: `${CONTEST.from.slice(5)}→${CONTEST.to.slice(5)} · Miqat`,
+            children: (
+              <MiqatContestPanel
+                board={contestBoard}
+                labels={{
+                  title: t('contestDashboard'),
+                  empty: t('contestBoardEmpty'),
+                  noProject: t('contestNoProject'),
+                  both: t('contestBoth'),
+                  instagram: t('instagram'),
+                  tiktok: t('tiktok'),
+                  views: t('views'),
+                  videos: t('videos'),
+                  rank: t('rankingRank'),
+                  prize: t('contestPrize'),
+                  diamond: t('contestDiamond'),
+                  gold: t('contestGold'),
+                  silver: t('contestSilver'),
                 }}
               />
             ),
@@ -684,6 +728,15 @@ export default async function AdminPage({
                   empty: t('strikeNoReposters'),
                   noContract: t('noContractSet'),
                   correctiveFlag: t('strikesCorrectiveFlag'),
+                  resetOne: t('strikeResetOne'),
+                  resetAll: t('strikeResetAll'),
+                  giveBreak: t('strikeGiveBreak'),
+                  breakStart: t('strikeBreakStart'),
+                  breakDays: t('strikeBreakDays'),
+                  breakReason: t('strikeBreakReason'),
+                  maxStrikes: t('strikeMax'),
+                  onBreak: t('strikeOnBreak'),
+                  saveMax: t('strikeSaveMax'),
                 }}
               />
             ),
@@ -691,14 +744,25 @@ export default async function AdminPage({
           {
             id: 'attention',
             title: t('needsAttention'),
-            summary: misses.length === 0 ? t('allClear') : `${misses.length} ${t('behind')}`,
+            summary: attentionCount === 0 ? t('allClear') : `${attentionCount} ${t('behind')}`,
             hint: isToday ? t('today') : formatDate(selectedDay),
             children: (
-              <MissList
-                misses={misses}
+              <AttentionBoard
+                people={attendancePeople}
+                selectedDay={selectedDay}
+                today={today}
                 dayLabel={isToday ? t('today') : formatDate(selectedDay)}
                 linkRole={roleFilter}
                 projectId={projectId}
+                labels={{
+                  legendHit: t('attentionHit'),
+                  legendPartial: t('attentionPartial'),
+                  legendMiss: t('attentionMiss'),
+                  legendBreak: t('attentionBreak'),
+                  missing: t('attentionNoPost'),
+                  allClear: t('allClear'),
+                  strikes: t('strikeCount'),
+                }}
               />
             ),
           },

@@ -268,6 +268,12 @@ export async function ensureCreatorTrackingColumns() {
     SET base_pay_cadence = 'monthly'
     WHERE base_pay_cadence IS NULL OR base_pay_cadence = ''
   `
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS max_strikes integer NOT NULL DEFAULT 3`
+  await sql`
+    UPDATE contracts
+    SET max_strikes = 3
+    WHERE max_strikes IS NULL OR max_strikes < 1
+  `
 
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_id text`
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_index integer`

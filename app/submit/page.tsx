@@ -23,6 +23,9 @@ import {
 } from '@/lib/queries'
 import { getLeagueBoard } from '@/lib/ranking'
 import { RankingBoard } from '@/components/ranking-board'
+import { ContestPodium } from '@/components/contest-podium'
+import { CONTEST, isContestLive } from '@/lib/contest'
+import { findMiyqatProject } from '@/lib/project-scope'
 import { StrikeBanner } from '@/components/strike-banner'
 import { operationalDayFromIso } from '@/lib/operational-day'
 import { getCreatorStrikeSummary, syncReposterStrikes } from '@/lib/strikes'
@@ -74,6 +77,9 @@ export default async function SubmitPage({
   if (date > rangeEnd) date = rangeEnd
   const isToday = date === today
 
+  const projects = await getAllProjects()
+  const miqatId = findMiyqatProject(projects)?.id ?? null
+
   const [
     counts,
     submissions,
@@ -81,8 +87,8 @@ export default async function SubmitPage({
     consistency,
     active,
     comparisons,
-    projects,
     league,
+    contestBoard,
     strikeSummary,
   ] = await Promise.all([
     getCreatorCountsByPlatformOnDate(creator.id, date),
@@ -91,9 +97,16 @@ export default async function SubmitPage({
     getCreatorConsistency(creator, today),
     getActiveContract(creator.id, today),
     getContractComparisons(creator, today),
-    getAllProjects(),
     creator.role === 'reposter'
       ? getLeagueBoard({ role: 'reposter' })
+      : Promise.resolve(null),
+    creator.role === 'reposter' && isContestLive(calendarToday) && miqatId != null
+      ? getLeagueBoard({
+          role: 'reposter',
+          from: CONTEST.from,
+          to: CONTEST.to,
+          projectId: miqatId,
+        })
       : Promise.resolve(null),
     creator.role === 'reposter'
       ? getCreatorStrikeSummary(creator.id, opToday)
@@ -176,24 +189,46 @@ export default async function SubmitPage({
           />
         ) : null}
 
-        {league ? (
-          <RankingBoard
-            board={league}
-            highlightId={creator.id}
-            collapsedLimit={5}
-            showSearch={false}
-            identity="handle"
-            labels={{
-              title: t('rankingTitle'),
-              empty: t('rankingEmpty'),
-              expand: t('rankingExpand'),
-              collapse: t('rankingCollapse'),
-              search: t('rankingSearch'),
-              rank: t('rankingRank'),
-              views: t('views'),
-              videos: t('videosWord'),
-            }}
-          />
+        {creator.role === 'reposter' && (contestBoard || league) ? (
+          <div className="flex flex-col gap-3">
+            {contestBoard ? (
+              <ContestPodium
+                rows={contestBoard.rows}
+                highlightId={creator.id}
+                labels={{
+                  title: t('contestBoardTitle'),
+                  empty: t('contestBoardEmpty'),
+                  diamond: t('contestDiamond'),
+                  gold: t('contestGold'),
+                  silver: t('contestSilver'),
+                  both: t('contestBoth'),
+                  instagram: t('instagram'),
+                  tiktok: t('tiktok'),
+                }}
+              />
+            ) : null}
+            {league ? (
+              <div className="max-h-[30vh] overflow-auto rounded-2xl border border-border bg-card p-3 shadow-sm">
+                <RankingBoard
+                  board={league}
+                  highlightId={creator.id}
+                  collapsedLimit={5}
+                  showSearch={false}
+                  identity="handle"
+                  labels={{
+                    title: t('rankingTitle'),
+                    empty: t('rankingEmpty'),
+                    expand: t('rankingExpand'),
+                    collapse: t('rankingCollapse'),
+                    search: t('rankingSearch'),
+                    rank: t('rankingRank'),
+                    views: t('views'),
+                    videos: t('videosWord'),
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
         ) : null}
 
         <p className="text-xs text-muted-foreground">{t('creatorTapHint')}</p>

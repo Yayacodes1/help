@@ -17,3 +17,9 @@ export function findProjectById<T extends { id: number; name: string }>(
   if (projectId == null || !Number.isFinite(projectId)) return null
   return projects.find((p) => p.id === projectId) ?? null
 }
+
+export function findMiyqatProject<T extends { id: number; name: string }>(
+  projects: T[],
+): T | null {
+  return projects.find((p) => isMiyqatProjectName(p.name)) ?? null
+}

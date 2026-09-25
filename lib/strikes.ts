@@ -5,9 +5,10 @@ import {
   CORRECTIVE_STRIKE_COUNT,
   STRIKE_LOOKBACK_DAYS,
   lastCompletedOperationalDay,
+  strikeLimit,
 } from '@/lib/operational-day'
 
-export { CORRECTIVE_STRIKE_COUNT, STRIKE_LOOKBACK_DAYS }
+export { CORRECTIVE_STRIKE_COUNT, STRIKE_LOOKBACK_DAYS, strikeLimit }
 
 export type ReposterStrikeRow = {
   creatorId: number
@@ -17,9 +18,11 @@ export type ReposterStrikeRow = {
   contractStart: string | null
   contractEnd: string | null
   contractStrikes: number
+  maxStrikes: number
   todayVideos: number
   postedToday: boolean
   missedToday: boolean
+  onBreak: boolean
   lastStrikeDate: string | null
   needsCorrective: boolean
 }
@@ -38,6 +41,7 @@ export type CreatorStrikeSummary = {
   lastCompleted: string
   contractId: number | null
   contractStrikes: number
+  maxStrikes: number
   postedToday: boolean
   todayVideos: number
   needsCorrective: boolean
@@ -132,7 +136,7 @@ export async function getCreatorStrikeSummary(
   const lastCompleted = lastCompletedOperationalDay(today)
   const [contractRows, strikeRows, postRows] = (await Promise.all([
     sql`
-      SELECT id
+      SELECT id, COALESCE(max_strikes, ${CORRECTIVE_STRIKE_COUNT})::int AS max_strikes
       FROM contracts
       WHERE creator_id = ${creatorId}
         AND start_date <= ${today}::date
@@ -154,9 +158,14 @@ export async function getCreatorStrikeSummary(
       FROM submissions
       WHERE creator_id = ${creatorId} AND video_date = ${today}::date
     `,
-  ])) as [{ id: number }[], CreatorStrike[], { videos: number }[]]
+  ])) as [
+    { id: number; max_strikes: number }[],
+    CreatorStrike[],
+    { videos: number }[],
+  ]
 
   const contractId = contractRows[0]?.id ?? null
+  const maxStrikes = strikeLimit(contractRows[0]?.max_strikes)
   const strikes = strikeRows.map(asStrike)
   const contractStrikes = contractId
     ? strikes.filter((s) => s.contract_id === contractId).length
@@ -168,9 +177,10 @@ export async function getCreatorStrikeSummary(
     lastCompleted,
     contractId,
     contractStrikes,
+    maxStrikes,
     postedToday: todayVideos > 0,
     todayVideos,
-    needsCorrective: contractStrikes >= CORRECTIVE_STRIKE_COUNT,
+    needsCorrective: contractStrikes >= maxStrikes,
     strikes: contractId ? strikes.filter((s) => s.contract_id === contractId) : strikes,
   }
 }
@@ -188,7 +198,8 @@ export async function getReposterStrikeBoard(today: string): Promise<StrikeBoard
       SELECT DISTINCT ON (creator_id)
         id, creator_id, name,
         start_date::text AS start_date,
-        end_date::text AS end_date
+        end_date::text AS end_date,
+        COALESCE(max_strikes, ${CORRECTIVE_STRIKE_COUNT})::int AS max_strikes
       FROM contracts
       WHERE start_date <= ${today}::date
         AND (end_date IS NULL OR end_date >= ${today}::date)
@@ -219,6 +230,7 @@ export async function getReposterStrikeBoard(today: string): Promise<StrikeBoard
       name: string
       start_date: string
       end_date: string | null
+      max_strikes: number
     }>,
     Array<{ creator_id: number; contract_id: number | null; strike_date: string }>,
     Array<{ creator_id: number; videos: number }>,
@@ -255,7 +267,9 @@ export async function getReposterStrikeBoard(today: string): Promise<StrikeBoard
     const contract = contractByCreator.get(p.id) ?? null
     const todayVideos = postsByCreator.get(p.id) ?? 0
     const strikeInfo = strikesByCreator.get(p.id) ?? { count: 0, last: null }
-    const missedToday = !onBreak.has(p.id) && todayVideos === 0 && contract != null
+    const maxStrikes = strikeLimit(contract?.max_strikes)
+    const breaking = onBreak.has(p.id)
+    const missedToday = !breaking && todayVideos === 0 && contract != null
     return {
       creatorId: p.id,
       name: p.name,
@@ -264,11 +278,13 @@ export async function getReposterStrikeBoard(today: string): Promise<StrikeBoard
       contractStart: contract?.start_date ?? null,
       contractEnd: contract?.end_date ?? null,
       contractStrikes: strikeInfo.count,
+      maxStrikes,
       todayVideos,
       postedToday: todayVideos > 0,
       missedToday,
+      onBreak: breaking,
       lastStrikeDate: strikeInfo.last,
-      needsCorrective: strikeInfo.count >= CORRECTIVE_STRIKE_COUNT,
+      needsCorrective: strikeInfo.count >= maxStrikes,
     }
   })
 

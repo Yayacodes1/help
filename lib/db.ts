@@ -122,6 +122,8 @@ export type Contract = {
   views_threshold: number | null
   view_commission_amount: number | null
   commission_reels: number | null
+  /** Max active strikes allowed this contract before corrective action (default 3). */
+  max_strikes: number
 }
 
 export type CommissionSettings = {
