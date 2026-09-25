@@ -210,35 +210,64 @@ function countsLine(p: AttendancePerson): string {
   return bits.join(' · ')
 }
 
+function countStatuses(people: AttendancePerson[]) {
+  let full = 0
+  let partial = 0
+  let miss = 0
+  let onBreak = 0
+  for (const p of people) {
+    if (p.status === 'hit') full += 1
+    else if (p.status === 'partial') partial += 1
+    else if (p.status === 'miss') miss += 1
+    else if (p.status === 'break') onBreak += 1
+  }
+  return { total: people.length, full, partial, miss, onBreak }
+}
+
+function formatTotalsBlock(
+  label: string,
+  stats: ReturnType<typeof countStatuses>,
+): string {
+  return (
+    `${label}: ${stats.total} · full ${stats.full} · partial ${stats.partial}` +
+    ` · miss ${stats.miss} · break ${stats.onBreak}`
+  )
+}
+
 /** Arabic outreach templates (reposters). English lists stay in formatAttendanceTelegram. */
 export function arabicStrikeTemplate(
   name: string,
   strikes: number,
   max: number,
+  missedDayLabel: string,
 ): string {
   const left = Math.max(0, max - strikes)
   if (strikes <= 1) {
     return (
-      `مرحباً ${name}، لاحظنا أنك لم تنشر خلال آخر 24 ساعة.\n` +
+      `مرحباً ${name}، لاحظنا أنك لم تنشر يوم ${missedDayLabel}.\n` +
       `هذا الإنذار رقم 1 من ${max}. يرجى الانتباه — متبقي لديك ${left} إنذار.\n` +
       `إذا واجهت أي مشكلة، أخبرنا قبل أن تفوّت الموعد.`
     )
   }
   if (strikes === 2 || (strikes < max && strikes > 1)) {
     return (
-      `مرحباً ${name}، هذا الإنذار رقم ${strikes} من ${max}.\n` +
+      `مرحباً ${name}، هذا الإنذار رقم ${strikes} من ${max} (يوم ${missedDayLabel}).\n` +
       `سبق أن حصلت على إنذار. إذا لديك ظرف، تواصل معنا أولاً — متبقي ${left}.`
     )
   }
   return (
-    `مرحباً ${name}، هذا الإنذار رقم ${strikes} من ${max}.\n` +
+    `مرحباً ${name}، هذا الإنذار رقم ${strikes} من ${max} (يوم ${missedDayLabel}).\n` +
     `للأسف استُهلكت كل الإنذارات. إذا تكرر التأخير مرة أخرى قد نتوقف عن العمل معك.`
   )
 }
 
-export function arabicPartialTemplate(name: string, missing: string): string {
+export function arabicPartialTemplate(
+  name: string,
+  missing: string,
+  dayLabel: string,
+): string {
   return (
-    `مرحباً ${name}، يرجى إكمال منشورات اليوم قبل الساعة 12:00 منتصف الليل بتوقيت السعودية.\n` +
+    `مرحباً ${name}، يرجى إكمال منشورات يوم ${dayLabel} قبل الساعة 12:00 منتصف الليل بتوقيت السعودية.\n` +
     `ما زال ينقصك: ${missing || 'إكمال الهدف'}.\n` +
     `وتأكد من النشر على جميع الحسابات المطلوبة.`
   )
@@ -247,10 +276,17 @@ export function arabicPartialTemplate(name: string, missing: string): string {
 export function formatAttendanceTelegram(report: AttendanceReport): string {
   const reposters = report.people.filter((p) => p.role === 'reposter')
   const creators = report.people.filter((p) => p.role === 'creator')
+  const allStats = countStatuses(report.people)
+  const reposterStats = countStatuses(reposters)
+  const creatorStats = countStatuses(creators)
 
   const lines: string[] = [
     `📋 Last 24h · ${report.dayLabel}`,
     `Cutoff: 12:00 AM ${OPERATIONAL_TZ}`,
+    '',
+    `Totals: ${allStats.total} people`,
+    formatTotalsBlock('Reposters', reposterStats),
+    formatTotalsBlock('Creators', creatorStats),
     '',
     '── REPOSTERS ──',
   ]
@@ -276,12 +312,13 @@ export function formatAttendanceTelegram(report: AttendanceReport): string {
   for (const p of reposters) {
     if (p.status === 'partial') {
       templates.push(
-        `[${p.name} — partial]\n${arabicPartialTemplate(p.name, missingParts(p))}`,
+        `[${p.name} — partial · ${report.dayLabel}]\n${arabicPartialTemplate(p.name, missingParts(p), report.dayLabel)}`,
       )
     } else if (p.status === 'miss') {
+      // After a strike reset, waived rows no longer count — next miss starts at 1 again.
       const strikes = Math.max(p.contractStrikes, 1)
       templates.push(
-        `[${p.name} — strike ${strikes}/${p.maxStrikes}]\n${arabicStrikeTemplate(p.name, strikes, p.maxStrikes)}`,
+        `[${p.name} — strike ${strikes}/${p.maxStrikes} · ${report.dayLabel}]\n${arabicStrikeTemplate(p.name, strikes, p.maxStrikes, report.dayLabel)}`,
       )
     }
   }
