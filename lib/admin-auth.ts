@@ -9,20 +9,13 @@ export type AdminRole = 'owner' | 'manager'
 
 type Account = { id: string; name: string; role: AdminRole; password: string }
 
-/**
- * ADMIN_PASSWORD_YAHYA (owner) and ADMIN_PASSWORD_AHMED (manager).
- * Legacy ADMIN_PASSWORD only works while neither new variable is set.
- */
+/** One password each: ADMIN_PASSWORD_YAHYA (owner) and ADMIN_PASSWORD_AHMED (manager). */
 function accounts(): Account[] {
   const out: Account[] = []
   const yahya = process.env.ADMIN_PASSWORD_YAHYA?.trim()
   const ahmed = process.env.ADMIN_PASSWORD_AHMED?.trim()
   if (yahya) out.push({ id: 'yahya', name: 'Yahya', role: 'owner', password: yahya })
   if (ahmed) out.push({ id: 'ahmed', name: 'Ahmed', role: 'manager', password: ahmed })
-  if (out.length === 0) {
-    const legacy = process.env.ADMIN_PASSWORD?.trim()
-    if (legacy) out.push({ id: 'yahya', name: 'Yahya', role: 'owner', password: legacy })
-  }
   return out
 }
 
