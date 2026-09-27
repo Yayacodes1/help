@@ -262,6 +262,63 @@ export async function getTopVideos(opts: {
   `) as TopVideoRow[]
 }
 
+export type SheetRow = {
+  date: string
+  creator_id: number
+  creator_name: string
+  role: 'creator' | 'reposter'
+  platform: 'instagram' | 'tiktok'
+  videos: number
+  views: number
+}
+
+/** Per day × person × platform video counts and views (all roles). */
+export async function getDailySheet(opts: {
+  from: string
+  to: string
+  projectId?: number | null
+}): Promise<SheetRow[]> {
+  const projectId = opts.projectId ?? null
+  return (await sql`
+    SELECT
+      s.video_date::text AS date,
+      c.id AS creator_id,
+      c.name AS creator_name,
+      CASE WHEN c.role = 'reposter' THEN 'reposter' ELSE 'creator' END AS role,
+      s.platform,
+      COUNT(s.id)::int AS videos,
+      COALESCE(SUM(s.views), 0)::int AS views
+    FROM submissions s
+    JOIN creators c ON c.id = s.creator_id
+    WHERE s.video_date >= ${opts.from}::date
+      AND s.video_date <= ${opts.to}::date
+      AND s.platform IN ('instagram', 'tiktok')
+      AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
+    GROUP BY s.video_date, c.id, c.name, c.role, s.platform
+    ORDER BY s.video_date ASC, c.name ASC
+  `) as SheetRow[]
+}
+
+export type DailyDownloadsRow = { date: string; downloads: number }
+
+/** App downloads per day; summed across projects when projectId is null. */
+export async function getDailyDownloads(opts: {
+  from: string
+  to: string
+  projectId?: number | null
+}): Promise<DailyDownloadsRow[]> {
+  const projectId = opts.projectId ?? null
+  return (await sql`
+    SELECT day::text AS date, SUM(downloads)::int AS downloads
+    FROM daily_downloads
+    WHERE day >= ${opts.from}::date
+      AND day <= ${opts.to}::date
+      AND (${projectId}::int IS NULL OR project_id = ${projectId})
+    GROUP BY day
+    ORDER BY day ASC
+  `) as DailyDownloadsRow[]
+}
+
 export function defaultAnalyticsRange(today: string): { from: string; to: string } {
   const { start, end } = monthRange(today)
   return { from: start, to: end }

@@ -18,6 +18,8 @@ import {
 import {
   defaultAnalyticsRange,
   getDailyAnalytics,
+  getDailyDownloads,
+  getDailySheet,
   getDailyViewsByCreator,
   getTopVideos,
   getViewsLeaderboard,
@@ -48,6 +50,7 @@ import { PaymentDuePanel } from '@/components/admin/payment-due-panel'
 import { AssistantChat } from '@/components/admin/assistant-chat'
 import { AssistantDrawer } from '@/components/admin/assistant-drawer'
 import { AnalyticsPanel } from '@/components/admin/analytics-panel'
+import { AnalyticsSheet } from '@/components/admin/analytics-sheet'
 import { TopVideosPanel } from '@/components/admin/top-videos-panel'
 import { MarketingBudgetBoard } from '@/components/marketing/marketing-budget-board'
 import { OutflowPanel } from '@/components/admin/outflow-panel'
@@ -98,6 +101,7 @@ export default async function AdminPage({
     aCreator?: string
     aProject?: string
     aRole?: string
+    aSheet?: string
     tvFrom?: string
     tvTo?: string
     tvPlatform?: string
@@ -367,6 +371,13 @@ export default async function AdminPage({
     .slice(0, 2)
     .map((p) => `${p.name} ${formatNumber(projectViews.totals.viewsByProject[p.id] ?? 0)}`)
     .join(' · ')
+  const sheetOpen = sp.aSheet === '1'
+  const [sheetRows, sheetDownloads] = sheetOpen
+    ? await Promise.all([
+        getDailySheet({ from: aFrom, to: aTo, projectId: aProjectId }),
+        getDailyDownloads({ from: aFrom, to: aTo, projectId: aProjectId }),
+      ])
+    : [[], []]
   const everyone = await attachTracking(creatorsBase, today)
   const creators = everyone.filter((c) => !c.paused_at)
   const pausedCreators = everyone.filter((c) => c.paused_at)
@@ -566,6 +577,7 @@ export default async function AdminPage({
                   day: t('analyticsDay'),
                   prevDay: t('analyticsPrevDay'),
                   nextDay: t('analyticsNextDay'),
+                  openSheet: t('analyticsOpenSheet'),
                   instagram: t('instagram'),
                   tiktok: t('tiktok'),
                   showViews: t('showViews'),
@@ -1023,6 +1035,18 @@ export default async function AdminPage({
         ]}
       />
       </Suspense>
+
+      {sheetOpen ? (
+        <AnalyticsSheet
+          rows={sheetRows}
+          downloads={sheetDownloads}
+          from={aFrom}
+          to={aTo}
+          today={today}
+          projectId={aProjectId}
+          projects={projects}
+        />
+      ) : null}
 
       <div className="mt-6">
         <AssistantDrawer

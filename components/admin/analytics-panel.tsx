@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, Sheet } from 'lucide-react'
 import {
   Bar,
   BarChart,
@@ -66,6 +66,7 @@ type Labels = {
   day: string
   prevDay: string
   nextDay: string
+  openSheet: string
 }
 
 type NavPatch = {
@@ -335,6 +336,19 @@ export function AnalyticsPanel({
     push({ from: nextFrom, to: nextTo, creator: nextCreator })
   }
 
+  function openSheet() {
+    const params = new URLSearchParams(window.location.search)
+    params.set('panel', 'analytics')
+    params.set('aSheet', '1')
+    params.set('aFrom', from)
+    params.set('aTo', to)
+    params.set('aProject', String(projectId ?? 'all'))
+    params.set('aRole', role)
+    startTransition(() => {
+      router.push(`?${params.toString()}`, { scroll: false })
+    })
+  }
+
   function selectDay(day: string) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > today) return
     setFrom(day)
@@ -469,6 +483,15 @@ export function AnalyticsPanel({
             {label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={openSheet}
+          className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary bg-primary/10 px-3 text-sm font-semibold text-primary hover:bg-primary/20"
+          title="Full-screen day-by-day sheet with downloads, charts and CSV export"
+        >
+          <Sheet className="size-4" />
+          {labels.openSheet}
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
