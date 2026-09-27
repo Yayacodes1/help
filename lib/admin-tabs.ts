@@ -1,7 +1,7 @@
 export const ADMIN_TABS = {
   today: ['progress', 'attention', 'strikes', 'videos'],
   analytics: ['analytics', 'ranking', 'projectviews', 'topvideos', 'miqatcontest'],
-  money: ['commission', 'paydue', 'payments', 'marketing', 'outflow'],
+  money: ['marketing', 'commission', 'paydue', 'payments', 'outflow'],
   people: ['manage'],
 } as const
 

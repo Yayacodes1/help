@@ -28,13 +28,7 @@ import {
   getViewsSummary,
 } from '@/lib/analytics'
 import { monthRange, parseYearMonth, rankingMonthRange } from '@/lib/campaign'
-import {
-  ensureMarketingTables,
-  getMarketingBalances,
-  listMarketingExpenses,
-  listMarketingRequests,
-  listMarketingTransfers,
-} from '@/lib/marketing'
+import { ensureMarketingTables, listMarketingRequests } from '@/lib/marketing'
 import { StatCard } from '@/components/stat-card'
 import { FiltersBar } from '@/components/admin/filters-bar'
 import { ProjectsManager } from '@/components/admin/projects-manager'
@@ -55,7 +49,8 @@ import { AnalyticsPanel } from '@/components/admin/analytics-panel'
 import { AnalyticsSheet } from '@/components/admin/analytics-sheet'
 import { revenueCatLinks } from '@/lib/revenuecat'
 import { TopVideosPanel } from '@/components/admin/top-videos-panel'
-import { MarketingBudgetBoard } from '@/components/marketing/marketing-budget-board'
+import { WalletBoard } from '@/components/marketing/wallet-board'
+import { getPayablePeople, getWalletEntries, getWalletTotals } from '@/lib/wallet'
 import { OutflowPanel } from '@/components/admin/outflow-panel'
 import { PayCadences } from '@/components/admin/pay-cadence'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
@@ -340,9 +335,10 @@ export default async function AdminPage({
       periodTotal,
       paidAllTime,
       payDueRows,
-      marketingBalances,
-      marketingTransfers,
-      marketingExpenses,
+      walletTotals,
+      walletEntries,
+      walletPeople,
+      walletDue,
       marketingRequests,
       outflow,
       commissionBoard,
@@ -352,10 +348,13 @@ export default async function AdminPage({
       getPaymentsTotalInRange(payFrom, payTo, undefined, roleSql),
       getAllPaidTotal(projectId, roleSql),
       getPaymentDueList(today, projectId, roleSql),
-      getMarketingBalances(projectId ?? null),
-      listMarketingTransfers(projectId ?? null),
-      listMarketingExpenses(projectId ?? null),
-      listMarketingRequests(null, projectId ?? null),
+      getWalletTotals(),
+      getWalletEntries(),
+      getPayablePeople(),
+      projectId == null && roleSql == null
+        ? Promise.resolve(null)
+        : getPaymentDueList(today, undefined, null),
+      listMarketingRequests(null, null),
       getOutflowSnapshot({
         from: ofFrom,
         to: ofTo,
@@ -379,9 +378,10 @@ export default async function AdminPage({
       periodTotal,
       paidAllTime,
       payDueRows,
-      marketingBalances,
-      marketingTransfers,
-      marketingExpenses,
+      walletTotals,
+      walletEntries,
+      walletPeople,
+      walletDue: walletDue ?? payDueRows,
       marketingRequests,
       outflow,
       commissionBoard,
@@ -414,9 +414,10 @@ export default async function AdminPage({
     periodTotal,
     paidAllTime,
     payDueRows,
-    marketingBalances,
-    marketingTransfers,
-    marketingExpenses,
+    walletTotals,
+    walletEntries,
+    walletPeople,
+    walletDue,
     marketingRequests,
     outflow,
     commissionBoard,
@@ -451,7 +452,7 @@ export default async function AdminPage({
     (p) => p.status === 'miss' || p.status === 'partial',
   ).length
   const openMarketingRequests = (marketingRequests ?? []).filter((r) => r.status === 'open').length
-  const marketingLeft = (marketingBalances ?? []).reduce((sum, b) => sum + b.left, 0)
+  const walletLeft = walletTotals?.find((w) => w.currency === 'USD')?.left ?? 0
 
   const totalViews = (submissions ?? []).reduce((sum, s) => sum + (s.views ?? 0), 0)
   const creatorViews = (submissions ?? []).reduce(
@@ -505,7 +506,14 @@ export default async function AdminPage({
     <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 py-8">
       <header className="mb-6 flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-xl font-semibold tracking-tight">{t('adminDashboard')}</h1>
+          <div>
+            {session ? (
+              <p className="text-sm text-muted-foreground">
+                {t('hey')} {session.name}
+              </p>
+            ) : null}
+            <h1 className="text-xl font-semibold tracking-tight">{t('adminDashboard')}</h1>
+          </div>
           <div className="flex flex-wrap items-center gap-3">
             <LanguageToggle
               locale={locale}
@@ -915,6 +923,29 @@ export default async function AdminPage({
           ] : []),
           ...(moneyData ? [
           {
+            id: 'marketing',
+            title: "Ahmed's wallet",
+            summary:
+              openMarketingRequests > 0
+                ? `${openMarketingRequests} asked`
+                : `${formatMoney(walletLeft)} left`,
+            hint:
+              openMarketingRequests > 0
+                ? 'Money requests waiting'
+                : 'Sent to Ahmed − what he paid',
+            children: (
+              <WalletBoard
+                today={today}
+                isOwner={showBusiness}
+                totals={walletTotals}
+                entries={walletEntries}
+                requests={marketingRequests}
+                people={walletPeople}
+                due={[...walletDue.due, ...walletDue.settled]}
+              />
+            ),
+          },
+          {
             id: 'commission',
             title: t('commissionBoard'),
             summary: formatMoney(commissionEstimate.estimate.did),
@@ -1009,28 +1040,6 @@ export default async function AdminPage({
             ),
           },
           {
-            id: 'marketing',
-            title: 'Marketing budget',
-            summary:
-              openMarketingRequests > 0
-                ? `${openMarketingRequests} requests`
-                : formatMoney(marketingLeft),
-            hint:
-              openMarketingRequests > 0
-                ? 'Open money requests'
-                : 'Sent − spent left',
-            children: (
-              <MarketingBudgetBoard
-                today={today}
-                balances={marketingBalances}
-                transfers={marketingTransfers}
-                expenses={marketingExpenses}
-                requests={marketingRequests}
-                projectId={projectId ?? null}
-              />
-            ),
-          },
-          {
             id: 'outflow',
             title: 'Marketing by month',
             copy: true,
@@ -1068,6 +1077,7 @@ export default async function AdminPage({
                   roleFilter={roleFilter}
                   today={today}
                   currentProjectId={projectId}
+                  isOwner={showBusiness}
                 />
                 <ProjectsManager key="projects-manager" projects={projects} />
               </div>

@@ -15,12 +15,15 @@ export function PaymentsManager({
   contracts,
   payments,
   paidTotal,
+  isOwner = false,
 }: {
   creatorId: number
   today: string
   contracts: Contract[]
   payments: PaymentRow[]
   paidTotal?: number
+  /** Yahya can mark a payment as paid directly (not from Ahmed's wallet). */
+  isOwner?: boolean
 }) {
   const [pending, startTransition] = useTransition()
   const latest = payments[0] ?? null
@@ -109,6 +112,15 @@ export function PaymentsManager({
             Note
             <input name="note" placeholder="Bonus, adjustment…" className={inputClass} />
           </label>
+          {isOwner ? (
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2">
+              Who sent the money?
+              <select name="paid_from" defaultValue="ahmed" className={inputClass}>
+                <option value="ahmed">Ahmed, from the money I gave him</option>
+                <option value="direct">I paid them myself</option>
+              </select>
+            </label>
+          ) : null}
         </div>
         <button
           type="submit"

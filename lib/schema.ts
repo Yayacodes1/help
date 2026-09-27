@@ -91,6 +91,9 @@ export async function ensureCreatorTrackingColumns() {
   `
   await sql`CREATE INDEX IF NOT EXISTS payments_creator_id_idx ON payments (creator_id)`
   await sql`CREATE INDEX IF NOT EXISTS payments_paid_on_idx ON payments (paid_on)`
+  // paid_by = 'ahmed' when it came out of the money sent to Ahmed; recorded_by = admin account id.
+  await sql`ALTER TABLE payments ADD COLUMN IF NOT EXISTS paid_by text`
+  await sql`ALTER TABLE payments ADD COLUMN IF NOT EXISTS recorded_by text`
 
   // Link unattached payments to the contract that covers paid_on (or the latest one).
   await sql`

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect, notFound } from 'next/navigation'
-import { isAdmin } from '@/lib/admin-auth'
+import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import {
   getActiveContract,
@@ -59,6 +59,7 @@ export default async function CreatorDetailPage({
   }>
 }) {
   if (!(await isAdmin())) redirect('/login')
+  const isOwner = (await getAdminSession())?.role === 'owner'
   await ensureCreatorTrackingColumns()
 
   const { id: raw } = await params
@@ -334,6 +335,7 @@ export default async function CreatorDetailPage({
                 contracts={contracts}
                 payments={payments}
                 paidTotal={paidTotal}
+                isOwner={isOwner}
               />
             ),
           },

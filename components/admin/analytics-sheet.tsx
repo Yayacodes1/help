@@ -697,6 +697,167 @@ function PersonTimeline({
   )
 }
 
+const GOAL_PRESETS = [100, 500, 1000, 5000]
+
+/** "To make $X a day we need N downloads and M views" — from the averages in the range. */
+function GoalCalculator({
+  days,
+  revenuePerDay,
+  downloadsPerDay,
+  viewsPerDay,
+  subsPerDay,
+  revenuePerDownload,
+  viewsPerDownload,
+  subsPerDownload,
+}: {
+  days: number
+  revenuePerDay: number | null
+  downloadsPerDay: number | null
+  viewsPerDay: number | null
+  subsPerDay: number | null
+  revenuePerDownload: number | null
+  viewsPerDownload: number | null
+  subsPerDownload: number | null
+}) {
+  const [target, setTarget] = useState('1000')
+  const [open, setOpen] = useState(true)
+  const goal = Math.max(0, Number(target) || 0)
+
+  const neededDl = revenuePerDownload && revenuePerDownload > 0 ? goal / revenuePerDownload : null
+  const neededViews = neededDl != null && viewsPerDownload != null ? neededDl * viewsPerDownload : null
+  const neededSubs = neededDl != null && subsPerDownload != null ? neededDl * subsPerDownload : null
+  const times = (need: number | null, now: number | null) =>
+    need != null && now != null && now > 0 ? need / now : null
+  const dlTimes = times(neededDl, downloadsPerDay)
+  const whole = (v: number | null) => (v == null ? '—' : formatNumber(Math.round(v)))
+
+  const rows: Array<{ label: string; now: string; need: string; x: number | null; color?: string }> = [
+    {
+      label: 'Revenue a day',
+      now: revenuePerDay == null ? '—' : money(revenuePerDay),
+      need: money(goal),
+      x: times(goal, revenuePerDay),
+      color: REVENUE,
+    },
+    { label: 'Downloads a day', now: whole(downloadsPerDay), need: whole(neededDl), x: dlTimes },
+    { label: 'Views a day', now: whole(viewsPerDay), need: whole(neededViews), x: times(neededViews, viewsPerDay) },
+    {
+      label: 'Subscriptions a day',
+      now: subsPerDay == null ? '—' : subsPerDay.toFixed(1),
+      need: neededSubs == null ? '—' : neededSubs.toFixed(1),
+      x: times(neededSubs, subsPerDay),
+      color: SUBS,
+    },
+  ]
+
+  return (
+    <div className="mt-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="text-sm font-semibold"
+          aria-expanded={open}
+        >
+          Goal calculator {open ? '▾' : '▸'}
+        </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">I want to make</span>
+          <span className="relative">
+            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
+            <input
+              type="number"
+              min={0}
+              step={50}
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              className="h-8 w-28 rounded-md border border-input bg-background pl-5 pr-2 text-right text-sm tabular-nums"
+              aria-label="Revenue goal per day"
+            />
+          </span>
+          <span className="text-xs text-muted-foreground">a day</span>
+          {GOAL_PRESETS.map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setTarget(String(v))}
+              className={`h-7 rounded-md border px-2 text-xs ${
+                goal === v ? 'border-primary bg-primary text-primary-foreground' : 'border-border hover:bg-accent'
+              }`}
+            >
+              ${formatNumber(v)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {open ? (
+        revenuePerDownload == null ? (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Needs revenue for these dates. Press <span className="font-medium">Sync RevenueCat</span> below, then
+            this shows how many downloads and views you need.
+          </p>
+        ) : (
+          <>
+            <p className="mt-2 text-sm">
+              To make <span className="font-semibold">{money(goal)}</span> a day you need about{' '}
+              <span className="font-semibold">{whole(neededDl)} downloads</span>
+              {neededViews != null ? (
+                <>
+                  {' '}
+                  and <span className="font-semibold">{whole(neededViews)} views</span>
+                </>
+              ) : null}{' '}
+              a day
+              {dlTimes != null ? (
+                <>
+                  {' '}
+                  —{' '}
+                  <span className={`font-semibold ${dlTimes <= 1 ? 'text-emerald-600' : ''}`}>
+                    {dlTimes <= 1 ? 'you are already there' : `${dlTimes.toFixed(1)}× what you get now`}
+                  </span>
+                </>
+              ) : null}
+              .
+            </p>
+            <div className="mt-2 overflow-auto">
+              <table className="w-full min-w-[26rem] text-sm">
+                <thead className="text-xs text-muted-foreground">
+                  <tr>
+                    <th className="py-1 text-left font-medium" />
+                    <th className="py-1 text-right font-medium">Now (avg)</th>
+                    <th className="py-1 text-right font-medium">Needed</th>
+                    <th className="py-1 text-right font-medium">Gap</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.label} className="border-t border-border/60">
+                      <td className="py-1.5 font-medium" style={r.color ? { color: r.color } : undefined}>
+                        {r.label}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums">{r.now}</td>
+                      <td className="py-1.5 text-right font-semibold tabular-nums">{r.need}</td>
+                      <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                        {r.x == null ? '—' : r.x <= 1 ? 'reached' : `${r.x.toFixed(1)}×`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">
+              Based on the {days} day{days === 1 ? '' : 's'} above: {money(revenuePerDownload)} per download
+              {viewsPerDownload != null ? `, ${formatNumber(Math.round(viewsPerDownload * 100))} views per 100 downloads` : ''}
+              . Change the dates to use a different period.
+            </p>
+          </>
+        )
+      ) : null}
+    </div>
+  )
+}
+
 export function AnalyticsSheet({
   rows,
   downloads,
@@ -734,6 +895,7 @@ export function AnalyticsSheet({
   const [openDay, setOpenDay] = useState<string | null>(null)
   const [openPersonId, setOpenPersonId] = useState<number | null>(null)
   const [chartMode, setChartMode] = useState<ChartMode>('views')
+  const [showSplit, setShowSplit] = useState(false)
   const [impactSort, setImpactSort] = useState<{ key: ImpactSort; desc: boolean }>({
     key: 'estDl',
     desc: true,
@@ -887,6 +1049,12 @@ export function AnalyticsSheet({
     () => dates.filter((d) => downloadsByDate.has(d)),
     [dates, downloadsByDate],
   )
+  // Ratios only use days that have downloads, so empty days don't inflate them.
+  const viewsOnDlDays = daysWithDownloads.reduce((sum, d) => sum + (byDay.get(d)?.views ?? 0), 0)
+  const viewsPer100 = ratio(viewsOnDlDays, totalDownloads, 100)
+  const subsPer100 = hasSubs ? ratio(totalSubs, totalDownloads, 100) : null
+  const revenuePerDownload = hasRevenue ? ratio(totalRevenue, totalDownloads) : null
+  const dlDays = daysWithDownloads.length
 
   const visiblePeople = people.filter((p) => roleView === 'all' || p.role === roleView)
   const visibleTotals = useMemo(() => {
@@ -915,9 +1083,9 @@ export function AnalyticsSheet({
       downloads: downloadsByDate.get(d) ?? null,
       subs: subsByDate.get(d) ?? null,
       revenue: revenueByDate.get(d) ?? null,
-      viewsPerDownload: (() => {
+      viewsPer100: (() => {
         const dl = downloadsByDate.get(d)
-        return dl ? Math.round(a.views / dl) : null
+        return dl ? Math.round((a.views / dl) * 100) : null
       })(),
       subsPer100: (() => {
         const dl = downloadsByDate.get(d)
@@ -1294,30 +1462,46 @@ export function AnalyticsSheet({
         {showBusiness ? (
           <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             {[
-              { label: 'Downloads', value: formatNumber(totalDownloads), color: undefined },
+              {
+                label: 'Downloads',
+                value: formatNumber(totalDownloads),
+                hint: dlDays > 0 ? `${formatNumber(Math.round(totalDownloads / dlDays))} a day` : 'No downloads yet',
+                color: undefined,
+              },
               {
                 label: 'Subscriptions',
                 value: hasSubs ? formatNumber(totalSubs) : '—',
+                hint: hasSubs && dlDays > 0 ? `${(totalSubs / dlDays).toFixed(1)} a day` : 'Sync RevenueCat',
                 color: SUBS,
               },
               {
                 label: 'Revenue',
                 value: hasRevenue ? money(totalRevenue) : '—',
+                hint: hasRevenue && dlDays > 0 ? `${money(totalRevenue / dlDays)} a day` : 'Sync RevenueCat',
                 color: REVENUE,
               },
               {
-                label: 'Views per download',
-                value: fmtRatio(ratio(totals.views, totalDownloads), 0),
+                label: 'Views per 100 downloads',
+                value: viewsPer100 == null ? '—' : formatNumber(Math.round(viewsPer100)),
+                hint:
+                  viewsPer100 == null
+                    ? 'Needs downloads'
+                    : `~${formatNumber(Math.round(viewsPer100))} views brought 100 downloads`,
                 color: undefined,
               },
               {
                 label: 'Subs per 100 downloads',
-                value: hasSubs ? fmtRatio(ratio(totalSubs, totalDownloads, 100)) : '—',
+                value: fmtRatio(subsPer100),
+                hint: subsPer100 == null ? 'Sync RevenueCat' : `${fmtRatio(subsPer100)} of every 100 subscribed`,
                 color: SUBS,
               },
               {
                 label: 'Revenue per download',
-                value: hasRevenue && totalDownloads > 0 ? money(totalRevenue / totalDownloads) : '—',
+                value: revenuePerDownload == null ? '—' : money(revenuePerDownload),
+                hint:
+                  revenuePerDownload == null
+                    ? 'Sync RevenueCat'
+                    : `${money(revenuePerDownload * 100)} per 100 downloads`,
                 color: REVENUE,
               },
             ].map((s) => (
@@ -1326,13 +1510,28 @@ export function AnalyticsSheet({
                 <p className="text-lg font-semibold tabular-nums" style={s.color ? { color: s.color } : undefined}>
                   {s.value}
                 </p>
+                <p className="text-[11px] leading-tight text-muted-foreground">{s.hint}</p>
               </div>
             ))}
           </div>
         ) : null}
 
         {showBusiness ? (
-          <div className="mt-3 inline-flex gap-1 rounded-lg border border-border bg-muted/30 p-1">
+          <GoalCalculator
+            days={dlDays}
+            revenuePerDay={hasRevenue && dlDays > 0 ? totalRevenue / dlDays : null}
+            downloadsPerDay={dlDays > 0 ? totalDownloads / dlDays : null}
+            viewsPerDay={dlDays > 0 ? viewsOnDlDays / dlDays : null}
+            subsPerDay={hasSubs && dlDays > 0 ? totalSubs / dlDays : null}
+            revenuePerDownload={revenuePerDownload}
+            viewsPerDownload={viewsPer100 == null ? null : viewsPer100 / 100}
+            subsPerDownload={subsPer100 == null ? null : subsPer100 / 100}
+          />
+        ) : null}
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+        {showBusiness ? (
+          <div className="inline-flex gap-1 rounded-lg border border-border bg-muted/30 p-1">
             {(
               [
                 ['views', 'Views vs downloads'],
@@ -1352,6 +1551,14 @@ export function AnalyticsSheet({
             ))}
           </div>
         ) : null}
+        {!showBusiness || chartMode === 'views' ? (
+          <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input type="checkbox" checked={showSplit} onChange={(e) => setShowSplit(e.target.checked)} />
+            Split creators / reposters
+          </label>
+        ) : null}
+        <span className="text-xs text-muted-foreground">Click a day on the chart to see who drove it.</span>
+        </div>
 
         <div className="mt-2 h-72 w-full rounded-lg border border-border p-2">
           <ResponsiveContainer width="100%" height="100%">
@@ -1381,8 +1588,8 @@ export function AnalyticsSheet({
                 <Line
                   yAxisId="vpd"
                   type="monotone"
-                  dataKey="viewsPerDownload"
-                  name="Views per download"
+                  dataKey="viewsPer100"
+                  name="Views per 100 downloads"
                   stroke="#0F172A"
                   strokeWidth={2}
                   dot={dates.length <= 31}
@@ -1484,28 +1691,32 @@ export function AnalyticsSheet({
                 dot={dates.length <= 31}
                 isAnimationActive={false}
               />
-              <Line
-                yAxisId="views"
-                type="monotone"
-                dataKey="creatorViews"
-                name="Creator views"
-                stroke={CREATOR}
-                strokeWidth={1.75}
-                strokeDasharray="5 4"
-                dot={false}
-                isAnimationActive={false}
-              />
-              <Line
-                yAxisId="views"
-                type="monotone"
-                dataKey="reposterViews"
-                name="Reposter views"
-                stroke={REPOSTER}
-                strokeWidth={1.75}
-                strokeDasharray="5 4"
-                dot={false}
-                isAnimationActive={false}
-              />
+              {showSplit ? (
+                <Line
+                  yAxisId="views"
+                  type="monotone"
+                  dataKey="creatorViews"
+                  name="Creator views"
+                  stroke={CREATOR}
+                  strokeWidth={1.75}
+                  strokeDasharray="5 4"
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              ) : null}
+              {showSplit ? (
+                <Line
+                  yAxisId="views"
+                  type="monotone"
+                  dataKey="reposterViews"
+                  name="Reposter views"
+                  stroke={REPOSTER}
+                  strokeWidth={1.75}
+                  strokeDasharray="5 4"
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              ) : null}
             </ComposedChart>
             )}
           </ResponsiveContainer>
@@ -1593,7 +1804,7 @@ export function AnalyticsSheet({
                 </>
               ) : (
                 <span className="text-xs text-muted-foreground">
-                  Pick Notek or Miqat above to type in downloads for that app.
+                  Pick an app above to edit downloads.
                 </span>
               )}
               {saveMsg ? <span className="text-xs text-muted-foreground">{saveMsg}</span> : null}
@@ -1661,7 +1872,7 @@ export function AnalyticsSheet({
                       <th className={th}>Downloads</th>
                       <th className={th} style={{ color: SUBS }}>Subscriptions</th>
                       <th className={th} style={{ color: REVENUE }}>Revenue</th>
-                      <th className={th}>Views / download</th>
+                      <th className={th} title="Views it took to get 100 downloads">Views / 100 downloads</th>
                       <th className={th} style={{ color: SUBS }}>Subs / 100 downloads</th>
                       <th className={th} style={{ color: REVENUE }}>$ / download</th>
                     </>
@@ -1685,12 +1896,12 @@ export function AnalyticsSheet({
                       <td className={totalTd}>{formatNumber(totalDownloads)}</td>
                       <td className={totalTd}>{hasSubs ? formatNumber(totalSubs) : '—'}</td>
                       <td className={totalTd}>{hasRevenue ? money(totalRevenue) : '—'}</td>
-                      <td className={totalTd}>{fmtRatio(ratio(totals.views, totalDownloads), 0)}</td>
                       <td className={totalTd}>
-                        {hasSubs ? fmtRatio(ratio(totalSubs, totalDownloads, 100)) : '—'}
+                        {viewsPer100 == null ? '—' : formatNumber(Math.round(viewsPer100))}
                       </td>
+                      <td className={totalTd}>{fmtRatio(subsPer100)}</td>
                       <td className={totalTd}>
-                        {hasRevenue && totalDownloads > 0 ? money(totalRevenue / totalDownloads) : '—'}
+                        {revenuePerDownload == null ? '—' : money(revenuePerDownload)}
                       </td>
                     </>
                   ) : null}
@@ -1751,7 +1962,7 @@ export function AnalyticsSheet({
                         {revenueByDate.has(d) ? money(revenueByDate.get(d) ?? 0) : '—'}
                       </td>
                       <td className={td}>
-                        {dl != null && dl > 0 ? formatNumber(Math.round(a.views / dl)) : '—'}
+                        {dl != null && dl > 0 ? formatNumber(Math.round((a.views / dl) * 100)) : '—'}
                       </td>
                       <td className={td}>
                         {dl && subsByDate.has(d)

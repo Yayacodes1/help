@@ -2,6 +2,7 @@
 
 import { randomBytes } from 'crypto'
 import { sql } from '@/lib/db'
+import { paymentSource } from '@/lib/wallet'
 import { addDays } from '@/lib/campaign'
 import {
   applyPlatformsToQuotas,
@@ -776,9 +777,10 @@ export async function recordPayment(creatorId: number, formData: FormData) {
     }
   }
 
+  const source = await paymentSource(formData.get('paid_from'))
   await sql`
-    INSERT INTO payments (creator_id, contract_id, paid_on, amount, note)
-    VALUES (${creatorId}, ${contractId}, ${paidOn}, ${amount}, ${note})
+    INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by)
+    VALUES (${creatorId}, ${contractId}, ${paidOn}, ${amount}, ${note}, ${source.paidBy}, ${source.recordedBy})
   `
   await sql`UPDATE creators SET last_paid_at = ${paidOn} WHERE id = ${creatorId}`
   revalidatePath('/admin')
@@ -824,9 +826,10 @@ export async function recordContractPayment(
   `) as { id: number }[]
   if (!owned[0]) return
 
+  const source = await paymentSource(formData.get('paid_from'))
   await sql`
-    INSERT INTO payments (creator_id, contract_id, paid_on, amount, note)
-    VALUES (${creatorId}, ${contractId}, ${paidOn}, ${amount}, ${note})
+    INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by)
+    VALUES (${creatorId}, ${contractId}, ${paidOn}, ${amount}, ${note}, ${source.paidBy}, ${source.recordedBy})
   `
   await sql`UPDATE creators SET last_paid_at = ${paidOn} WHERE id = ${creatorId}`
   revalidatePath('/admin')

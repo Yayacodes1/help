@@ -6,9 +6,11 @@ import { recordBulkReposterPayment } from '@/app/actions/bulk-reposter-pay'
 export function BulkReposterPay({
   today,
   selectedIds,
+  isOwner = false,
 }: {
   today: string
   selectedIds: number[]
+  isOwner?: boolean
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const [pending, startTransition] = useTransition()
@@ -73,6 +75,19 @@ export function BulkReposterPay({
             className="h-9 rounded-lg border border-sky-200 bg-white px-2 text-sm"
           />
         </label>
+        {isOwner ? (
+          <label className="flex flex-col gap-1 text-xs text-sky-950/80">
+            Sent by
+            <select
+              name="paid_from"
+              defaultValue="ahmed"
+              className="h-9 rounded-lg border border-sky-200 bg-white px-2 text-sm"
+            >
+              <option value="ahmed">Ahmed (his wallet)</option>
+              <option value="direct">Me directly</option>
+            </select>
+          </label>
+        ) : null}
         <button
           type="submit"
           disabled={pending || count === 0}

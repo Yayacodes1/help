@@ -47,6 +47,7 @@ export function CreatorsManager({
   roleFilter = 'creator',
   today,
   currentProjectId,
+  isOwner = false,
 }: {
   creators: CreatorTrackingRow[]
   pausedCreators?: CreatorTrackingRow[]
@@ -54,6 +55,7 @@ export function CreatorsManager({
   roleFilter?: RoleFilter
   today?: string
   currentProjectId?: number | string | null
+  isOwner?: boolean
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -241,7 +243,7 @@ export function CreatorsManager({
             </button>
             <span className="text-muted-foreground">{selected.length} selected</span>
           </div>
-          <BulkReposterPay today={today} selectedIds={selected} />
+          <BulkReposterPay today={today} selectedIds={selected} isOwner={isOwner} />
         </>
       ) : null}
 

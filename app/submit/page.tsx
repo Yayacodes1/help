@@ -19,6 +19,7 @@ import {
   getCreatorCountsByPlatformOnDate,
   getCreatorStats,
   getCreatorConsistency,
+  getPaymentsForCreator,
   goalsForContract,
 } from '@/lib/queries'
 import { getLeagueBoard } from '@/lib/ranking'
@@ -34,7 +35,7 @@ import { PLATFORMS } from '@/lib/db'
 import { goalFor } from '@/lib/platforms'
 import type { BrandProject } from '@/components/submit-form'
 import { addDays } from '@/lib/campaign'
-import { formatDate } from '@/lib/format'
+import { formatDate, formatMoney } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 
@@ -110,6 +111,7 @@ export default async function SubmitPage({
     league,
     contestBoard,
     strikeSummary,
+    myPayments,
   ] = await Promise.all([
     getCreatorCountsByPlatformOnDate(creator.id, date),
     getSubmissionsForCreatorOnDate(creator.id, date),
@@ -131,7 +133,9 @@ export default async function SubmitPage({
     creator.role === 'reposter'
       ? getCreatorStrikeSummary(creator.id, opToday)
       : Promise.resolve(null),
+    getPaymentsForCreator(creator.id),
   ])
+  const paidTotal = myPayments.reduce((sum, p) => sum + p.amount, 0)
 
   const dailyGoals = goalsForContract(creator, active)
   const goalShape = {
@@ -153,7 +157,7 @@ export default async function SubmitPage({
     hit_rate: activeCompare?.displayRate ?? consistency.hitRate,
   }
 
-  const defaultPanel = panel && ['contract', 'streaks'].includes(panel) ? panel : null
+  const defaultPanel = panel && ['contract', 'streaks', 'payments'].includes(panel) ? panel : null
   const previousComparisons = comparisons.filter((c) => !c.isActive)
   const renderContract = (row: (typeof comparisons)[number]) => {
     const {
@@ -264,8 +268,8 @@ export default async function SubmitPage({
         <header className="animate-in fade-in slide-in-from-top-2 overflow-hidden rounded-2xl border border-[#e8cfc0] bg-[#fff1e6] p-6 text-[#9a0d18] shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm text-[#a05a55]">
-                {t('welcome')} @{username}
+              <p className="text-base font-semibold text-[#9a0d18]">
+                {t('hey')} @{username}
               </p>
               <p className="mt-0.5 text-xs text-[#a05a55]">
                 {login.platform === 'instagram' ? t('instagram') : t('tiktok')}
@@ -464,6 +468,36 @@ export default async function SubmitPage({
                     </p>
                   ) : null}
                   <CreatorStats stats={displayStats} locale={locale} />
+                </div>
+              ),
+            },
+            {
+              id: 'payments',
+              title: t('panelPayments'),
+              summary: formatMoney(paidTotal),
+              hint: myPayments[0]
+                ? `${t('lastPaid')} ${formatDate(myPayments[0].paid_on)}`
+                : t('paymentsNone'),
+              children: (
+                <div className="flex flex-col gap-3">
+                  <p className="text-xs text-muted-foreground">{t('paymentsCheckHint')}</p>
+                  {myPayments.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{t('paymentsNone')}</p>
+                  ) : (
+                    <ul className="divide-y divide-border rounded-xl border border-border">
+                      {myPayments.map((p) => (
+                        <li key={p.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                          <span>
+                            {formatDate(p.paid_on)}
+                            {p.contract_name ? (
+                              <span className="text-xs text-muted-foreground"> · {p.contract_name}</span>
+                            ) : null}
+                          </span>
+                          <span className="font-semibold tabular-nums">{formatMoney(p.amount)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               ),
             },

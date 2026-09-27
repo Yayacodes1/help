@@ -1,12 +1,23 @@
 'use server'
 
 import { sql } from '@/lib/db'
-import { isAdmin } from '@/lib/admin-auth'
+import { getAdminSession } from '@/lib/admin-auth'
 import { normalizeCurrency } from '@/lib/marketing'
+import { paymentSource } from '@/lib/wallet'
 import { revalidatePath } from 'next/cache'
 
-async function requireAdmin() {
-  if (!(await isAdmin())) throw new Error('Unauthorized')
+/** Returns the admin account id (yahya / ahmed). */
+async function requireAdmin(): Promise<string> {
+  const session = await getAdminSession()
+  if (!session) throw new Error('Unauthorized')
+  return session.id
+}
+
+/** Only Yahya records or changes money sent to Ahmed. */
+async function requireOwner(): Promise<string> {
+  const session = await getAdminSession()
+  if (session?.role !== 'owner') throw new Error('Only Yahya can do this')
+  return session.id
 }
 
 function parseAmount(value: FormDataEntryValue | null): number {
@@ -37,7 +48,7 @@ function revalidateMarketing() {
 
 /** Record money sent to marketing. */
 export async function createMarketingTransfer(formData: FormData) {
-  await requireAdmin()
+  const by = await requireOwner()
   const sentOn = parseDate(formData.get('sent_on'))
   const amount = parseAmount(formData.get('amount'))
   const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
@@ -46,14 +57,14 @@ export async function createMarketingTransfer(formData: FormData) {
   const projectId = parseProjectId(formData.get('project_id'))
   if (!sentOn || amount <= 0) return
   await sql`
-    INSERT INTO marketing_transfers (sent_on, amount, currency, label, note, project_id)
-    VALUES (${sentOn}, ${amount}, ${currency}, ${label}, ${note}, ${projectId})
+    INSERT INTO marketing_transfers (sent_on, amount, currency, label, note, project_id, recorded_by)
+    VALUES (${sentOn}, ${amount}, ${currency}, ${label}, ${note}, ${projectId}, ${by})
   `
   revalidateMarketing()
 }
 
 export async function updateMarketingTransfer(id: number, formData: FormData) {
-  await requireAdmin()
+  await requireOwner()
   const sentOn = parseDate(formData.get('sent_on'))
   const amount = parseAmount(formData.get('amount'))
   const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
@@ -72,14 +83,14 @@ export async function updateMarketingTransfer(id: number, formData: FormData) {
 }
 
 export async function deleteMarketingTransfer(id: number) {
-  await requireAdmin()
+  await requireOwner()
   await sql`DELETE FROM marketing_transfers WHERE id = ${id}`
   revalidateMarketing()
 }
 
 /** Log what money was used for. */
 export async function createMarketingExpense(formData: FormData) {
-  await requireAdmin()
+  const by = await requireAdmin()
   const spentOn = parseDate(formData.get('spent_on'))
   const amount = parseAmount(formData.get('amount'))
   const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
@@ -88,14 +99,14 @@ export async function createMarketingExpense(formData: FormData) {
   const projectId = parseProjectId(formData.get('project_id'))
   if (!spentOn || amount <= 0) return
   await sql`
-    INSERT INTO marketing_expenses (spent_on, amount, currency, label, note, project_id)
-    VALUES (${spentOn}, ${amount}, ${currency}, ${label}, ${note}, ${projectId})
+    INSERT INTO marketing_expenses (spent_on, amount, currency, label, note, project_id, recorded_by)
+    VALUES (${spentOn}, ${amount}, ${currency}, ${label}, ${note}, ${projectId}, ${by})
   `
   revalidateMarketing()
 }
 
 export async function updateMarketingExpense(id: number, formData: FormData) {
-  await requireAdmin()
+  await requireOwner()
   const spentOn = parseDate(formData.get('spent_on'))
   const amount = parseAmount(formData.get('amount'))
   const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
@@ -124,7 +135,7 @@ export async function deleteMarketingExpense(id: number) {
  * Or a single reason + amount.
  */
 export async function createMarketingRequest(formData: FormData) {
-  await requireAdmin()
+  const by = await requireAdmin()
   const neededBy = parseDate(formData.get('needed_by'))
   const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
   const title = parseText(formData.get('title'), 200)
@@ -145,8 +156,8 @@ export async function createMarketingRequest(formData: FormData) {
   if (items.length === 0) return
 
   const rows = (await sql`
-    INSERT INTO marketing_requests (needed_by, currency, status, title, note, project_id)
-    VALUES (${neededBy}, ${currency}, 'open', ${title}, ${note}, ${projectId})
+    INSERT INTO marketing_requests (needed_by, currency, status, title, note, project_id, recorded_by)
+    VALUES (${neededBy}, ${currency}, 'open', ${title}, ${note}, ${projectId}, ${by})
     RETURNING id
   `) as { id: number }[]
   const requestId = rows[0]?.id
@@ -171,7 +182,7 @@ export async function cancelMarketingRequest(id: number) {
 
 /** Fulfill a request by recording a transfer for the total. */
 export async function fulfillMarketingRequest(id: number, formData: FormData) {
-  await requireAdmin()
+  const by = await requireOwner()
   const sentOn = parseDate(formData.get('sent_on')) ?? new Date().toISOString().slice(0, 10)
   const label = parseText(formData.get('label'), 200)
   const note = parseText(formData.get('note'), 2000)
@@ -199,9 +210,97 @@ export async function fulfillMarketingRequest(id: number, formData: FormData) {
   const transferLabel = label || req.title || `Request #${id}`
 
   await sql`
-    INSERT INTO marketing_transfers (sent_on, amount, currency, label, note, project_id)
-    VALUES (${sentOn}, ${total}, ${currency}, ${transferLabel}, ${note}, ${req.project_id})
+    INSERT INTO marketing_transfers (sent_on, amount, currency, label, note, project_id, recorded_by)
+    VALUES (${sentOn}, ${total}, ${currency}, ${transferLabel}, ${note}, ${req.project_id}, ${by})
   `
   await sql`UPDATE marketing_requests SET status = 'fulfilled' WHERE id = ${id}`
   revalidateMarketing()
+}
+
+export type MoneyRequestInput = {
+  title: string
+  neededBy: string | null
+  currency: string
+  note: string
+  items: Array<{ reason: string; amount: number }>
+}
+
+/** Ask Yahya for money: one request with any number of lines. */
+export async function createMoneyRequest(input: MoneyRequestInput) {
+  const by = await requireAdmin()
+  const items = input.items
+    .map((i) => ({
+      reason: i.reason.trim().slice(0, 500),
+      amount: Math.round(Math.max(0, Number(i.amount) || 0) * 100) / 100,
+    }))
+    .filter((i) => i.reason && i.amount > 0)
+    .slice(0, 300)
+  if (items.length === 0) return { ok: false as const, error: 'Add at least one line with an amount.' }
+  const neededBy = input.neededBy && /^\d{4}-\d{2}-\d{2}$/.test(input.neededBy) ? input.neededBy : null
+  const rows = (await sql`
+    INSERT INTO marketing_requests (needed_by, currency, status, title, note, recorded_by)
+    VALUES (${neededBy}, ${normalizeCurrency(input.currency)}, 'open',
+            ${input.title.trim().slice(0, 200) || null}, ${input.note.trim().slice(0, 2000) || null}, ${by})
+    RETURNING id
+  `) as { id: number }[]
+  const requestId = rows[0]?.id
+  if (requestId == null) return { ok: false as const, error: 'Could not save the request.' }
+  for (const item of items) {
+    await sql`
+      INSERT INTO marketing_request_items (request_id, amount, reason)
+      VALUES (${requestId}, ${item.amount}, ${item.reason})
+    `
+  }
+  revalidateMarketing()
+  return { ok: true as const, total: items.reduce((s, i) => s + i.amount, 0) }
+}
+
+export type WalletPaymentInput = {
+  paidOn: string
+  note: string
+  /** Yahya only: 'ahmed' = from Ahmed's wallet, 'direct' = Yahya paid them himself. */
+  paidFrom: 'ahmed' | 'direct'
+  entries: Array<{ creatorId: number; amount: number }>
+}
+
+/** Pay many people at once (each gets their own amount). */
+export async function recordWalletPayments(input: WalletPaymentInput) {
+  await requireAdmin()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.paidOn)) return { ok: false as const, error: 'Pick a date.' }
+  const entries = input.entries
+    .map((e) => ({
+      creatorId: Math.floor(Number(e.creatorId)),
+      amount: Math.round(Math.max(0, Number(e.amount) || 0) * 100) / 100,
+    }))
+    .filter((e) => e.creatorId > 0 && e.amount > 0)
+  if (entries.length === 0) return { ok: false as const, error: 'Tick at least one person and enter an amount.' }
+
+  const known = (await sql`SELECT id FROM creators`) as { id: number }[]
+  const allowed = new Set(known.map((r) => r.id))
+  const source = await paymentSource(input.paidFrom)
+  const note = input.note.trim().slice(0, 500) || null
+  let count = 0
+  let total = 0
+  for (const e of entries) {
+    if (!allowed.has(e.creatorId)) continue
+    const linked = (await sql`
+      SELECT id FROM contracts
+      WHERE creator_id = ${e.creatorId}
+        AND start_date <= ${input.paidOn}::date
+        AND (end_date IS NULL OR end_date >= ${input.paidOn}::date)
+      ORDER BY start_date DESC, id DESC
+      LIMIT 1
+    `) as { id: number }[]
+    await sql`
+      INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by)
+      VALUES (${e.creatorId}, ${linked[0]?.id ?? null}, ${input.paidOn}, ${e.amount}, ${note},
+              ${source.paidBy}, ${source.recordedBy})
+    `
+    await sql`UPDATE creators SET last_paid_at = GREATEST(COALESCE(last_paid_at, ${input.paidOn}::date), ${input.paidOn}::date) WHERE id = ${e.creatorId}`
+    count++
+    total += e.amount
+  }
+  revalidatePath('/admin')
+  revalidatePath('/submit')
+  return { ok: true as const, count, total, fromWallet: source.paidBy === 'ahmed' }
 }

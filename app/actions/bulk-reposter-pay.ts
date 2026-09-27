@@ -3,6 +3,7 @@
 import { sql } from '@/lib/db'
 import { isAdmin } from '@/lib/admin-auth'
 import { revalidatePath } from 'next/cache'
+import { paymentSource } from '@/lib/wallet'
 
 async function requireAdmin() {
   if (!(await isAdmin())) throw new Error('Unauthorized')
@@ -53,6 +54,7 @@ export async function recordBulkReposterPayment(formData: FormData) {
     return { ok: false as const, error: 'No matching reposters to pay.' }
   }
 
+  const source = await paymentSource(formData.get('paid_from'))
   for (const r of reposters) {
     const linked = (await sql`
       SELECT id FROM contracts
@@ -64,8 +66,8 @@ export async function recordBulkReposterPayment(formData: FormData) {
     `) as { id: number }[]
     const contractId = linked[0]?.id ?? null
     await sql`
-      INSERT INTO payments (creator_id, contract_id, paid_on, amount, note)
-      VALUES (${r.id}, ${contractId}, ${paidOn}, ${amount}, ${note})
+      INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by)
+      VALUES (${r.id}, ${contractId}, ${paidOn}, ${amount}, ${note}, ${source.paidBy}, ${source.recordedBy})
     `
     await sql`UPDATE creators SET last_paid_at = ${paidOn} WHERE id = ${r.id}`
   }

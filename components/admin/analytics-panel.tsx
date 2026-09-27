@@ -294,7 +294,11 @@ export function AnalyticsPanel({
     : summary
   const peopleWithViews = leaderboard.filter((r) => r.views > 0).length
   const statTiles: Array<{ label: string; value: string; hint?: string; color?: string }> = [
-    { label: labels.views, value: formatNumber(totals.views) },
+    {
+      label: labels.views,
+      value: formatNumber(totals.views),
+      hint: totals.videos > 0 ? `~${formatNumber(Math.round(totals.views / totals.videos))} per video` : undefined,
+    },
     { label: `${labels.views} · ${labels.instagram}`, value: formatNumber(totals.views_instagram), color: IG },
     { label: `${labels.views} · ${labels.tiktok}`, value: formatNumber(totals.views_tiktok), color: TT },
     {
@@ -303,8 +307,12 @@ export function AnalyticsPanel({
       hint: `IG ${totals.videos_instagram} · TT ${totals.videos_tiktok}`,
     },
     byPeople
-      ? { label: labels.people, value: `${pickedRows.length}` }
-      : { label: labels.people, value: `${peopleWithViews} / ${leaderboard.length}` },
+      ? { label: labels.people, value: `${pickedRows.length}`, hint: 'picked' }
+      : {
+          label: labels.people,
+          value: `${peopleWithViews} / ${leaderboard.length}`,
+          hint: 'got views / total',
+        },
   ]
 
   const axisShared = (
