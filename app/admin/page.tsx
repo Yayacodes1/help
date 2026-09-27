@@ -96,6 +96,8 @@ export default async function AdminPage({
     aFrom?: string
     aTo?: string
     aCreator?: string
+    aProject?: string
+    aRole?: string
     tvFrom?: string
     tvTo?: string
     tvPlatform?: string
@@ -157,6 +159,21 @@ export default async function AdminPage({
     : analyticsDefault.from
   const aTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.aTo ?? '') ? sp.aTo! : analyticsDefault.to
   const aCreatorId = sp.aCreator ? Number(sp.aCreator) : null
+  const aProjectRaw = Number(sp.aProject)
+  const aProjectId =
+    sp.aProject === 'all'
+      ? null
+      : Number.isFinite(aProjectRaw) && aProjectRaw > 0
+        ? aProjectRaw
+        : projectId != null && Number.isFinite(projectId)
+          ? projectId
+          : null
+  const aRoleFilter = parseRoleFilter(
+    sp.aRole === 'creator' || sp.aRole === 'reposter' || sp.aRole === 'all'
+      ? sp.aRole
+      : sp.role,
+  )
+  const aRoleSql = roleFilterToSql(aRoleFilter)
 
   const tvFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.tvFrom ?? '')
     ? sp.tvFrom!
@@ -246,30 +263,30 @@ export default async function AdminPage({
     getPaymentsTotalInRange(payFrom, payTo, undefined, roleSql),
     getAllPaidTotal(projectId, roleSql),
     getPaymentDueList(today, projectId, roleSql),
-    getDailyAnalytics({ from: aFrom, to: aTo, projectId: projectId ?? null, role: roleSql }),
+    getDailyAnalytics({ from: aFrom, to: aTo, projectId: aProjectId, role: aRoleSql }),
     aCreatorId
       ? getDailyAnalytics({
           from: aFrom,
           to: aTo,
-          projectId: projectId ?? null,
+          projectId: aProjectId,
           creatorId: aCreatorId,
-          role: roleSql,
+          role: aRoleSql,
         })
       : Promise.resolve([]),
     getDailyViewsByCreator({
       from: aFrom,
       to: aTo,
-      projectId: projectId ?? null,
-      role: roleSql,
+      projectId: aProjectId,
+      role: aRoleSql,
     }),
     getViewsLeaderboard({
       from: aFrom,
       to: aTo,
-      projectId: projectId ?? null,
-      role: roleSql,
+      projectId: aProjectId,
+      role: aRoleSql,
       limit: 1000,
     }),
-    getViewsSummary({ from: aFrom, to: aTo, projectId: projectId ?? null, role: roleSql }),
+    getViewsSummary({ from: aFrom, to: aTo, projectId: aProjectId, role: aRoleSql }),
     getTopVideos({
       from: tvFrom,
       to: tvTo,
@@ -512,9 +529,13 @@ export default async function AdminPage({
                 creatorDaily={creatorDaily}
                 byCreatorDaily={byCreatorDaily}
                 leaderboard={leaderboard}
-                creators={creators.map((c) => ({ id: c.id, name: c.name }))}
+                summary={viewsSummary}
+                creators={leaderboard
+                  .map((c) => ({ id: c.creator_id, name: c.creator_name }))
+                  .sort((a, b) => a.name.localeCompare(b.name))}
                 projects={projects}
-                projectId={projectId}
+                projectId={aProjectId}
+                role={aRoleFilter}
                 selectedCreatorId={aCreatorId}
                 today={today}
                 defaultFrom={aFrom}
@@ -522,14 +543,34 @@ export default async function AdminPage({
                 labels={{
                   views: t('views'),
                   videos: t('videos'),
-                  creator: peopleNoun,
-                  allCreators: roleFilter === 'reposter' ? t('allReposters') : t('allCreators'),
+                  creator:
+                    aRoleFilter === 'reposter'
+                      ? t('reposters')
+                      : aRoleFilter === 'all'
+                        ? t('people')
+                        : t('creators'),
+                  allCreators:
+                    aRoleFilter === 'reposter'
+                      ? t('allReposters')
+                      : aRoleFilter === 'all'
+                        ? t('allPeople')
+                        : t('allCreators'),
+                  roleCreators: t('roleFilterCreators'),
+                  roleReposters: t('roleFilterReposters'),
+                  roleAll: t('roleFilterAll'),
+                  month: t('rankingMonth'),
+                  people: t('people'),
+                  loading: t('analyticsLoading'),
                   instagram: t('instagram'),
                   tiktok: t('tiktok'),
                   showViews: t('showViews'),
                   showVideos: t('showVideos'),
                   topCreators:
-                    roleFilter === 'reposter' ? t('topReposters') : t('topCreators'),
+                    aRoleFilter === 'reposter'
+                      ? t('topReposters')
+                      : aRoleFilter === 'all'
+                        ? t('topPeople')
+                        : t('topCreators'),
                   empty: t('analyticsEmpty'),
                   from: t('from'),
                   to: t('to'),

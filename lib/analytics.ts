@@ -197,6 +197,14 @@ export async function getViewsLeaderboard(opts: {
       AND s.video_date <= ${to}::date
       AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
     WHERE (${role}::text IS NULL OR c.role = ${role})
+      AND (
+        ${projectId}::int IS NULL
+        OR c.project_id = ${projectId}
+        OR EXISTS (
+          SELECT 1 FROM submissions sp
+          WHERE sp.creator_id = c.id AND sp.project_id = ${projectId}
+        )
+      )
     GROUP BY c.id, c.name
     ORDER BY views DESC, videos DESC, c.name ASC
     LIMIT ${limit}

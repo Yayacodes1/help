@@ -1,6 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import {
   Bar,
   BarChart,
@@ -13,16 +15,18 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { addDays } from '@/lib/campaign'
+import { addDays, rankingMonthRange } from '@/lib/campaign'
+import { shiftYearMonth } from '@/lib/biweekly'
 import { formatNumber } from '@/lib/format'
 import { colorForCreator } from '@/lib/creator-colors'
+import type { RoleFilter } from '@/lib/participant-role'
 import type {
   CreatorDailyViewsRow,
   CreatorViewsRow,
   DailyAnalyticsRow,
+  ViewsSummary,
 } from '@/lib/analytics'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
-import { PanelProjectFilter } from '@/components/admin/panel-project-filter'
 
 const IG = '#E1306C'
 const TT = '#0F766E'
@@ -53,6 +57,35 @@ type Labels = {
   chartLinear: string
   allProjects: string
   chooseProject: string
+  roleCreators: string
+  roleReposters: string
+  roleAll: string
+  month: string
+  people: string
+  loading: string
+}
+
+type NavPatch = {
+  from?: string
+  to?: string
+  creator?: number | ''
+  project?: number | 'all'
+  role?: RoleFilter
+}
+
+function monthName(yearMonth: string): string {
+  const [y, m] = yearMonth.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-US', {
+    month: 'long',
+    timeZone: 'UTC',
+  })
+}
+
+/** YYYY-MM when the range is exactly one calendar month (current month ends today). */
+function monthOfRange(from: string, to: string, today: string): string {
+  if (!/^\d{4}-\d{2}-01$/.test(from)) return ''
+  const ym = from.slice(0, 7)
+  return rankingMonthRange(ym, today).end === to ? ym : ''
 }
 
 function indexDaily(rows: DailyAnalyticsRow[]) {
@@ -142,9 +175,11 @@ export function AnalyticsPanel({
   creatorDaily,
   byCreatorDaily,
   leaderboard,
+  summary,
   creators,
   projects,
   projectId,
+  role,
   selectedCreatorId,
   today,
   defaultFrom,
@@ -155,15 +190,19 @@ export function AnalyticsPanel({
   creatorDaily: DailyAnalyticsRow[]
   byCreatorDaily: CreatorDailyViewsRow[]
   leaderboard: CreatorViewsRow[]
+  summary: ViewsSummary
   creators: CreatorOption[]
   projects: Array<{ id: number; name: string }>
-  projectId?: number | null
+  projectId: number | null
+  role: RoleFilter
   selectedCreatorId: number | null
   today: string
   defaultFrom: string
   defaultTo: string
   labels: Labels
 }) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
   const [showViews, setShowViews] = useState(true)
   const [showVideos, setShowVideos] = useState(false)
   const [chartType, setChartType] = useState<ChartType>('line')
@@ -173,6 +212,19 @@ export function AnalyticsPanel({
   )
   const [from, setFrom] = useState(defaultFrom)
   const [to, setTo] = useState(defaultTo)
+
+  const serverKey = `${defaultFrom}|${defaultTo}|${selectedCreatorId ?? ''}`
+  const [syncedKey, setSyncedKey] = useState(serverKey)
+  if (syncedKey !== serverKey) {
+    setSyncedKey(serverKey)
+    setFrom(defaultFrom)
+    setTo(defaultTo)
+    setCreatorId(selectedCreatorId ?? '')
+  }
+
+  const currentMonth = today.slice(0, 7)
+  const lastMonth = shiftYearMonth(currentMonth, -1)
+  const selectedMonth = monthOfRange(from, to, today)
 
   const multiCreator = selectedCreatorId == null
   const sourceDaily = selectedCreatorId != null ? creatorDaily : daily
@@ -259,14 +311,69 @@ export function AnalyticsPanel({
     ? multiChartData.length > 0 && creatorSeries.length > 0
     : platformChartData.length > 0
 
-  function navigate(nextFrom: string, nextTo: string, nextCreator: number | '') {
+  function push(patch: NavPatch) {
     const params = new URLSearchParams(window.location.search)
     params.set('panel', 'analytics')
-    params.set('aFrom', nextFrom)
-    params.set('aTo', nextTo)
+    params.set('aFrom', patch.from ?? from)
+    params.set('aTo', patch.to ?? to)
+    const nextCreator = patch.creator ?? creatorId
     if (nextCreator === '') params.delete('aCreator')
     else params.set('aCreator', String(nextCreator))
-    window.location.search = params.toString()
+    params.set('aProject', String(patch.project ?? projectId ?? 'all'))
+    params.set('aRole', patch.role ?? role)
+    startTransition(() => {
+      router.push(`?${params.toString()}`, { scroll: false })
+    })
+  }
+
+  function navigate(nextFrom: string, nextTo: string, nextCreator: number | '') {
+    push({ from: nextFrom, to: nextTo, creator: nextCreator })
+  }
+
+  function selectMonth(yearMonth: string) {
+    if (!/^\d{4}-\d{2}$/.test(yearMonth)) return
+    const { start, end } = rankingMonthRange(yearMonth, today)
+    setFrom(start)
+    setTo(end)
+    push({ from: start, to: end })
+  }
+
+  const chipClass = (active: boolean) =>
+    `h-9 rounded-lg border px-3 text-sm font-medium transition-colors ${
+      active
+        ? 'border-primary bg-primary text-primary-foreground'
+        : 'border-border hover:bg-accent'
+    }`
+
+  const selectedRow =
+    selectedCreatorId != null
+      ? leaderboard.find((r) => r.creator_id === selectedCreatorId)
+      : undefined
+  const totals = selectedRow ?? summary
+  const peopleWithViews = leaderboard.filter((r) => r.views > 0).length
+  const statTiles: Array<{ label: string; value: string; hint?: string; color?: string }> = [
+    { label: labels.views, value: formatNumber(totals.views) },
+    {
+      label: `${labels.views} · ${labels.instagram}`,
+      value: formatNumber(totals.views_instagram),
+      color: IG,
+    },
+    {
+      label: `${labels.views} · ${labels.tiktok}`,
+      value: formatNumber(totals.views_tiktok),
+      color: TT,
+    },
+    {
+      label: labels.videos,
+      value: formatNumber(totals.videos),
+      hint: `IG ${totals.videos_instagram} · TT ${totals.videos_tiktok}`,
+    },
+  ]
+  if (!selectedRow) {
+    statTiles.push({
+      label: labels.people,
+      value: `${peopleWithViews} / ${leaderboard.length}`,
+    })
   }
 
   const toggleClass = (active: boolean) =>
@@ -305,17 +412,80 @@ export function AnalyticsPanel({
   )
 
   return (
-    <div className="flex flex-col gap-4">
-      <PanelProjectFilter
-        projects={projects}
-        projectId={projectId}
-        panel="analytics"
-        promptWhenAll
-        labels={{
-          allProjects: labels.allProjects,
-          chooseProject: labels.chooseProject,
-        }}
-      />
+    <div className="relative flex flex-col gap-4">
+      {isPending ? (
+        <div className="absolute inset-0 z-20 flex items-start justify-center rounded-lg bg-background/60 pt-24 backdrop-blur-[1px]">
+          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm shadow-sm">
+            <Loader2 className="size-3.5 animate-spin" />
+            {labels.loading}
+          </span>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => push({ project: 'all', creator: '' })}
+          className={chipClass(projectId == null)}
+        >
+          {labels.allProjects}
+        </button>
+        {projects.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => push({ project: p.id, creator: '' })}
+            className={chipClass(projectId === p.id)}
+          >
+            {p.name}
+          </button>
+        ))}
+        <span className="mx-1 h-6 w-px bg-border" aria-hidden />
+        {(
+          [
+            ['creator', labels.roleCreators],
+            ['reposter', labels.roleReposters],
+            ['all', labels.roleAll],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => push({ role: value, creator: '' })}
+            className={chipClass(role === value)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => selectMonth(currentMonth)}
+          className={chipClass(selectedMonth === currentMonth)}
+        >
+          {monthName(currentMonth)}
+        </button>
+        <button
+          type="button"
+          onClick={() => selectMonth(lastMonth)}
+          className={chipClass(selectedMonth === lastMonth)}
+        >
+          {monthName(lastMonth)}
+        </button>
+        <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+          {labels.month}
+          <input
+            type="month"
+            value={selectedMonth}
+            max={currentMonth}
+            onChange={(e) => selectMonth(e.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+          />
+        </label>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <DateRangePresets
           today={today}
@@ -387,6 +557,23 @@ export function AnalyticsPanel({
         </p>
       ) : null}
 
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        {statTiles.map((tile) => (
+          <div key={tile.label} className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+            <p className="text-xs text-muted-foreground">{tile.label}</p>
+            <p
+              className="text-lg font-semibold tabular-nums"
+              style={tile.color ? { color: tile.color } : undefined}
+            >
+              {tile.value}
+            </p>
+            {tile.hint ? (
+              <p className="text-xs tabular-nums text-muted-foreground">{tile.hint}</p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-center gap-4 text-sm">
         <div
           className="inline-flex gap-1 rounded-lg border border-border bg-muted/30 p-1"
@@ -434,10 +621,12 @@ export function AnalyticsPanel({
         ) : null}
       </div>
 
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
+      <div className="min-w-0">
       {!hasChart ? (
         <p className="text-sm text-muted-foreground">{labels.empty}</p>
       ) : (
-        <div className="h-80 w-full">
+        <div className="h-80 w-full xl:h-[28rem]">
           <ResponsiveContainer width="100%" height="100%">
             {chartType === 'bar' ? (
               <BarChart
@@ -587,13 +776,14 @@ export function AnalyticsPanel({
           </ResponsiveContainer>
         </div>
       )}
+      </div>
 
-      <div>
+      <div className="min-w-0">
         <h3 className="mb-2 text-sm font-medium">{labels.topCreators}</h3>
         {leaderboard.length === 0 ? (
           <p className="text-sm text-muted-foreground">{labels.empty}</p>
         ) : (
-          <ul className="divide-y divide-border rounded-lg border border-border">
+          <ul className="max-h-[28rem] divide-y divide-border overflow-y-auto rounded-lg border border-border">
             {leaderboard.map((row, i) => {
               const rank = i + 1
               const active = selectedCreatorId === row.creator_id
@@ -633,6 +823,7 @@ export function AnalyticsPanel({
             })}
           </ul>
         )}
+      </div>
       </div>
     </div>
   )
