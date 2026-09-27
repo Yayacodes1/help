@@ -61,10 +61,20 @@ function parseValues(values: unknown): Map<string, number> {
 
 async function rcGet(link: RevenueCatLink, path: string, params: Record<string, string>) {
   const qs = new URLSearchParams(params).toString()
-  const res = await fetch(`${API}/projects/${link.rcProjectId}${path}${qs ? `?${qs}` : ''}`, {
-    headers: { Authorization: `Bearer ${link.apiKey}`, Accept: 'application/json' },
-    cache: 'no-store',
-  })
+  const call = (projectId: string) =>
+    fetch(`${API}/projects/${projectId}${path}${qs ? `?${qs}` : ''}`, {
+      headers: { Authorization: `Bearer ${link.apiKey}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+  let res = await call(link.rcProjectId)
+  // Dashboard URLs show the bare id (ab12cd34); the API may expect proj-prefixed.
+  if (res.status === 404 && !link.rcProjectId.startsWith('proj')) {
+    const retry = await call(`proj${link.rcProjectId}`)
+    if (retry.ok) {
+      link.rcProjectId = `proj${link.rcProjectId}`
+      res = retry
+    }
+  }
   const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
   if (!res.ok) {
     const msg = (body?.message as string) || `HTTP ${res.status}`
