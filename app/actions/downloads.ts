@@ -1,15 +1,22 @@
 'use server'
 
 import { sql } from '@/lib/db'
-import { isAdmin } from '@/lib/admin-auth'
+import { canSeeBusiness, isAdmin } from '@/lib/admin-auth'
 import { revalidatePath } from 'next/cache'
-import { getSheetDayVideos, type SheetDayVideo } from '@/lib/analytics'
+import { getSheetDayVideos, getSheetPersonVideos, type SheetDayVideo } from '@/lib/analytics'
 import { syncRevenueCatDownloads } from '@/lib/revenuecat'
 
 export type DownloadEntry = { date: string; downloads: number | null }
 
+const DAY = /^\d{4}-\d{2}-\d{2}$/
+
 async function requireAdmin() {
   if (!(await isAdmin())) throw new Error('Unauthorized')
+}
+
+/** Downloads, subscriptions and revenue are owner-only. */
+async function requireOwner() {
+  if (!(await canSeeBusiness())) throw new Error('Unauthorized')
 }
 
 /**
@@ -21,14 +28,14 @@ export async function saveDailyDownloads(
   entries: DownloadEntry[],
   source: 'manual' | 'import' = 'manual',
 ) {
-  await requireAdmin()
+  await requireOwner()
   if (!Number.isFinite(projectId) || projectId <= 0) {
     return { ok: false as const, error: 'Pick a project first.' }
   }
 
   let saved = 0
   for (const entry of entries.slice(0, 2000)) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) continue
+    if (!DAY.test(entry.date)) continue
     if (entry.downloads == null) {
       await sql`
         DELETE FROM daily_downloads
@@ -53,13 +60,24 @@ export async function saveDailyDownloads(
 
 export async function loadSheetDay(day: string, projectId: number | null): Promise<SheetDayVideo[]> {
   await requireAdmin()
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return []
+  if (!DAY.test(day)) return []
   return getSheetDayVideos({ day, projectId })
 }
 
-export async function syncRevenueCatNow(from: string, to: string, projectId: number | null) {
+export async function loadSheetPerson(
+  creatorId: number,
+  from: string,
+  to: string,
+  projectId: number | null,
+) {
   await requireAdmin()
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+  if (!Number.isFinite(creatorId) || !DAY.test(from) || !DAY.test(to)) return []
+  return getSheetPersonVideos({ creatorId, from, to, projectId })
+}
+
+export async function syncRevenueCatNow(from: string, to: string, projectId: number | null) {
+  await requireOwner()
+  if (!DAY.test(from) || !DAY.test(to)) {
     return { ok: false as const, error: 'Bad date range.' }
   }
   const results = await syncRevenueCatDownloads({ from, to, projectId })

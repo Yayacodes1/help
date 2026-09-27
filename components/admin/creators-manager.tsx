@@ -1,7 +1,7 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
-import { Pause, Pencil, Play, Trash2, X } from 'lucide-react'
+import { useMemo, useRef, useState, useTransition } from 'react'
+import { Pause, Pencil, Play, Plus, Search, Trash2, X } from 'lucide-react'
 import type { Project } from '@/lib/db'
 import type { CreatorTrackingRow } from '@/lib/queries'
 import type { ParticipantRole, RoleFilter } from '@/lib/participant-role'
@@ -59,6 +59,33 @@ export function CreatorsManager({
   const [editingId, setEditingId] = useState<number | null>(null)
   const [pending, startTransition] = useTransition()
   const [selected, setSelected] = useState<number[]>([])
+  const [addOpen, setAddOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<'name' | 'videos' | 'streak' | 'today'>('name')
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase().replace(/^@/, '')
+    const list = q
+      ? creators.filter((c) =>
+          [
+            c.name,
+            c.tiktok_username,
+            c.instagram_username,
+            c.notek_tiktok_username,
+            c.notek_instagram_username,
+            c.miqat_tiktok_username,
+            c.miqat_instagram_username,
+          ].some((v) => v?.toLowerCase().includes(q)),
+        )
+      : creators
+    const today = (c: CreatorTrackingRow) => c.today_instagram + c.today_tiktok
+    return [...list].sort((a, b) => {
+      if (sort === 'videos') return b.total_videos - a.total_videos || a.name.localeCompare(b.name)
+      if (sort === 'streak') return b.current_streak - a.current_streak || a.name.localeCompare(b.name)
+      if (sort === 'today') return today(b) - today(a) || a.name.localeCompare(b.name)
+      return a.name.localeCompare(b.name)
+    })
+  }, [creators, query, sort])
 
   const defaultRole: ParticipantRole =
     roleFilter === 'reposter' ? 'reposter' : 'creator'
@@ -85,7 +112,7 @@ export function CreatorsManager({
     'h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
   const goalInputClass =
     'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
-  const ids = creators.map((c) => c.id)
+  const ids = visible.map((c) => c.id)
   const allSelected = ids.length > 0 && ids.every((id) => selected.includes(id))
 
   function toggle(id: number) {
@@ -218,15 +245,50 @@ export function CreatorsManager({
         </>
       ) : null}
 
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <label className="relative min-w-48 flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search name or @handle…"
+            className="h-10 w-full rounded-lg border border-input bg-background pl-8 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </label>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as typeof sort)}
+          className={selectClass}
+          aria-label="Sort"
+        >
+          <option value="name">Sort: name</option>
+          <option value="today">Sort: posted today</option>
+          <option value="videos">Sort: total videos</option>
+          <option value="streak">Sort: streak</option>
+        </select>
+        <button
+          type="button"
+          onClick={() => setAddOpen((v) => !v)}
+          className={`inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold ${
+            addOpen ? 'border border-border hover:bg-accent' : 'bg-primary text-primary-foreground'
+          }`}
+        >
+          {addOpen ? <X className="size-4" /> : <Plus className="size-4" />}
+          {addOpen ? 'Close' : addLabel}
+        </button>
+      </div>
+
+      {addOpen ? (
       <form
         ref={formRef}
         action={(fd) =>
           startTransition(async () => {
             await createCreator(fd)
             formRef.current?.reset()
+            setAddOpen(false)
           })
         }
-        className="mt-3 flex flex-col gap-2"
+        className="mt-3 flex flex-col gap-2 rounded-lg border border-dashed border-border p-3"
       >
         <HandleFields />
         <div className="flex flex-wrap gap-2">
@@ -254,12 +316,15 @@ export function CreatorsManager({
           {addLabel}
         </button>
       </form>
+      ) : null}
 
       <ul className="mt-3 flex flex-col divide-y divide-border">
-        {creators.length === 0 ? (
-          <li className="py-2 text-sm text-muted-foreground">{emptyLabel}</li>
+        {visible.length === 0 ? (
+          <li className="py-2 text-sm text-muted-foreground">
+            {creators.length === 0 ? emptyLabel : 'No one matches that search.'}
+          </li>
         ) : (
-          creators.map((c) => (
+          visible.map((c) => (
             <li key={c.id} className="py-3">
               {editingId === c.id ? (
                 <form

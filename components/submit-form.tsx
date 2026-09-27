@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useEffect, useRef } from 'react'
+import { useActionState, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Camera, Clock, Music2, Send, CheckCircle2, AlertCircle, Link2 } from 'lucide-react'
 import { submitVideos } from '@/app/actions/creator'
@@ -20,6 +20,19 @@ type PlatformField = {
 
 type State = { ok: boolean; message: string } | null
 
+/** Social handles that belong to a project's brand accounts (lowercase, no @). */
+export type BrandProject = { projectId: number; handles: string[] }
+
+/** Handles found in links like tiktok.com/@name/video/… or instagram.com/name/reel/…. */
+function handlesInLinks(text: string): string[] {
+  const out: string[] = []
+  for (const m of text.matchAll(/tiktok\.com\/@([A-Za-z0-9._]+)/gi)) out.push(m[1].toLowerCase())
+  for (const m of text.matchAll(/instagram\.com\/([A-Za-z0-9._]+)\/(?:reel|reels|p)\//gi)) {
+    out.push(m[1].toLowerCase())
+  }
+  return out
+}
+
 type Labels = {
   pasteLinks: string
   pasteHint: string
@@ -28,6 +41,7 @@ type Labels = {
   project: string
   projectHint: string
   pickProject: string
+  autoProject: string
   postDate: string
   postTime: string
   postWhenHint: string
@@ -40,7 +54,10 @@ export function SubmitForm({
   projects,
   defaultProjectId,
   videoDate,
+  minDate,
+  maxDate,
   defaultTime,
+  brandProjects = [],
 }: {
   username: string
   fields: PlatformField[]
@@ -48,23 +65,36 @@ export function SubmitForm({
   projects: { id: number; name: string }[]
   defaultProjectId?: number | null
   videoDate: string
+  minDate: string
+  maxDate: string
   defaultTime: string
+  brandProjects?: BrandProject[]
 }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
   const action = submitVideos.bind(null, username)
   const [state, formAction, pending] = useActionState<State, FormData>(action, null)
+  const [projectId, setProjectId] = useState<string>(
+    defaultProjectId != null ? String(defaultProjectId) : '',
+  )
+  const [autoPicked, setAutoPicked] = useState<string | null>(null)
+
+  function onLinksChange(text: string) {
+    const found = handlesInLinks(text)
+    const match = brandProjects.find((b) => b.handles.some((h) => found.includes(h)))
+    if (!match) return
+    const name = projects.find((p) => p.id === match.projectId)?.name ?? null
+    setProjectId(String(match.projectId))
+    setAutoPicked(name)
+  }
 
   useEffect(() => {
     if (state?.ok) {
-      const select = formRef.current?.querySelector<HTMLSelectElement>('select[name="project_id"]')
-      const keep = select?.value
       const dateInput = formRef.current?.querySelector<HTMLInputElement>('input[name="video_date"]')
       const keepDate = dateInput?.value
       const timeInput = formRef.current?.querySelector<HTMLInputElement>('input[name="post_time"]')
       const keepTime = timeInput?.value
       formRef.current?.reset()
-      if (select && keep) select.value = keep
       if (dateInput && keepDate) dateInput.value = keepDate
       if (timeInput && keepTime) timeInput.value = keepTime
       router.refresh()
@@ -84,7 +114,11 @@ export function SubmitForm({
           <select
             name="project_id"
             required
-            defaultValue={defaultProjectId ?? ''}
+            value={projectId}
+            onChange={(e) => {
+              setProjectId(e.target.value)
+              setAutoPicked(null)
+            }}
             className="mt-1 h-11 rounded-xl border border-border bg-card px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-ring"
           >
             <option value="" disabled>
@@ -96,6 +130,11 @@ export function SubmitForm({
               </option>
             ))}
           </select>
+          {autoPicked ? (
+            <span className="text-xs font-medium text-primary">
+              {labels.autoProject} {autoPicked}
+            </span>
+          ) : null}
         </label>
       )}
 
@@ -145,6 +184,7 @@ export function SubmitForm({
         <textarea
           name="links"
           rows={5}
+          onChange={(e) => onLinksChange(e.target.value)}
           dir="ltr"
           placeholder={'https://www.instagram.com/reel/…\nhttps://vt.tiktok.com/…'}
           className="mt-2 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -181,6 +221,8 @@ export function SubmitForm({
               type="date"
               name="video_date"
               required
+              min={minDate}
+              max={maxDate}
               defaultValue={videoDate}
               className="h-11 rounded-xl border border-border bg-card px-3 text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring"
             />

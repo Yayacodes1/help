@@ -91,6 +91,20 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
           </form>
         ) : (
           <form action={adminAction} className="mt-5 flex flex-col gap-3">
+            <label htmlFor="admin-name" className="text-sm font-semibold text-foreground">
+              {t('adminName')}
+            </label>
+            <input
+              id="admin-name"
+              name="name"
+              type="text"
+              autoComplete="username"
+              placeholder="Yahya / Ahmed"
+              dir="ltr"
+              className={`h-12 w-full rounded-xl border border-input bg-card px-3 text-sm font-medium shadow-sm outline-none transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring ${
+                rtl ? 'text-right' : 'text-left'
+              }`}
+            />
             <label htmlFor="password" className="text-sm font-semibold text-foreground">
               {t('password')}
             </label>

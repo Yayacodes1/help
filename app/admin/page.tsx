@@ -1,6 +1,8 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
-import { isAdmin } from '@/lib/admin-auth'
+import { getAdminSession, isAdmin } from '@/lib/admin-auth'
+import { ADMIN_TABS, resolveAdminTab } from '@/lib/admin-tabs'
+import { AdminTabs } from '@/components/admin/admin-tabs'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import {
   attachTracking,
@@ -95,6 +97,7 @@ export default async function AdminPage({
     to?: string
     day?: string
     panel?: string
+    tab?: string
     payFrom?: string
     payTo?: string
     aFrom?: string
@@ -163,7 +166,6 @@ export default async function AdminPage({
     ? sp.aFrom!
     : analyticsDefault.from
   const aTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.aTo ?? '') ? sp.aTo! : analyticsDefault.to
-  const aCreatorId = sp.aCreator ? Number(sp.aCreator) : null
   const aProjectRaw = Number(sp.aProject)
   const aProjectId =
     sp.aProject === 'all'
@@ -231,159 +233,216 @@ export default async function AdminPage({
   const miqatProject = findMiyqatProject(projectsEarly)
   const miqatId = miqatProject?.id ?? null
 
-  const [
-    submissions,
-    projects,
-    creatorsBase,
-    periodPayments,
-    periodTotal,
-    paidAllTime,
-    payDueRows,
+  const tab = resolveAdminTab(sp.tab, sp.panel)
+  const session = await getAdminSession()
+  const showBusiness = session?.role === 'owner'
+  const projects = projectsEarly
+
+  const creatorsBase = await getCreatorsWithProgressOnDate(selectedDay, projectId, roleSql, {
+    includeAllReposters,
+    includeAllCreators,
+  })
+  const activeBase = creatorsBase.filter((c) => !c.paused_at)
+
+  async function loadToday() {
+    const [submissions, strikeBoard, attendance] = await Promise.all([
+      getAdminSubmissions(filters),
+      getReposterStrikeBoard(opToday),
+      getAttendanceForDay(selectedDay),
+    ])
+    return { submissions, strikeBoard, attendance }
+  }
+
+  async function loadAnalytics() {
+    const sheetOpen = sp.aSheet === '1'
+    const [
+      dailyAnalytics,
+      byCreatorDaily,
+      leaderboard,
+      viewsSummary,
+      topVideos,
+      league,
+      contestBoard,
+      projectViews,
+      projectViewVideos,
+      sheetRows,
+      sheetDownloads,
+    ] = await Promise.all([
+      getDailyAnalytics({ from: aFrom, to: aTo, projectId: aProjectId, role: aRoleSql }),
+      getDailyViewsByCreator({ from: aFrom, to: aTo, projectId: aProjectId, role: aRoleSql }),
+      getViewsLeaderboard({
+        from: aFrom,
+        to: aTo,
+        projectId: aProjectId,
+        role: aRoleSql,
+        limit: 1000,
+      }),
+      getViewsSummary({ from: aFrom, to: aTo, projectId: aProjectId, role: aRoleSql }),
+      getTopVideos({
+        from: tvFrom,
+        to: tvTo,
+        projectId: projectId ?? null,
+        role: roleSql,
+        platform: tvPlatform,
+        limit: 50,
+      }),
+      getLeagueBoard({ from: rankFrom, to: rankTo, projectId: rankProjectId, role: rankRoleSql }),
+      miqatId != null
+        ? getLeagueBoard({
+            from: CONTEST.from,
+            to: CONTEST.to,
+            projectId: miqatId,
+            role: 'reposter',
+          })
+        : Promise.resolve(null),
+      getProjectViewsBoard({
+        from: pvFrom,
+        to: pvTo,
+        role: pvKindSql,
+        projectId: projectId ?? null,
+        includeAllPeople: miyqatScope,
+      }),
+      pvCreatorId != null
+        ? getAdminSubmissions({
+            creatorId: pvCreatorId,
+            role: pvKindSql,
+            projectId,
+            from: pvFrom,
+            to: pvTo,
+          })
+        : Promise.resolve([]),
+      sheetOpen
+        ? getDailySheet({ from: aFrom, to: aTo, projectId: aProjectId })
+        : Promise.resolve([]),
+      sheetOpen && showBusiness
+        ? getDailyDownloads({ from: aFrom, to: aTo, projectId: aProjectId })
+        : Promise.resolve([]),
+    ])
+    return {
+      sheetOpen,
+      dailyAnalytics,
+      byCreatorDaily,
+      leaderboard,
+      viewsSummary,
+      topVideos,
+      league,
+      contestBoard,
+      projectViews,
+      projectViewVideos,
+      sheetRows,
+      sheetDownloads,
+    }
+  }
+
+  async function loadMoney() {
+    const [
+      periodPayments,
+      periodTotal,
+      paidAllTime,
+      payDueRows,
+      marketingBalances,
+      marketingTransfers,
+      marketingExpenses,
+      marketingRequests,
+      outflow,
+      commissionBoard,
+      commissionEstimate,
+    ] = await Promise.all([
+      getPaymentsInRange(payFrom, payTo, undefined, roleSql),
+      getPaymentsTotalInRange(payFrom, payTo, undefined, roleSql),
+      getAllPaidTotal(projectId, roleSql),
+      getPaymentDueList(today, projectId, roleSql),
+      getMarketingBalances(projectId ?? null),
+      listMarketingTransfers(projectId ?? null),
+      listMarketingExpenses(projectId ?? null),
+      listMarketingRequests(null, projectId ?? null),
+      getOutflowSnapshot({
+        from: ofFrom,
+        to: ofTo,
+        view: ofView,
+        countMode: 'base',
+        projectId: projectId ?? null,
+        includeAllCreators,
+        includeAllReposters,
+        repostersOnly: true,
+      }),
+      getCommissionBoard({ from: cmFrom, to: cmTo, today, projectId: projectId ?? null, role: roleSql }),
+      getCommissionEstimate({
+        today,
+        projectId: projectId ?? null,
+        role: roleSql,
+        contractId: cmContractId,
+      }),
+    ])
+    return {
+      periodPayments,
+      periodTotal,
+      paidAllTime,
+      payDueRows,
+      marketingBalances,
+      marketingTransfers,
+      marketingExpenses,
+      marketingRequests,
+      outflow,
+      commissionBoard,
+      commissionEstimate,
+    }
+  }
+
+  // Each tab loads only its own data; these are read only inside that tab's panels.
+  const todayData = tab === 'today' ? await loadToday() : null
+  const analyticsData = tab === 'analytics' ? await loadAnalytics() : null
+  const moneyData = tab === 'money' ? await loadMoney() : null
+  const { submissions, strikeBoard, attendance } =
+    todayData ?? ({} as Awaited<ReturnType<typeof loadToday>>)
+  const {
+    sheetOpen,
     dailyAnalytics,
-    creatorDaily,
     byCreatorDaily,
     leaderboard,
     viewsSummary,
     topVideos,
+    league,
+    contestBoard,
+    projectViews,
+    projectViewVideos,
+    sheetRows,
+    sheetDownloads,
+  } = analyticsData ?? ({} as Awaited<ReturnType<typeof loadAnalytics>>)
+  const {
+    periodPayments,
+    periodTotal,
+    paidAllTime,
+    payDueRows,
     marketingBalances,
     marketingTransfers,
     marketingExpenses,
     marketingRequests,
     outflow,
-    league,
-    contestBoard,
-    projectViews,
-    projectViewVideos,
-    strikeBoard,
     commissionBoard,
     commissionEstimate,
-  ] = await Promise.all([
-    getAdminSubmissions(filters),
-    Promise.resolve(projectsEarly),
-    getCreatorsWithProgressOnDate(selectedDay, projectId, roleSql, {
-      includeAllReposters,
-      includeAllCreators,
-    }),
-    getPaymentsInRange(payFrom, payTo, undefined, roleSql),
-    getPaymentsTotalInRange(payFrom, payTo, undefined, roleSql),
-    getAllPaidTotal(projectId, roleSql),
-    getPaymentDueList(today, projectId, roleSql),
-    getDailyAnalytics({ from: aFrom, to: aTo, projectId: aProjectId, role: aRoleSql }),
-    aCreatorId
-      ? getDailyAnalytics({
-          from: aFrom,
-          to: aTo,
-          projectId: aProjectId,
-          creatorId: aCreatorId,
-          role: aRoleSql,
-        })
-      : Promise.resolve([]),
-    getDailyViewsByCreator({
-      from: aFrom,
-      to: aTo,
-      projectId: aProjectId,
-      role: aRoleSql,
-    }),
-    getViewsLeaderboard({
-      from: aFrom,
-      to: aTo,
-      projectId: aProjectId,
-      role: aRoleSql,
-      limit: 1000,
-    }),
-    getViewsSummary({ from: aFrom, to: aTo, projectId: aProjectId, role: aRoleSql }),
-    getTopVideos({
-      from: tvFrom,
-      to: tvTo,
-      projectId: projectId ?? null,
-      role: roleSql,
-      platform: tvPlatform,
-      limit: 50,
-    }),
-    getMarketingBalances(projectId ?? null),
-    listMarketingTransfers(projectId ?? null),
-    listMarketingExpenses(projectId ?? null),
-    listMarketingRequests(null, projectId ?? null),
-    getOutflowSnapshot({
-      from: ofFrom,
-      to: ofTo,
-      view: ofView,
-      countMode: 'base',
-      projectId: projectId ?? null,
-      includeAllCreators,
-      includeAllReposters,
-      repostersOnly: true,
-    }),
-    getLeagueBoard({
-      from: rankFrom,
-      to: rankTo,
-      projectId: rankProjectId,
-      role: rankRoleSql,
-    }),
-    miqatId != null
-      ? getLeagueBoard({
-          from: CONTEST.from,
-          to: CONTEST.to,
-          projectId: miqatId,
-          role: 'reposter',
-        })
-      : Promise.resolve(null),
-    getProjectViewsBoard({
-      from: pvFrom,
-      to: pvTo,
-      role: pvKindSql,
-      projectId: projectId ?? null,
-      includeAllPeople: miyqatScope,
-    }),
-    pvCreatorId != null
-      ? getAdminSubmissions({
-          creatorId: pvCreatorId,
-          role: pvKindSql,
-          projectId,
-          from: pvFrom,
-          to: pvTo,
-        })
-      : Promise.resolve([]),
-    getReposterStrikeBoard(opToday),
-    getCommissionBoard({
-      from: cmFrom,
-      to: cmTo,
-      today,
-      projectId: projectId ?? null,
-      role: roleSql,
-    }),
-    getCommissionEstimate({
-      today,
-      projectId: projectId ?? null,
-      role: roleSql,
-      contractId: cmContractId,
-    }),
-  ])
+  } = moneyData ?? ({} as Awaited<ReturnType<typeof loadMoney>>)
+
   const pvModeRaw = sp.pvMode
   const pvMode: 'combined' | number =
     projectId != null && Number.isFinite(projectId)
       ? projectId
       : pvModeRaw &&
           pvModeRaw !== 'combined' &&
-          projectViews.projects.some((p) => String(p.id) === pvModeRaw)
+          projectViews?.projects.some((p) => String(p.id) === pvModeRaw)
         ? Number(pvModeRaw)
         : 'combined'
-  const projectViewsHint = projectViews.projects
+  const projectViewsHint = (projectViews?.projects ?? [])
     .slice(0, 2)
     .map((p) => `${p.name} ${formatNumber(projectViews.totals.viewsByProject[p.id] ?? 0)}`)
     .join(' · ')
-  const sheetOpen = sp.aSheet === '1'
-  const [sheetRows, sheetDownloads] = sheetOpen
-    ? await Promise.all([
-        getDailySheet({ from: aFrom, to: aTo, projectId: aProjectId }),
-        getDailyDownloads({ from: aFrom, to: aTo, projectId: aProjectId }),
-      ])
-    : [[], []]
-  const everyone = await attachTracking(creatorsBase, today)
+
+  const everyone =
+    tab === 'today' || tab === 'people' ? await attachTracking(creatorsBase, today) : []
   const creators = everyone.filter((c) => !c.paused_at)
   const pausedCreators = everyone.filter((c) => c.paused_at)
-  const creatorIds = new Set(everyone.map((c) => c.id))
-  const attendancePeople = (await getAttendanceForDay(selectedDay)).filter((p) => {
+  const creatorIds = new Set(creatorsBase.map((c) => c.id))
+  const attendancePeople = (attendance ?? []).filter((p) => {
     if (!creatorIds.has(p.id)) return false
     if (roleFilter === 'creator' || roleFilter === 'reposter') return p.role === roleFilter
     return true
@@ -391,16 +450,16 @@ export default async function AdminPage({
   const attentionCount = attendancePeople.filter(
     (p) => p.status === 'miss' || p.status === 'partial',
   ).length
-  const openMarketingRequests = marketingRequests.filter((r) => r.status === 'open').length
-  const marketingLeft = marketingBalances.reduce((sum, b) => sum + b.left, 0)
+  const openMarketingRequests = (marketingRequests ?? []).filter((r) => r.status === 'open').length
+  const marketingLeft = (marketingBalances ?? []).reduce((sum, b) => sum + b.left, 0)
 
-  const totalViews = submissions.reduce((sum, s) => sum + (s.views ?? 0), 0)
-  const creatorViews = submissions.reduce(
+  const totalViews = (submissions ?? []).reduce((sum, s) => sum + (s.views ?? 0), 0)
+  const creatorViews = (submissions ?? []).reduce(
     (sum, s) => sum + (s.creator_role === 'reposter' ? 0 : s.views ?? 0),
     0,
   )
   const reposterViews = totalViews - creatorViews
-  const totalVideos = submissions.length
+  const totalVideos = submissions?.length ?? 0
 
   const goalTotal = creators.reduce(
     (sum, c) => sum + c.goal_instagram + c.goal_tiktok,
@@ -413,7 +472,7 @@ export default async function AdminPage({
   const creatorsPostedToday = creators.filter(
     (c) => c.today_instagram + c.today_tiktok > 0,
   ).length
-  const payDueCount = payDueRows.due.length
+  const payDueCount = payDueRows?.due.length ?? 0
 
   const peopleNoun =
     roleFilter === 'reposter'
@@ -434,34 +493,13 @@ export default async function AdminPage({
           ? t('creatorsActiveToday')
           : t('creatorsActiveThatDay')
 
+  const tabPanels: readonly string[] = ADMIN_TABS[tab]
   const defaultPanel =
-    sp.panel &&
-    [
-      'analytics',
-      'miqatcontest',
-      'ranking',
-      'projectviews',
-      'topvideos',
-      'progress',
-      'attention',
-      'videos',
-      'paydue',
-      'payments',
-      'marketing',
-      'outflow',
-      'manage',
-      'strikes',
-    ].includes(sp.panel)
+    sp.panel && tabPanels.includes(sp.panel)
       ? sp.panel
-      : openMarketingRequests > 0
-        ? 'marketing'
-        : payDueCount > 0
-          ? 'paydue'
-          : strikeBoard.needsCorrective > 0
-            ? 'strikes'
-            : attentionCount > 0
-              ? 'attention'
-              : 'analytics'
+      : tab === 'people'
+        ? 'manage'
+        : null
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 py-8">
@@ -485,7 +523,7 @@ export default async function AdminPage({
           </div>
         </div>
         <CreatorJumpSearch
-          people={creators.map((c) => ({
+          people={activeBase.map((c) => ({
             id: c.id,
             name: c.name,
             role: c.role,
@@ -497,8 +535,18 @@ export default async function AdminPage({
           placeholder={t('jumpSearchPlaceholder')}
           hint={t('jumpSearchHint')}
         />
+        <AdminTabs
+          active={tab}
+          labels={{
+            today: t('tabToday'),
+            analytics: t('tabAnalytics'),
+            money: t('tabMoney'),
+            people: t('tabPeople'),
+          }}
+        />
       </header>
 
+      {tab === 'today' && (
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           label={isToday ? t('postedToday') : t('postedThatDay')}
@@ -523,6 +571,7 @@ export default async function AdminPage({
           hint={`${strikeBoard.missingToday} ${t('strikesMissingToday')} · ${strikeBoard.needsCorrective} ${t('strikesCorrective')}`}
         />
       </section>
+      )}
 
       <p className="mt-6 mb-3 text-xs text-muted-foreground">{t('tapSection')}</p>
 
@@ -532,6 +581,7 @@ export default async function AdminPage({
         columns={3}
         closeLabel={t('close')}
         panels={[
+          ...(analyticsData ? [
           {
             id: 'analytics',
             title: t('analytics'),
@@ -540,35 +590,18 @@ export default async function AdminPage({
             children: (
               <AnalyticsPanel
                 daily={dailyAnalytics}
-                creatorDaily={creatorDaily}
                 byCreatorDaily={byCreatorDaily}
                 leaderboard={leaderboard}
                 summary={viewsSummary}
-                creators={leaderboard
-                  .map((c) => ({ id: c.creator_id, name: c.creator_name }))
-                  .sort((a, b) => a.name.localeCompare(b.name))}
                 projects={projects}
                 projectId={aProjectId}
                 role={aRoleFilter}
-                selectedCreatorId={aCreatorId}
                 today={today}
                 defaultFrom={aFrom}
                 defaultTo={aTo}
                 labels={{
                   views: t('views'),
                   videos: t('videos'),
-                  creator:
-                    aRoleFilter === 'reposter'
-                      ? t('reposters')
-                      : aRoleFilter === 'all'
-                        ? t('people')
-                        : t('creators'),
-                  allCreators:
-                    aRoleFilter === 'reposter'
-                      ? t('allReposters')
-                      : aRoleFilter === 'all'
-                        ? t('allPeople')
-                        : t('allCreators'),
                   roleCreators: t('roleFilterCreators'),
                   roleReposters: t('roleFilterReposters'),
                   roleAll: t('roleFilterAll'),
@@ -581,7 +614,6 @@ export default async function AdminPage({
                   openSheet: t('analyticsOpenSheet'),
                   instagram: t('instagram'),
                   tiktok: t('tiktok'),
-                  showViews: t('showViews'),
                   showVideos: t('showVideos'),
                   topCreators:
                     aRoleFilter === 'reposter'
@@ -593,13 +625,15 @@ export default async function AdminPage({
                   from: t('from'),
                   to: t('to'),
                   apply: t('apply'),
-                  showing: t('analyticsShowing'),
                   chartLine: t('chartLine'),
                   chartBar: t('chartBar'),
                   chartLog: t('chartLog'),
                   chartLinear: t('chartLinear'),
                   allProjects: t('allProjects'),
-                  chooseProject: t('chooseProject'),
+                  total: t('analyticsTotal'),
+                  clear: t('analyticsClear'),
+                  pickHint: t('analyticsPickHint'),
+                  splitPlatforms: t('analyticsSplit'),
                 }}
               />
             ),
@@ -747,6 +781,8 @@ export default async function AdminPage({
               </Suspense>
             ),
           },
+          ] : []),
+          ...(todayData ? [
           {
             id: 'progress',
             title: isToday ? t('todaysProgress') : t('dailyProgress'),
@@ -876,6 +912,8 @@ export default async function AdminPage({
               </div>
             ),
           },
+          ] : []),
+          ...(moneyData ? [
           {
             id: 'commission',
             title: t('commissionBoard'),
@@ -1013,6 +1051,8 @@ export default async function AdminPage({
               </Suspense>
             ),
           },
+          ] : []),
+          ...(tab === 'people' ? [
           {
             id: 'manage',
             title: t('manage'),
@@ -1033,6 +1073,7 @@ export default async function AdminPage({
               </div>
             ),
           },
+          ] : []),
         ]}
       />
       </Suspense>
@@ -1046,6 +1087,7 @@ export default async function AdminPage({
           today={today}
           projectId={aProjectId}
           projects={projects}
+          showBusiness={showBusiness}
           revenueCatProjectIds={revenueCatLinks()
             .map((l) => projects.find((p) => p.name.trim().toLowerCase() === l.appName.toLowerCase())?.id)
             .filter((id): id is number => id != null)}

@@ -1,13 +1,19 @@
 'use server'
 
 import { sql } from '@/lib/db'
-import { getCreatorByLoginHandle, getCreatorByName } from '@/lib/queries'
+import {
+  getCreatorByLoginHandle,
+  getCreatorByName,
+  getServerNowIso,
+  getServerToday,
+} from '@/lib/queries'
+import { addDays } from '@/lib/campaign'
 import { classifyMediaLinks } from '@/lib/media-url'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { normalizeHandle, parseLoginPlatform } from '@/lib/usernames'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
-import { OPERATIONAL_TZ } from '@/lib/operational-day'
+import { OPERATIONAL_TZ, operationalDayFromIso } from '@/lib/operational-day'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const TIME_RE = /^\d{2}:\d{2}(:\d{2})?$/
@@ -77,6 +83,12 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   }
   if (!TIME_RE.test(postTimeRaw)) {
     return { ok: false, message: 'Pick the time you posted.' }
+  }
+  const [calendarToday, serverNow] = await Promise.all([getServerToday(), getServerNowIso()])
+  const opToday = operationalDayFromIso(serverNow)
+  const allowedDays = new Set([calendarToday, opToday, addDays(calendarToday, -1), addDays(opToday, -1)])
+  if (!allowedDays.has(videoDateRaw)) {
+    return { ok: false, message: 'يمكنك إضافة فيديوهات اليوم أو الأمس فقط. You can only add videos for today or yesterday.' }
   }
   const videoDate = videoDateRaw
   const postTime = postTimeRaw.length === 5 ? `${postTimeRaw}:00` : postTimeRaw

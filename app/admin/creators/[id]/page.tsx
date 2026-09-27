@@ -297,7 +297,6 @@ export default async function CreatorDetailPage({
                           manual: t('strikeSourceManual'),
                         }}
                       />
-                      <BreaksManager creatorId={creator.id} today={today} breaks={breaks} />
                     </div>
                   ),
                 },
@@ -315,9 +314,7 @@ export default async function CreatorDetailPage({
                   today={today}
                   comparisons={comparisons}
                 />
-                {!strikeSummary ? (
-                  <BreaksManager creatorId={creator.id} today={today} breaks={breaks} />
-                ) : null}
+                <BreaksManager creatorId={creator.id} today={today} breaks={breaks} />
               </div>
             ),
           },

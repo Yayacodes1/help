@@ -25,14 +25,15 @@ import { getLeagueBoard } from '@/lib/ranking'
 import { RankingBoard } from '@/components/ranking-board'
 import { ContestPodium } from '@/components/contest-podium'
 import { CONTEST, isContestLive } from '@/lib/contest'
-import { findMiyqatProject } from '@/lib/project-scope'
+import { findMiyqatProject, isMiyqatProjectName } from '@/lib/project-scope'
 import { StrikeBanner } from '@/components/strike-banner'
 import { operationalDayFromIso } from '@/lib/operational-day'
 import { getCreatorStrikeSummary, syncReposterStrikes } from '@/lib/strikes'
 import { loginHandleFor } from '@/lib/usernames'
 import { PLATFORMS } from '@/lib/db'
 import { goalFor } from '@/lib/platforms'
-import { yearRange } from '@/lib/campaign'
+import type { BrandProject } from '@/components/submit-form'
+import { addDays } from '@/lib/campaign'
 import { formatDate } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
@@ -70,7 +71,8 @@ export default async function SubmitPage({
   if (creator.role === 'reposter') {
     await syncReposterStrikes({ today: opToday, creatorId: creator.id })
   }
-  const { start: rangeStart, end: rangeEnd } = yearRange(calendarToday)
+  const rangeStart = addDays(today, -1)
+  const rangeEnd = today
 
   let date = isValidDate(dateParam) ? dateParam : today
   if (date < rangeStart) date = rangeStart
@@ -79,6 +81,24 @@ export default async function SubmitPage({
 
   const projects = await getAllProjects()
   const miqatId = findMiyqatProject(projects)?.id ?? null
+  const notekId = projects.find((p) => /notek|نوتك/i.test(p.name))?.id ?? null
+  const homeProject = projects.find((p) => p.id === creator.project_id)
+  const isMiqatHome = isMiyqatProjectName(homeProject?.name)
+  const clean = (h: string | null | undefined) => (h ?? '').trim().replace(/^@+/, '').toLowerCase()
+  const brandProjects: BrandProject[] = [
+    notekId != null
+      ? {
+          projectId: notekId,
+          handles: [creator.notek_tiktok_username, creator.notek_instagram_username].map(clean).filter(Boolean),
+        }
+      : null,
+    miqatId != null
+      ? {
+          projectId: miqatId,
+          handles: [creator.miqat_tiktok_username, creator.miqat_instagram_username].map(clean).filter(Boolean),
+        }
+      : null,
+  ].filter((b): b is BrandProject => b != null && b.handles.length > 0)
 
   const [
     counts,
@@ -133,8 +153,103 @@ export default async function SubmitPage({
     hit_rate: activeCompare?.displayRate ?? consistency.hitRate,
   }
 
-  const defaultPanel =
-    panel && ['today', 'contract', 'streaks'].includes(panel) ? panel : 'today'
+  const defaultPanel = panel && ['contract', 'streaks'].includes(panel) ? panel : null
+  const previousComparisons = comparisons.filter((c) => !c.isActive)
+  const renderContract = (row: (typeof comparisons)[number]) => {
+    const {
+      contract,
+      isActive,
+      manualHits,
+      videoRate,
+      displayRate,
+      consistency,
+    } = row
+    const totalKind = manualHits ? t('hitTotal') : t('goalTotal')
+    return (
+      <div
+        key={contract.id}
+        className="rounded-xl border border-border bg-card p-4"
+      >
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="font-semibold">
+            {isActive ? t('currentContract') : t('previousContract')} ·{' '}
+            {contract.name}
+          </h3>
+          <span className="text-sm font-semibold tabular-nums">
+            {Math.round(displayRate * 100)}%
+          </span>
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {t('from')} {formatDate(contract.start_date)} {t('to')}{' '}
+          {contract.end_date
+            ? formatDate(contract.end_date)
+            : t('openEnded')}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t('platforms')}: {t('platformsBoth')}
+          {contract.end_date
+            ? ` · ${t('contractEnds')} ${formatDate(contract.end_date)}`
+            : ''}
+        </p>
+
+        <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+          <div className="rounded-lg bg-secondary/60 p-3">
+            <div className="text-xs text-muted-foreground">
+              {t('instagram')} ({totalKind})
+            </div>
+            <div className="mt-1 text-lg font-semibold tabular-nums">
+              {manualHits ? (
+                row.postedInstagram
+              ) : (
+                <>
+                  {row.postedInstagram}
+                  {contract.target_instagram > 0
+                    ? ` / ${contract.target_instagram}`
+                    : ''}
+                </>
+              )}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {t('daily')}{' '}
+              {contract.goal_instagram || dailyGoals.goalInstagram}
+            </div>
+          </div>
+          <div className="rounded-lg bg-secondary/60 p-3">
+            <div className="text-xs text-muted-foreground">
+              {t('tiktok')} ({totalKind})
+            </div>
+            <div className="mt-1 text-lg font-semibold tabular-nums">
+              {manualHits ? (
+                row.postedTiktok
+              ) : (
+                <>
+                  {row.postedTiktok}
+                  {contract.target_tiktok > 0
+                    ? ` / ${contract.target_tiktok}`
+                    : ''}
+                </>
+              )}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {t('daily')} {contract.goal_tiktok || dailyGoals.goalTiktok}
+            </div>
+          </div>
+        </div>
+
+        <p className="mt-2 text-xs text-muted-foreground">
+          {manualHits
+            ? `${row.videoCount} ${t('videosHit')}`
+            : videoRate != null
+              ? `${t('videoProgress')} ${Math.round(videoRate * 100)}%${
+                  row.videosComplete ? ` · ${t('videosComplete')}` : ''
+                } · ${row.videoCount}${
+                  row.targetTotal > 0 ? `/${row.targetTotal}` : ''
+                } ${t('videosWord')}`
+              : `${t('daysCommitment')} ${consistency.hitDays}/${consistency.requiredDays} · ${row.videoCount} ${t('videosWord')}`}
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-dvh bg-background">
@@ -159,8 +274,8 @@ export default async function SubmitPage({
                 {t('submitHeading')}
               </h1>
             </div>
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#c41e2a] text-lg font-bold text-[#fff7f0]">
-              نوتك
+            <div className="flex h-12 min-w-12 shrink-0 items-center justify-center rounded-xl bg-[#c41e2a] px-2 text-lg font-bold text-[#fff7f0]">
+              {isMiqatHome ? 'ميقات' : 'نوتك'}
             </div>
           </div>
           <p className="mt-3 text-sm font-medium text-[#b01020]">
@@ -188,6 +303,71 @@ export default async function SubmitPage({
             }}
           />
         ) : null}
+
+        <div className="flex flex-col gap-4">
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <Send className="h-4 w-4 text-primary" />
+              <h2 className="text-sm font-semibold text-foreground">{t('addLinks')}</h2>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t('platforms')}: {t('platformsBoth')}
+              {' · '}
+              {t('dailyGoal')}: {t('instagram')} {dailyGoals.goalInstagram}
+              {' · '}
+              {t('tiktok')} {dailyGoals.goalTiktok}
+            </p>
+            <SubmitForm
+              key={`${date}-${defaultTime}`}
+              username={username}
+              fields={fields}
+              projects={projects}
+              defaultProjectId={creator.project_id}
+              videoDate={date}
+              minDate={rangeStart}
+              maxDate={rangeEnd}
+              defaultTime={defaultTime}
+              brandProjects={brandProjects}
+              labels={{
+                pasteLinks: t('pasteLinks'),
+                pasteHint: t('pasteLinksHint'),
+                send: t('submitVideos'),
+                sending: '…',
+                project: t('submitProject'),
+                projectHint: t('submitProjectHint'),
+                pickProject: t('pickProject'),
+                autoProject: t('autoProject'),
+                postDate: t('postDate'),
+                postTime: t('postTime'),
+                postWhenHint: t('submitTimeHint'),
+              }}
+            />
+          </section>
+
+          <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">{t('chooseDay')}</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">{t('chooseDayHint')}</p>
+              </div>
+              <DateSelect date={date} min={rangeStart} max={rangeEnd} />
+            </div>
+            {!isToday && (
+              <p className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground">
+                {t('addingPast')}
+              </p>
+            )}
+          </section>
+
+          <section className="flex flex-col gap-3">
+            <h2 className="text-sm font-semibold text-foreground">{t('todaysVideos')}</h2>
+            <TodayVideos
+              username={username}
+              submissions={submissions}
+              locale={locale}
+            />
+          </section>
+        </div>
 
         {creator.role === 'reposter' && (contestBoard || league) ? (
           <div className="flex flex-col gap-3">
@@ -239,74 +419,6 @@ export default async function SubmitPage({
           closeLabel={t('close')}
           panels={[
             {
-              id: 'today',
-              title: t('panelToday'),
-              summary: `${counts.instagram + counts.tiktok} ${t('videosWord')}`,
-              hint: isToday ? t('submitToday') : formatDate(date),
-              children: (
-                <div className="flex flex-col gap-4">
-                  <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <h2 className="text-sm font-semibold text-foreground">{t('chooseDay')}</h2>
-                        <p className="mt-0.5 text-xs text-muted-foreground">{t('chooseDayHint')}</p>
-                      </div>
-                      <DateSelect date={date} min={rangeStart} max={rangeEnd} />
-                    </div>
-                    {!isToday && (
-                      <p className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground">
-                        {t('addingPast')}
-                      </p>
-                    )}
-                  </section>
-
-                  <section className="flex flex-col gap-3">
-                    <div className="flex items-center gap-2">
-                      <Send className="h-4 w-4 text-primary" />
-                      <h2 className="text-sm font-semibold text-foreground">{t('addLinks')}</h2>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {t('platforms')}: {t('platformsBoth')}
-                      {' · '}
-                      {t('dailyGoal')}: {t('instagram')} {dailyGoals.goalInstagram}
-                      {' · '}
-                      {t('tiktok')} {dailyGoals.goalTiktok}
-                    </p>
-                    <SubmitForm
-                      key={`${date}-${defaultTime}`}
-                      username={username}
-                      fields={fields}
-                      projects={projects}
-                      defaultProjectId={creator.project_id}
-                      videoDate={date}
-                      defaultTime={defaultTime}
-                      labels={{
-                        pasteLinks: t('pasteLinks'),
-                        pasteHint: t('pasteLinksHint'),
-                        send: t('submitVideos'),
-                        sending: '…',
-                        project: t('submitProject'),
-                        projectHint: t('submitProjectHint'),
-                        pickProject: t('pickProject'),
-                        postDate: t('postDate'),
-                        postTime: t('postTime'),
-                        postWhenHint: t('submitTimeHint'),
-                      }}
-                    />
-                  </section>
-
-                  <section className="flex flex-col gap-3">
-                    <h2 className="text-sm font-semibold text-foreground">{t('todaysVideos')}</h2>
-                    <TodayVideos
-                      username={username}
-                      submissions={submissions}
-                      locale={locale}
-                    />
-                  </section>
-                </div>
-              ),
-            },
-            {
               id: 'contract',
               title: t('panelContract'),
               summary: activeCompare
@@ -319,102 +431,17 @@ export default async function SubmitPage({
                     <p className="text-sm text-muted-foreground">{t('noCurrentContract')}</p>
                   ) : (
                     <>
-                      <p className="text-xs text-muted-foreground">{t('allContracts')}</p>
-                      {comparisons.map((row) => {
-                        const {
-                          contract,
-                          isActive,
-                          manualHits,
-                          videoRate,
-                          displayRate,
-                          consistency,
-                        } = row
-                        const totalKind = manualHits ? t('hitTotal') : t('goalTotal')
-                        return (
-                          <div
-                            key={contract.id}
-                            className="rounded-xl border border-border bg-card p-4"
-                          >
-                            <div className="flex flex-wrap items-baseline justify-between gap-2">
-                              <h3 className="font-semibold">
-                                {isActive ? t('currentContract') : t('previousContract')} ·{' '}
-                                {contract.name}
-                              </h3>
-                              <span className="text-sm font-semibold tabular-nums">
-                                {Math.round(displayRate * 100)}%
-                              </span>
-                            </div>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {t('from')} {formatDate(contract.start_date)} {t('to')}{' '}
-                              {contract.end_date
-                                ? formatDate(contract.end_date)
-                                : t('openEnded')}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {t('platforms')}: {t('platformsBoth')}
-                              {contract.end_date
-                                ? ` · ${t('contractEnds')} ${formatDate(contract.end_date)}`
-                                : ''}
-                            </p>
-
-                            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                              <div className="rounded-lg bg-secondary/60 p-3">
-                                <div className="text-xs text-muted-foreground">
-                                  {t('instagram')} ({totalKind})
-                                </div>
-                                <div className="mt-1 text-lg font-semibold tabular-nums">
-                                  {manualHits ? (
-                                    row.postedInstagram
-                                  ) : (
-                                    <>
-                                      {row.postedInstagram}
-                                      {contract.target_instagram > 0
-                                        ? ` / ${contract.target_instagram}`
-                                        : ''}
-                                    </>
-                                  )}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {t('daily')}{' '}
-                                  {contract.goal_instagram || dailyGoals.goalInstagram}
-                                </div>
-                              </div>
-                              <div className="rounded-lg bg-secondary/60 p-3">
-                                <div className="text-xs text-muted-foreground">
-                                  {t('tiktok')} ({totalKind})
-                                </div>
-                                <div className="mt-1 text-lg font-semibold tabular-nums">
-                                  {manualHits ? (
-                                    row.postedTiktok
-                                  ) : (
-                                    <>
-                                      {row.postedTiktok}
-                                      {contract.target_tiktok > 0
-                                        ? ` / ${contract.target_tiktok}`
-                                        : ''}
-                                    </>
-                                  )}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {t('daily')} {contract.goal_tiktok || dailyGoals.goalTiktok}
-                                </div>
-                              </div>
-                            </div>
-
-                            <p className="mt-2 text-xs text-muted-foreground">
-                              {manualHits
-                                ? `${row.videoCount} ${t('videosHit')}`
-                                : videoRate != null
-                                  ? `${t('videoProgress')} ${Math.round(videoRate * 100)}%${
-                                      row.videosComplete ? ` · ${t('videosComplete')}` : ''
-                                    } · ${row.videoCount}${
-                                      row.targetTotal > 0 ? `/${row.targetTotal}` : ''
-                                    } ${t('videosWord')}`
-                                  : `${t('daysCommitment')} ${consistency.hitDays}/${consistency.requiredDays} · ${row.videoCount} ${t('videosWord')}`}
-                            </p>
+                      {comparisons.filter((c) => c.isActive).map(renderContract)}
+                      {previousComparisons.length > 0 ? (
+                        <details className="rounded-xl border border-dashed border-border p-3">
+                          <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
+                            {t('previousContracts')} ({previousComparisons.length})
+                          </summary>
+                          <div className="mt-3 flex flex-col gap-3">
+                            {previousComparisons.map(renderContract)}
                           </div>
-                        )
-                      })}
+                        </details>
+                      ) : null}
                     </>
                   )}
                 </div>

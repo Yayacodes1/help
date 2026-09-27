@@ -300,7 +300,15 @@ export async function getDailySheet(opts: {
 }
 
 /** `source`: manual | import | revenuecat (mixed when summed across projects). */
-export type DailyDownloadsRow = { date: string; downloads: number; source: string }
+export type DailyDownloadsRow = {
+  date: string
+  downloads: number
+  source: string
+  /** New paid subscriptions (RevenueCat); null when never synced. */
+  subscriptions: number | null
+  /** Gross revenue USD (RevenueCat); null when never synced. */
+  revenue: number | null
+}
 
 /** App downloads per day; summed across projects when projectId is null. */
 export async function getDailyDownloads(opts: {
@@ -313,7 +321,9 @@ export async function getDailyDownloads(opts: {
     SELECT
       day::text AS date,
       SUM(downloads)::int AS downloads,
-      CASE WHEN COUNT(DISTINCT source) = 1 THEN MIN(source) ELSE 'mixed' END AS source
+      CASE WHEN COUNT(DISTINCT source) = 1 THEN MIN(source) ELSE 'mixed' END AS source,
+      SUM(new_subscriptions)::int AS subscriptions,
+      SUM(revenue)::float AS revenue
     FROM daily_downloads
     WHERE day >= ${opts.from}::date
       AND day <= ${opts.to}::date
@@ -354,6 +364,34 @@ export async function getSheetDayVideos(opts: {
       AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
     ORDER BY s.views DESC NULLS LAST, s.id ASC
   `) as SheetDayVideo[]
+}
+
+/** One person's videos in a range (for the creator timeline). */
+export async function getSheetPersonVideos(opts: {
+  creatorId: number
+  from: string
+  to: string
+  projectId?: number | null
+}): Promise<Array<SheetDayVideo & { date: string }>> {
+  const projectId = opts.projectId ?? null
+  return (await sql`
+    SELECT
+      s.id,
+      c.id AS creator_id,
+      c.name AS creator_name,
+      CASE WHEN c.role = 'reposter' THEN 'reposter' ELSE 'creator' END AS role,
+      s.platform,
+      s.url,
+      COALESCE(s.views, 0)::int AS views,
+      to_char(s.video_date, 'YYYY-MM-DD') AS date
+    FROM submissions s
+    JOIN creators c ON c.id = s.creator_id
+    WHERE s.creator_id = ${opts.creatorId}
+      AND s.video_date BETWEEN ${opts.from}::date AND ${opts.to}::date
+      AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
+    ORDER BY s.views DESC NULLS LAST, s.id ASC
+    LIMIT 500
+  `) as Array<SheetDayVideo & { date: string }>
 }
 
 export function defaultAnalyticsRange(today: string): { from: string; to: string } {

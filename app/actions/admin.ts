@@ -13,7 +13,7 @@ import {
   createAdminSession,
   destroyAdminSession,
   isAdmin,
-  verifyPassword,
+  verifyLogin,
 } from '@/lib/admin-auth'
 import { getPaidForContract, getServerToday } from '@/lib/queries'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
@@ -133,11 +133,13 @@ function parseContractQuotas(
 // --- Auth ---
 
 export async function login(_prev: unknown, formData: FormData) {
+  const name = (formData.get('name') ?? '').toString()
   const password = (formData.get('password') ?? '').toString()
-  if (!verifyPassword(password)) {
-    return { ok: false, message: 'Incorrect password.' }
+  const accountId = verifyLogin(name, password)
+  if (!accountId) {
+    return { ok: false, message: 'Incorrect name or password.' }
   }
-  await createAdminSession()
+  await createAdminSession(accountId)
   redirect('/admin')
 }
 

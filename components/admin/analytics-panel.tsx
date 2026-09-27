@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Loader2, Sheet } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, Sheet, X } from 'lucide-react'
 import {
   Bar,
   BarChart,
@@ -18,7 +18,7 @@ import {
 import { addDays, rankingMonthRange } from '@/lib/campaign'
 import { shiftYearMonth } from '@/lib/biweekly'
 import { formatNumber } from '@/lib/format'
-import { colorForCreator } from '@/lib/creator-colors'
+import { colorForPick } from '@/lib/creator-colors'
 import type { RoleFilter } from '@/lib/participant-role'
 import type {
   CreatorDailyViewsRow,
@@ -30,33 +30,29 @@ import { DateRangePresets } from '@/components/admin/date-range-presets'
 
 const IG = '#E1306C'
 const TT = '#0F766E'
+const TOTAL = '#0F172A'
 const LOG_TICKS = [1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000]
 
-type CreatorOption = { id: number; name: string }
 type ChartType = 'line' | 'bar'
 type YScale = 'log' | 'linear'
+type Row = Record<string, string | number | null>
 
 type Labels = {
   views: string
   videos: string
-  creator: string
-  allCreators: string
   instagram: string
   tiktok: string
-  showViews: string
   showVideos: string
   topCreators: string
   empty: string
   from: string
   to: string
   apply: string
-  showing: string
   chartLine: string
   chartBar: string
   chartLog: string
   chartLinear: string
   allProjects: string
-  chooseProject: string
   roleCreators: string
   roleReposters: string
   roleAll: string
@@ -67,12 +63,15 @@ type Labels = {
   prevDay: string
   nextDay: string
   openSheet: string
+  total: string
+  clear: string
+  pickHint: string
+  splitPlatforms: string
 }
 
 type NavPatch = {
   from?: string
   to?: string
-  creator?: number | ''
   project?: number | 'all'
   role?: RoleFilter
 }
@@ -92,44 +91,10 @@ function monthOfRange(from: string, to: string, today: string): string {
   return rankingMonthRange(ym, today).end === to ? ym : ''
 }
 
-function indexDaily(rows: DailyAnalyticsRow[]) {
-  const map = new Map<string, DailyAnalyticsRow>()
-  for (const r of rows) map.set(r.date, r)
-  return map
-}
-
-function fillDays(
-  rows: DailyAnalyticsRow[],
-  from: string,
-  to: string,
-): DailyAnalyticsRow[] {
-  const map = indexDaily(rows)
-  const out: DailyAnalyticsRow[] = []
-  if (!from || !to || from > to) return rows
-  let d = from
-  while (d <= to) {
-    out.push(
-      map.get(d) ?? {
-        date: d,
-        views_instagram: 0,
-        views_tiktok: 0,
-        videos_instagram: 0,
-        videos_tiktok: 0,
-      },
-    )
-    d = addDays(d, 1)
-  }
-  return out
-}
-
 function eachDate(from: string, to: string): string[] {
   if (!from || !to || from > to) return []
   const out: string[] = []
-  let d = from
-  while (d <= to) {
-    out.push(d)
-    d = addDays(d, 1)
-  }
+  for (let d = from; d <= to && out.length < 400; d = addDays(d, 1)) out.push(d)
   return out
 }
 
@@ -138,32 +103,19 @@ function seriesKey(creatorId: number) {
 }
 
 /** Log scale cannot plot 0; skip those points so small values stay readable. */
-function plotValue(n: number, yScale: YScale): number | null {
-  if (yScale === 'linear') return n
-  if (n <= 0) return null
-  return n
-}
-
-function applyYScale(
-  rows: Array<Record<string, string | number>>,
-  numericKeys: string[],
-  yScale: YScale,
-): Array<Record<string, string | number | null>> {
+function applyYScale(rows: Row[], keys: string[], yScale: YScale): Row[] {
   if (yScale === 'linear') return rows
   return rows.map((row) => {
-    const next: Record<string, string | number | null> = { ...row }
-    for (const key of numericKeys) {
+    const next: Row = { ...row }
+    for (const key of keys) {
       const v = row[key]
-      next[key] = typeof v === 'number' ? plotValue(v, yScale) : v
+      if (typeof v === 'number' && v <= 0) next[key] = null
     }
     return next
   })
 }
 
-function maxNumeric(
-  rows: Array<Record<string, string | number | null>>,
-  keys: string[],
-): number {
+function maxNumeric(rows: Row[], keys: string[]): number {
   let max = 0
   for (const row of rows) {
     for (const key of keys) {
@@ -176,30 +128,24 @@ function maxNumeric(
 
 export function AnalyticsPanel({
   daily,
-  creatorDaily,
   byCreatorDaily,
   leaderboard,
   summary,
-  creators,
   projects,
   projectId,
   role,
-  selectedCreatorId,
   today,
   defaultFrom,
   defaultTo,
   labels,
 }: {
   daily: DailyAnalyticsRow[]
-  creatorDaily: DailyAnalyticsRow[]
   byCreatorDaily: CreatorDailyViewsRow[]
   leaderboard: CreatorViewsRow[]
   summary: ViewsSummary
-  creators: CreatorOption[]
   projects: Array<{ id: number; name: string }>
   projectId: number | null
   role: RoleFilter
-  selectedCreatorId: number | null
   today: string
   defaultFrom: string
   defaultTo: string
@@ -207,23 +153,20 @@ export function AnalyticsPanel({
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const [showViews, setShowViews] = useState(true)
+  const [picked, setPicked] = useState<number[]>([])
+  const [split, setSplit] = useState(false)
   const [showVideos, setShowVideos] = useState(false)
   const [chartType, setChartType] = useState<ChartType>('line')
-  const [yScale, setYScale] = useState<YScale>('log')
-  const [creatorId, setCreatorId] = useState<number | ''>(
-    selectedCreatorId ?? '',
-  )
+  const [yScale, setYScale] = useState<YScale>('linear')
   const [from, setFrom] = useState(defaultFrom)
   const [to, setTo] = useState(defaultTo)
 
-  const serverKey = `${defaultFrom}|${defaultTo}|${selectedCreatorId ?? ''}`
+  const serverKey = `${defaultFrom}|${defaultTo}|${projectId ?? ''}|${role}`
   const [syncedKey, setSyncedKey] = useState(serverKey)
   if (syncedKey !== serverKey) {
     setSyncedKey(serverKey)
     setFrom(defaultFrom)
     setTo(defaultTo)
-    setCreatorId(selectedCreatorId ?? '')
   }
 
   const currentMonth = today.slice(0, 7)
@@ -232,108 +175,62 @@ export function AnalyticsPanel({
   const singleDay = from === to ? from : ''
   const stepAnchor = singleDay || (to > today ? today : to)
 
-  const multiCreator = selectedCreatorId == null
-  const sourceDaily = selectedCreatorId != null ? creatorDaily : daily
-
-  const filteredDaily = useMemo(
+  const nameById = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const r of leaderboard) m.set(r.creator_id, r.creator_name)
+    return m
+  }, [leaderboard])
+  const pickedPeople = useMemo(
     () =>
-      fillDays(
-        sourceDaily.filter((d) => d.date >= from && d.date <= to),
-        from,
-        to,
-      ),
-    [sourceDaily, from, to],
+      picked
+        .filter((id) => nameById.has(id))
+        .map((id, i) => ({ id, name: nameById.get(id) ?? '', color: colorForPick(i) })),
+    [picked, nameById],
   )
-
-  const platformChartData = useMemo(() => {
-    return filteredDaily.map((d) => ({
-      date: d.date.slice(5),
-      fullDate: d.date,
-      viewsIg: d.views_instagram,
-      viewsTt: d.views_tiktok,
-      videosIg: d.videos_instagram,
-      videosTt: d.videos_tiktok,
-    }))
-  }, [filteredDaily])
-
-  const creatorSeries = useMemo(() => {
-    const filtered = byCreatorDaily.filter((r) => r.date >= from && r.date <= to)
-    const byId = new Map<number, { id: number; name: string; total: number }>()
-    for (const r of filtered) {
-      const prev = byId.get(r.creator_id)
-      if (prev) prev.total += r.views
-      else byId.set(r.creator_id, { id: r.creator_id, name: r.creator_name, total: r.views })
-    }
-    return [...byId.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
-  }, [byCreatorDaily, from, to])
-
-  const multiChartData = useMemo(() => {
-    const dates = eachDate(from, to)
-    const lookup = new Map<string, number>()
-    for (const r of byCreatorDaily) {
-      if (r.date < from || r.date > to) continue
-      lookup.set(`${r.date}:${r.creator_id}`, r.views)
-    }
-    return dates.map((date) => {
-      const row: Record<string, string | number> = {
-        date: date.slice(5),
-        fullDate: date,
-      }
-      for (const c of creatorSeries) {
-        row[seriesKey(c.id)] = lookup.get(`${date}:${c.id}`) ?? 0
-      }
-      return row
-    })
-  }, [byCreatorDaily, creatorSeries, from, to])
-
-  const selectedCreator = creators.find(
-    (c) => c.id === (selectedCreatorId ?? creatorId),
-  )
-
-  const numericKeys = useMemo(() => {
-    if (multiCreator) return creatorSeries.map((c) => seriesKey(c.id))
-    const keys: string[] = []
-    if (showViews) keys.push('viewsIg', 'viewsTt')
-    if (showVideos) keys.push('videosIg', 'videosTt')
-    return keys
-  }, [multiCreator, creatorSeries, showViews, showVideos])
+  const colorOf = new Map(pickedPeople.map((p) => [p.id, p.color]))
+  const byPeople = pickedPeople.length > 0
 
   const chartData = useMemo(() => {
-    const base = multiCreator ? multiChartData : platformChartData
-    return applyYScale(base, numericKeys, yScale)
-  }, [multiCreator, multiChartData, platformChartData, numericKeys, yScale])
+    const dates = eachDate(defaultFrom, defaultTo)
+    const dayMap = new Map(daily.map((d) => [d.date, d]))
+    const personViews = new Map<string, number>()
+    for (const r of byCreatorDaily) personViews.set(`${r.date}:${r.creator_id}`, r.views)
+    return dates.map((date) => {
+      const d = dayMap.get(date)
+      const row: Row = {
+        date: date.slice(5),
+        fullDate: date,
+        total: (d?.views_instagram ?? 0) + (d?.views_tiktok ?? 0),
+        viewsIg: d?.views_instagram ?? 0,
+        viewsTt: d?.views_tiktok ?? 0,
+        videos: (d?.videos_instagram ?? 0) + (d?.videos_tiktok ?? 0),
+      }
+      for (const p of pickedPeople) row[seriesKey(p.id)] = personViews.get(`${date}:${p.id}`) ?? 0
+      return row
+    })
+  }, [daily, byCreatorDaily, defaultFrom, defaultTo, pickedPeople])
 
-  const dataMax = useMemo(
-    () => maxNumeric(chartData, numericKeys),
-    [chartData, numericKeys],
-  )
-
-  const logTicks = useMemo(
-    () => LOG_TICKS.filter((t) => t <= Math.max(dataMax, 1) * 1.05),
-    [dataMax],
-  )
-
-  const hasChart = multiCreator
-    ? multiChartData.length > 0 && creatorSeries.length > 0
-    : platformChartData.length > 0
+  const valueKeys = byPeople
+    ? pickedPeople.map((p) => seriesKey(p.id))
+    : split
+      ? ['viewsIg', 'viewsTt']
+      : ['total']
+  const plotted = applyYScale(chartData, valueKeys, yScale)
+  const dataMax = maxNumeric(plotted, valueKeys)
+  const logTicks = LOG_TICKS.filter((t) => t <= Math.max(dataMax, 1) * 1.05)
+  const hasChart = chartData.length > 0 && (byPeople || summary.videos > 0)
 
   function push(patch: NavPatch) {
     const params = new URLSearchParams(window.location.search)
     params.set('panel', 'analytics')
     params.set('aFrom', patch.from ?? from)
     params.set('aTo', patch.to ?? to)
-    const nextCreator = patch.creator ?? creatorId
-    if (nextCreator === '') params.delete('aCreator')
-    else params.set('aCreator', String(nextCreator))
+    params.delete('aCreator')
     params.set('aProject', String(patch.project ?? projectId ?? 'all'))
     params.set('aRole', patch.role ?? role)
     startTransition(() => {
       router.push(`?${params.toString()}`, { scroll: false })
     })
-  }
-
-  function navigate(nextFrom: string, nextTo: string, nextCreator: number | '') {
-    push({ from: nextFrom, to: nextTo, creator: nextCreator })
   }
 
   function openSheet() {
@@ -349,65 +246,66 @@ export function AnalyticsPanel({
     })
   }
 
+  function selectRange(nextFrom: string, nextTo: string) {
+    setFrom(nextFrom)
+    setTo(nextTo)
+    push({ from: nextFrom, to: nextTo })
+  }
+
   function selectDay(day: string) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > today) return
-    setFrom(day)
-    setTo(day)
-    push({ from: day, to: day })
+    selectRange(day, day)
   }
 
   function selectMonth(yearMonth: string) {
     if (!/^\d{4}-\d{2}$/.test(yearMonth)) return
     const { start, end } = rankingMonthRange(yearMonth, today)
-    setFrom(start)
-    setTo(end)
-    push({ from: start, to: end })
+    selectRange(start, end)
+  }
+
+  function togglePick(id: number) {
+    setPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
 
   const chipClass = (active: boolean) =>
     `h-9 rounded-lg border px-3 text-sm font-medium transition-colors ${
-      active
-        ? 'border-primary bg-primary text-primary-foreground'
-        : 'border-border hover:bg-accent'
+      active ? 'border-primary bg-primary text-primary-foreground' : 'border-border hover:bg-accent'
     }`
-
-  const selectedRow =
-    selectedCreatorId != null
-      ? leaderboard.find((r) => r.creator_id === selectedCreatorId)
-      : undefined
-  const totals = selectedRow ?? summary
-  const peopleWithViews = leaderboard.filter((r) => r.views > 0).length
-  const statTiles: Array<{ label: string; value: string; hint?: string; color?: string }> = [
-    { label: labels.views, value: formatNumber(totals.views) },
-    {
-      label: `${labels.views} · ${labels.instagram}`,
-      value: formatNumber(totals.views_instagram),
-      color: IG,
-    },
-    {
-      label: `${labels.views} · ${labels.tiktok}`,
-      value: formatNumber(totals.views_tiktok),
-      color: TT,
-    },
-    {
-      label: labels.videos,
-      value: formatNumber(totals.videos),
-      hint: `IG ${totals.videos_instagram} · TT ${totals.videos_tiktok}`,
-    },
-  ]
-  if (!selectedRow) {
-    statTiles.push({
-      label: labels.people,
-      value: `${peopleWithViews} / ${leaderboard.length}`,
-    })
-  }
-
   const toggleClass = (active: boolean) =>
     `rounded-md px-3 py-1 text-sm font-medium transition-colors ${
       active
         ? 'bg-primary text-primary-foreground shadow-sm'
         : 'text-muted-foreground hover:bg-accent hover:text-foreground'
     }`
+
+  const pickedRows = leaderboard.filter((r) => colorOf.has(r.creator_id))
+  const totals = byPeople
+    ? pickedRows.reduce(
+        (acc, r) => ({
+          views: acc.views + r.views,
+          views_instagram: acc.views_instagram + r.views_instagram,
+          views_tiktok: acc.views_tiktok + r.views_tiktok,
+          videos: acc.videos + r.videos,
+          videos_instagram: acc.videos_instagram + r.videos_instagram,
+          videos_tiktok: acc.videos_tiktok + r.videos_tiktok,
+        }),
+        { views: 0, views_instagram: 0, views_tiktok: 0, videos: 0, videos_instagram: 0, videos_tiktok: 0 },
+      )
+    : summary
+  const peopleWithViews = leaderboard.filter((r) => r.views > 0).length
+  const statTiles: Array<{ label: string; value: string; hint?: string; color?: string }> = [
+    { label: labels.views, value: formatNumber(totals.views) },
+    { label: `${labels.views} · ${labels.instagram}`, value: formatNumber(totals.views_instagram), color: IG },
+    { label: `${labels.views} · ${labels.tiktok}`, value: formatNumber(totals.views_tiktok), color: TT },
+    {
+      label: labels.videos,
+      value: formatNumber(totals.videos),
+      hint: `IG ${totals.videos_instagram} · TT ${totals.videos_tiktok}`,
+    },
+    byPeople
+      ? { label: labels.people, value: `${pickedRows.length}` }
+      : { label: labels.people, value: `${peopleWithViews} / ${leaderboard.length}` },
+  ]
 
   const axisShared = (
     <>
@@ -423,19 +321,33 @@ export function AnalyticsPanel({
         width={56}
         tickFormatter={(v) => formatNumber(Number(v))}
       />
-      {!multiCreator && showVideos ? (
+      {showVideos && !byPeople ? (
         <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={36} />
       ) : null}
       <Tooltip
-        formatter={(value, name) => {
-          if (value == null) return ['—', String(name)]
-          return [formatNumber(Number(value)), String(name)]
-        }}
+        formatter={(value, name) =>
+          value == null ? ['—', String(name)] : [formatNumber(Number(value)), String(name)]
+        }
         labelFormatter={(_, payload) => (payload?.[0]?.payload?.fullDate as string) ?? ''}
       />
       <Legend />
     </>
   )
+
+  const series: Array<{ key: string; name: string; color: string; axis: 'left' | 'right'; dashed?: boolean }> =
+    byPeople
+      ? pickedPeople.map((p) => ({ key: seriesKey(p.id), name: p.name, color: p.color, axis: 'left' }))
+      : [
+          ...(split
+            ? [
+                { key: 'viewsIg', name: `${labels.views} · ${labels.instagram}`, color: IG, axis: 'left' as const },
+                { key: 'viewsTt', name: `${labels.views} · ${labels.tiktok}`, color: TT, axis: 'left' as const },
+              ]
+            : [{ key: 'total', name: `${labels.total} ${labels.views.toLowerCase()}`, color: TOTAL, axis: 'left' as const }]),
+          ...(showVideos
+            ? [{ key: 'videos', name: labels.videos, color: '#94A3B8', axis: 'right' as const, dashed: true }]
+            : []),
+        ]
 
   return (
     <div className="relative flex flex-col gap-4">
@@ -449,18 +361,14 @@ export function AnalyticsPanel({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => push({ project: 'all', creator: '' })}
-          className={chipClass(projectId == null)}
-        >
+        <button type="button" onClick={() => push({ project: 'all' })} className={chipClass(projectId == null)}>
           {labels.allProjects}
         </button>
         {projects.map((p) => (
           <button
             key={p.id}
             type="button"
-            onClick={() => push({ project: p.id, creator: '' })}
+            onClick={() => push({ project: p.id })}
             className={chipClass(projectId === p.id)}
           >
             {p.name}
@@ -474,12 +382,7 @@ export function AnalyticsPanel({
             ['all', labels.roleAll],
           ] as const
         ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => push({ role: value, creator: '' })}
-            className={chipClass(role === value)}
-          >
+          <button key={value} type="button" onClick={() => push({ role: value })} className={chipClass(role === value)}>
             {label}
           </button>
         ))}
@@ -487,7 +390,6 @@ export function AnalyticsPanel({
           type="button"
           onClick={openSheet}
           className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary bg-primary/10 px-3 text-sm font-semibold text-primary hover:bg-primary/20"
-          title="Full-screen day-by-day sheet with downloads, charts and CSV export"
         >
           <Sheet className="size-4" />
           {labels.openSheet}
@@ -495,30 +397,20 @@ export function AnalyticsPanel({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => selectMonth(currentMonth)}
-          className={chipClass(selectedMonth === currentMonth)}
-        >
+        <button type="button" onClick={() => selectMonth(currentMonth)} className={chipClass(selectedMonth === currentMonth)}>
           {monthName(currentMonth)}
         </button>
-        <button
-          type="button"
-          onClick={() => selectMonth(lastMonth)}
-          className={chipClass(selectedMonth === lastMonth)}
-        >
+        <button type="button" onClick={() => selectMonth(lastMonth)} className={chipClass(selectedMonth === lastMonth)}>
           {monthName(lastMonth)}
         </button>
-        <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-          {labels.month}
-          <input
-            type="month"
-            value={selectedMonth}
-            max={currentMonth}
-            onChange={(e) => selectMonth(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
-          />
-        </label>
+        <input
+          type="month"
+          value={selectedMonth}
+          max={currentMonth}
+          onChange={(e) => selectMonth(e.target.value)}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          aria-label={labels.month}
+        />
         <span className="mx-1 h-6 w-px bg-border" aria-hidden />
         <div className="inline-flex items-center gap-1" role="group" aria-label={labels.day}>
           <button
@@ -526,7 +418,6 @@ export function AnalyticsPanel({
             disabled={isPending}
             onClick={() => selectDay(singleDay ? addDays(singleDay, -1) : stepAnchor)}
             className="inline-flex size-9 items-center justify-center rounded-lg border border-border hover:bg-accent disabled:opacity-50"
-            title={labels.prevDay}
             aria-label={labels.prevDay}
           >
             <ChevronLeft className="size-4" />
@@ -536,7 +427,7 @@ export function AnalyticsPanel({
             value={singleDay}
             max={today}
             onChange={(e) => selectDay(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
             aria-label={labels.day}
           />
           <button
@@ -544,7 +435,6 @@ export function AnalyticsPanel({
             disabled={isPending || (singleDay !== '' && singleDay >= today)}
             onClick={() => selectDay(singleDay ? addDays(singleDay, 1) : stepAnchor)}
             className="inline-flex size-9 items-center justify-center rounded-lg border border-border hover:bg-accent disabled:opacity-50"
-            title={labels.nextDay}
             aria-label={labels.nextDay}
           >
             <ChevronRight className="size-4" />
@@ -553,99 +443,80 @@ export function AnalyticsPanel({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <DateRangePresets
-          today={today}
-          from={from}
-          to={to}
-          onSelect={(nextFrom, nextTo) => {
-            setFrom(nextFrom)
-            setTo(nextTo)
-            navigate(nextFrom, nextTo, creatorId)
+        <DateRangePresets today={today} from={from} to={to} onSelect={selectRange} />
+        <form
+          className="flex flex-wrap items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (from && to && from <= to) selectRange(from, to)
           }}
-        />
-      </div>
-      <form
-        method="get"
-        className="flex flex-wrap items-end gap-3"
-        onSubmit={(e) => {
-          e.preventDefault()
-          navigate(from, to, creatorId)
-        }}
-      >
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          {labels.from}
+        >
           <input
             type="date"
             value={from}
+            max={today}
             onChange={(e) => setFrom(e.target.value)}
-            className="rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            aria-label={labels.from}
           />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          {labels.to}
+          <span className="text-xs text-muted-foreground">→</span>
           <input
             type="date"
             value={to}
+            max={today}
             onChange={(e) => setTo(e.target.value)}
-            className="rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            aria-label={labels.to}
           />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          {labels.creator}
-          <select
-            value={creatorId === '' ? '' : String(creatorId)}
-            onChange={(e) => {
-              const next = e.target.value ? Number(e.target.value) : ''
-              setCreatorId(next)
-              navigate(from, to, next)
-            }}
-            className="min-w-40 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
-          >
-            <option value="">{labels.allCreators}</option>
-            {creators.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="submit"
-          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent"
-        >
-          {labels.apply}
-        </button>
-      </form>
-
-      {selectedCreator ? (
-        <p className="text-sm text-muted-foreground">
-          {labels.showing} @{selectedCreator.name}
-        </p>
-      ) : null}
+          <button type="submit" className="h-9 rounded-lg border border-border px-3 text-sm hover:bg-accent">
+            {labels.apply}
+          </button>
+        </form>
+      </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         {statTiles.map((tile) => (
           <div key={tile.label} className="rounded-lg border border-border bg-muted/20 px-3 py-2">
             <p className="text-xs text-muted-foreground">{tile.label}</p>
-            <p
-              className="text-lg font-semibold tabular-nums"
-              style={tile.color ? { color: tile.color } : undefined}
-            >
+            <p className="text-lg font-semibold tabular-nums" style={tile.color ? { color: tile.color } : undefined}>
               {tile.value}
             </p>
-            {tile.hint ? (
-              <p className="text-xs tabular-nums text-muted-foreground">{tile.hint}</p>
-            ) : null}
+            {tile.hint ? <p className="text-xs tabular-nums text-muted-foreground">{tile.hint}</p> : null}
           </div>
         ))}
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        {pickedPeople.length === 0 ? (
+          <span className="text-xs text-muted-foreground">{labels.pickHint}</span>
+        ) : (
+          <>
+            {pickedPeople.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => togglePick(p.id)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm font-medium"
+                style={{ borderColor: p.color, color: p.color }}
+              >
+                <span className="inline-block size-2.5 rounded-full" style={{ backgroundColor: p.color }} aria-hidden />
+                {p.name}
+                <X className="size-3" />
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setPicked([])}
+              className="h-8 rounded-full border border-border px-3 text-sm hover:bg-accent"
+            >
+              {labels.clear}
+            </button>
+          </>
+        )}
+      </div>
+
       <div className="flex flex-wrap items-center gap-4 text-sm">
-        <div
-          className="inline-flex gap-1 rounded-lg border border-border bg-muted/30 p-1"
-          role="group"
-          aria-label="Chart type"
-        >
+        <div className="inline-flex gap-1 rounded-lg border border-border bg-muted/30 p-1" role="group">
           <button type="button" onClick={() => setChartType('line')} className={toggleClass(chartType === 'line')}>
             {labels.chartLine}
           </button>
@@ -653,34 +524,22 @@ export function AnalyticsPanel({
             {labels.chartBar}
           </button>
         </div>
-        <div
-          className="inline-flex gap-1 rounded-lg border border-border bg-muted/30 p-1"
-          role="group"
-          aria-label="Y axis scale"
-        >
-          <button type="button" onClick={() => setYScale('log')} className={toggleClass(yScale === 'log')}>
-            {labels.chartLog}
-          </button>
+        <div className="inline-flex gap-1 rounded-lg border border-border bg-muted/30 p-1" role="group">
           <button type="button" onClick={() => setYScale('linear')} className={toggleClass(yScale === 'linear')}>
             {labels.chartLinear}
           </button>
+          <button type="button" onClick={() => setYScale('log')} className={toggleClass(yScale === 'log')}>
+            {labels.chartLog}
+          </button>
         </div>
-        {!multiCreator ? (
+        {!byPeople ? (
           <>
             <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={showViews}
-                onChange={(e) => setShowViews(e.target.checked)}
-              />
-              {labels.showViews}
+              <input type="checkbox" checked={split} onChange={(e) => setSplit(e.target.checked)} />
+              {labels.splitPlatforms}
             </label>
             <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={showVideos}
-                onChange={(e) => setShowVideos(e.target.checked)}
-              />
+              <input type="checkbox" checked={showVideos} onChange={(e) => setShowVideos(e.target.checked)} />
               {labels.showVideos}
             </label>
           </>
@@ -688,208 +547,95 @@ export function AnalyticsPanel({
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
-      <div className="min-w-0">
-      {!hasChart ? (
-        <p className="text-sm text-muted-foreground">{labels.empty}</p>
-      ) : (
-        <div className="h-80 w-full xl:h-[28rem]">
-          <ResponsiveContainer width="100%" height="100%">
-            {chartType === 'bar' ? (
-              <BarChart
-                data={chartData}
-                margin={{ top: 8, right: 12, left: 4, bottom: 0 }}
-                barCategoryGap="18%"
-                barGap={2}
-              >
-                {axisShared}
-                {multiCreator
-                  ? creatorSeries.map((c) => (
+        <div className="min-w-0">
+          {!hasChart ? (
+            <p className="text-sm text-muted-foreground">{labels.empty}</p>
+          ) : (
+            <div className="h-80 w-full xl:h-[28rem]">
+              <ResponsiveContainer width="100%" height="100%">
+                {chartType === 'bar' ? (
+                  <BarChart data={plotted} margin={{ top: 8, right: 12, left: 4, bottom: 0 }} barGap={2}>
+                    {axisShared}
+                    {series.map((s) => (
                       <Bar
-                        key={c.id}
-                        yAxisId="left"
-                        dataKey={seriesKey(c.id)}
-                        name={c.name}
-                        fill={colorForCreator(c.id)}
-                        maxBarSize={18}
+                        key={s.key}
+                        yAxisId={s.axis}
+                        dataKey={s.key}
+                        name={s.name}
+                        fill={s.color}
+                        opacity={s.dashed ? 0.5 : 1}
+                        maxBarSize={byPeople ? 18 : 28}
                         isAnimationActive={false}
                       />
-                    ))
-                  : (
-                      <>
-                        {showViews ? (
-                          <Bar
-                            yAxisId="left"
-                            dataKey="viewsIg"
-                            name={`${labels.views} · ${labels.instagram}`}
-                            fill={IG}
-                            maxBarSize={28}
-                            isAnimationActive={false}
-                          />
-                        ) : null}
-                        {showViews ? (
-                          <Bar
-                            yAxisId="left"
-                            dataKey="viewsTt"
-                            name={`${labels.views} · ${labels.tiktok}`}
-                            fill={TT}
-                            maxBarSize={28}
-                            isAnimationActive={false}
-                          />
-                        ) : null}
-                        {showVideos ? (
-                          <Bar
-                            yAxisId="right"
-                            dataKey="videosIg"
-                            name={`${labels.videos} · ${labels.instagram}`}
-                            fill={IG}
-                            opacity={0.55}
-                            maxBarSize={28}
-                            isAnimationActive={false}
-                          />
-                        ) : null}
-                        {showVideos ? (
-                          <Bar
-                            yAxisId="right"
-                            dataKey="videosTt"
-                            name={`${labels.videos} · ${labels.tiktok}`}
-                            fill={TT}
-                            opacity={0.55}
-                            maxBarSize={28}
-                            isAnimationActive={false}
-                          />
-                        ) : null}
-                      </>
-                    )}
-              </BarChart>
-            ) : (
-              <LineChart data={chartData} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
-                {axisShared}
-                {multiCreator
-                  ? creatorSeries.map((c) => (
+                    ))}
+                  </BarChart>
+                ) : (
+                  <LineChart data={plotted} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
+                    {axisShared}
+                    {series.map((s) => (
                       <Line
-                        key={c.id}
-                        yAxisId="left"
+                        key={s.key}
+                        yAxisId={s.axis}
                         type="monotone"
-                        dataKey={seriesKey(c.id)}
-                        name={c.name}
-                        stroke={colorForCreator(c.id)}
-                        strokeWidth={2.25}
-                        dot={false}
+                        dataKey={s.key}
+                        name={s.name}
+                        stroke={s.color}
+                        strokeWidth={s.dashed ? 1.5 : 2.25}
+                        strokeDasharray={s.dashed ? '5 4' : undefined}
+                        dot={chartData.length <= 31 && !s.dashed}
                         connectNulls={false}
                         isAnimationActive={false}
                       />
-                    ))
-                  : (
-                      <>
-                        {showViews ? (
-                          <Line
-                            yAxisId="left"
-                            type="monotone"
-                            dataKey="viewsIg"
-                            name={`${labels.views} · ${labels.instagram}`}
-                            stroke={IG}
-                            strokeWidth={2.25}
-                            dot={false}
-                            connectNulls={false}
-                            isAnimationActive={false}
-                          />
-                        ) : null}
-                        {showViews ? (
-                          <Line
-                            yAxisId="left"
-                            type="monotone"
-                            dataKey="viewsTt"
-                            name={`${labels.views} · ${labels.tiktok}`}
-                            stroke={TT}
-                            strokeWidth={2.25}
-                            dot={false}
-                            connectNulls={false}
-                            isAnimationActive={false}
-                          />
-                        ) : null}
-                        {showVideos ? (
-                          <Line
-                            yAxisId="right"
-                            type="monotone"
-                            dataKey="videosIg"
-                            name={`${labels.videos} · ${labels.instagram}`}
-                            stroke={IG}
-                            strokeWidth={1.5}
-                            strokeDasharray="5 4"
-                            dot={false}
-                            connectNulls={false}
-                            isAnimationActive={false}
-                          />
-                        ) : null}
-                        {showVideos ? (
-                          <Line
-                            yAxisId="right"
-                            type="monotone"
-                            dataKey="videosTt"
-                            name={`${labels.videos} · ${labels.tiktok}`}
-                            stroke={TT}
-                            strokeWidth={1.5}
-                            strokeDasharray="5 4"
-                            dot={false}
-                            connectNulls={false}
-                            isAnimationActive={false}
-                          />
-                        ) : null}
-                      </>
-                    )}
-              </LineChart>
-            )}
-          </ResponsiveContainer>
+                    ))}
+                  </LineChart>
+                )}
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
-      )}
-      </div>
 
-      <div className="min-w-0">
-        <h3 className="mb-2 text-sm font-medium">{labels.topCreators}</h3>
-        {leaderboard.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{labels.empty}</p>
-        ) : (
-          <ul className="max-h-[28rem] divide-y divide-border overflow-y-auto rounded-lg border border-border">
-            {leaderboard.map((row, i) => {
-              const rank = i + 1
-              const active = selectedCreatorId === row.creator_id
-              const color = colorForCreator(row.creator_id)
-              return (
-                <li key={row.creator_id}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      navigate(from, to, active ? '' : row.creator_id)
-                    }
-                    className={`flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-accent/50 ${
-                      active ? 'bg-accent/40' : ''
-                    }`}
-                  >
-                    <span className="flex items-center gap-2 font-medium">
-                      <span
-                        className="inline-block size-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: color }}
-                        aria-hidden
-                      />
-                      {rank}. {row.creator_name}
-                    </span>
-                    <span className="tabular-nums text-muted-foreground">
-                      {formatNumber(row.views)} {labels.views.toLowerCase()} · {row.videos}{' '}
-                      {labels.videos.toLowerCase()}
-                      <span className="ml-2" style={{ color: IG }}>
-                        IG {formatNumber(row.views_instagram)}
+        <div className="min-w-0">
+          <h3 className="mb-2 text-sm font-medium">{labels.topCreators}</h3>
+          {leaderboard.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{labels.empty}</p>
+          ) : (
+            <ul className="max-h-[28rem] divide-y divide-border overflow-y-auto rounded-lg border border-border">
+              {leaderboard.map((row, i) => {
+                const color = colorOf.get(row.creator_id)
+                return (
+                  <li key={row.creator_id}>
+                    <button
+                      type="button"
+                      onClick={() => togglePick(row.creator_id)}
+                      className={`flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-accent/50 ${
+                        color ? 'bg-accent/40' : ''
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 font-medium">
+                        <span
+                          className="inline-block size-2.5 shrink-0 rounded-full border border-border"
+                          style={color ? { backgroundColor: color, borderColor: color } : undefined}
+                          aria-hidden
+                        />
+                        {i + 1}. {row.creator_name}
                       </span>
-                      <span className="ml-2" style={{ color: TT }}>
-                        TT {formatNumber(row.views_tiktok)}
+                      <span className="tabular-nums text-muted-foreground">
+                        {formatNumber(row.views)} {labels.views.toLowerCase()} · {row.videos}{' '}
+                        {labels.videos.toLowerCase()}
+                        <span className="ml-2" style={{ color: IG }}>
+                          IG {formatNumber(row.views_instagram)}
+                        </span>
+                        <span className="ml-2" style={{ color: TT }}>
+                          TT {formatNumber(row.views_tiktok)}
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </div>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronLeft,
   ChevronRight,
   ClipboardPaste,
@@ -28,13 +30,57 @@ import { addDays, rankingMonthRange } from '@/lib/campaign'
 import { shiftYearMonth } from '@/lib/biweekly'
 import { formatNumber } from '@/lib/format'
 import type { DailyDownloadsRow, SheetDayVideo, SheetRow } from '@/lib/analytics'
-import { loadSheetDay, saveDailyDownloads, syncRevenueCatNow } from '@/app/actions/downloads'
+import {
+  loadSheetDay,
+  loadSheetPerson,
+  saveDailyDownloads,
+  syncRevenueCatNow,
+} from '@/app/actions/downloads'
 
 const IG = '#E1306C'
 const TT = '#0F766E'
 const CREATOR = '#6366F1'
 const REPOSTER = '#F59E0B'
 const DOWNLOADS = '#94A3B8'
+const SUBS = '#10B981'
+const REVENUE = '#8B5CF6'
+
+type ChartMode = 'views' | 'ratios'
+
+type ImpactSort =
+  | 'views'
+  | 'dlLift'
+  | 'subLift'
+  | 'estDl'
+  | 'estSubs'
+  | 'per1k'
+  | 'nextDay'
+  | 'spikes'
+  | 'r'
+
+function money(v: number): string {
+  return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function ratio(num: number, den: number, scale = 1): number | null {
+  return den > 0 ? (num / den) * scale : null
+}
+
+function fmtRatio(v: number | null, digits = 1): string {
+  return v == null ? '—' : v.toFixed(digits)
+}
+
+/** Value at the given percentile (0–1) of a list. */
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(p * (sorted.length - 1))))
+  return sorted[idx]
+}
+
+function average(values: number[]): number | null {
+  return values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length
+}
 
 type Tab = 'day' | 'person' | 'impact'
 type RoleView = 'all' | 'creator' | 'reposter'
@@ -172,7 +218,10 @@ function parsePastedDownloads(text: string): Array<{ date: string; downloads: nu
 function DayDetail({
   day,
   projectId,
+  showBusiness,
   downloads,
+  subscriptions,
+  revenue,
   avgDownloads,
   onClose,
   onPrev,
@@ -180,7 +229,10 @@ function DayDetail({
 }: {
   day: string
   projectId: number | null
+  showBusiness: boolean
   downloads: number | undefined
+  subscriptions: number | undefined
+  revenue: number | undefined
   avgDownloads: number | null
   onClose: () => void
   onPrev: (() => void) | null
@@ -295,18 +347,31 @@ function DayDetail({
                   <p className="text-xs text-muted-foreground">Views</p>
                   <p className="text-lg font-semibold tabular-nums">{formatNumber(summary.views)}</p>
                 </div>
-                <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
-                  <p className="text-xs text-muted-foreground">Downloads</p>
-                  <p className="text-lg font-semibold tabular-nums">
-                    {downloads != null ? formatNumber(downloads) : '—'}
-                  </p>
-                  {dlDelta != null ? (
-                    <p className={`text-xs ${dlDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {dlDelta >= 0 ? '+' : ''}
-                      {Math.round(dlDelta * 100)}% vs avg
+                {showBusiness ? (
+                  <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+                    <p className="text-xs text-muted-foreground">Downloads</p>
+                    <p className="text-lg font-semibold tabular-nums">
+                      {downloads != null ? formatNumber(downloads) : '—'}
                     </p>
-                  ) : null}
-                </div>
+                    {dlDelta != null ? (
+                      <p className={`text-xs ${dlDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {dlDelta >= 0 ? '+' : ''}
+                        {Math.round(dlDelta * 100)}% vs avg
+                      </p>
+                    ) : null}
+                    {subscriptions != null || revenue != null ? (
+                      <p className="text-xs text-muted-foreground">
+                        <span style={{ color: SUBS }}>{subscriptions ?? 0} subs</span>
+                        {revenue != null ? (
+                          <>
+                            {' · '}
+                            <span style={{ color: REVENUE }}>{money(revenue)}</span>
+                          </>
+                        ) : null}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
                   <p className="text-xs text-muted-foreground">Videos</p>
                   <p className="text-lg font-semibold tabular-nums">{summary.tt + summary.ig}</p>
@@ -412,6 +477,226 @@ function DayDetail({
   )
 }
 
+function PersonTimeline({
+  person,
+  from,
+  to,
+  dates,
+  projectId,
+  showBusiness,
+  downloadsByDate,
+  subsByDate,
+  onClose,
+}: {
+  person: PersonAgg
+  from: string
+  to: string
+  dates: string[]
+  projectId: number | null
+  showBusiness: boolean
+  downloadsByDate: Map<string, number>
+  subsByDate: Map<string, number>
+  onClose: () => void
+}) {
+  const [loaded, setLoaded] = useState<{
+    key: string
+    videos: Array<SheetDayVideo & { date: string }>
+  } | null>(null)
+  const key = `${person.id}|${from}|${to}|${projectId ?? ''}`
+
+  useEffect(() => {
+    let cancelled = false
+    loadSheetPerson(person.id, from, to, projectId).then((videos) => {
+      if (!cancelled) setLoaded({ key, videos })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [person.id, from, to, projectId, key])
+
+  const videos = loaded?.key === key ? loaded.videos : null
+  const data = dates.map((d) => ({
+    date: d.slice(5),
+    fullDate: d,
+    views: person.byDate.get(d)?.views ?? 0,
+    videos: person.byDate.get(d)?.videos ?? 0,
+    downloads: downloadsByDate.get(d) ?? null,
+    subs: subsByDate.get(d) ?? null,
+  }))
+  const withDl = dates.filter((d) => downloadsByDate.has(d))
+  const posted = withDl.filter((d) => (person.byDate.get(d)?.videos ?? 0) > 0)
+  const quiet = withDl.filter((d) => (person.byDate.get(d)?.videos ?? 0) === 0)
+  const avgOn = average(posted.map((d) => downloadsByDate.get(d) ?? 0))
+  const avgOff = average(quiet.map((d) => downloadsByDate.get(d) ?? 0))
+  const daysPosted = [...person.byDate.values()].filter((c) => c.videos > 0).length
+
+  return (
+    <div className="fixed inset-0 z-[60] flex justify-end bg-black/30" onClick={onClose}>
+      <div
+        className="flex h-full w-full max-w-3xl flex-col overflow-hidden bg-background shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <div>
+            <h3 className="text-base font-semibold">
+              {person.name}{' '}
+              <span
+                className="text-[10px] font-semibold uppercase"
+                style={{ color: person.role === 'reposter' ? REPOSTER : CREATOR }}
+              >
+                {person.role === 'reposter' ? 'Reposter' : 'Creator'}
+              </span>
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              {dayLabel(from)} → {dayLabel(to)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex size-8 items-center justify-center rounded-lg border border-border hover:bg-accent"
+            aria-label="Close"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto px-4 py-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              { label: 'Views', value: formatNumber(person.views) },
+              { label: 'Videos', value: formatNumber(person.videos) },
+              { label: 'Days posted', value: `${daysPosted} / ${dates.length}` },
+              ...(showBusiness
+                ? [
+                    {
+                      label: 'Avg downloads: posted vs not',
+                      value: `${avgOn == null ? '—' : formatNumber(Math.round(avgOn))} vs ${
+                        avgOff == null ? '—' : formatNumber(Math.round(avgOff))
+                      }`,
+                    },
+                  ]
+                : []),
+            ].map((s) => (
+              <div key={s.label} className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+                <p className="text-xs text-muted-foreground">{s.label}</p>
+                <p className="text-lg font-semibold tabular-nums">{s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 h-64 w-full rounded-lg border border-border p-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                <YAxis
+                  yAxisId="views"
+                  tick={{ fontSize: 11 }}
+                  width={56}
+                  tickFormatter={(v) => formatNumber(Number(v))}
+                />
+                {showBusiness ? (
+                  <YAxis
+                    yAxisId="biz"
+                    orientation="right"
+                    tick={{ fontSize: 11 }}
+                    width={44}
+                    tickFormatter={(v) => formatNumber(Number(v))}
+                  />
+                ) : null}
+                <Tooltip
+                  formatter={(value, name) =>
+                    value == null ? ['—', String(name)] : [formatNumber(Number(value)), String(name)]
+                  }
+                  labelFormatter={(_, payload) => {
+                    const p = payload?.[0]?.payload as { fullDate?: string; videos?: number } | undefined
+                    return p?.fullDate ? `${dayLabel(p.fullDate)} · ${p.videos ?? 0} video(s)` : ''
+                  }}
+                />
+                <Legend />
+                <Bar
+                  yAxisId="views"
+                  dataKey="views"
+                  name={`${person.name} views`}
+                  fill={person.role === 'reposter' ? REPOSTER : CREATOR}
+                  maxBarSize={24}
+                  isAnimationActive={false}
+                />
+                {showBusiness ? (
+                  <Line
+                    yAxisId="biz"
+                    type="monotone"
+                    dataKey="downloads"
+                    name="Downloads"
+                    stroke={DOWNLOADS}
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                ) : null}
+                {showBusiness ? (
+                  <Line
+                    yAxisId="biz"
+                    type="monotone"
+                    dataKey="subs"
+                    name="Subscriptions"
+                    stroke={SUBS}
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                ) : null}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+
+          <h4 className="mt-4 mb-1.5 text-sm font-semibold">Top posts</h4>
+          {!videos ? (
+            <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" /> Loading…
+            </p>
+          ) : videos.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No videos in this range.</p>
+          ) : (
+            <ul className="divide-y divide-border rounded-lg border border-border">
+              {videos.slice(0, 25).map((v) => (
+                <li key={v.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-sm">
+                  <a
+                    href={v.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex min-w-0 items-center gap-1.5 truncate underline-offset-2 hover:underline"
+                  >
+                    <span
+                      className="text-[10px] font-semibold"
+                      style={{ color: v.platform === 'tiktok' ? TT : IG }}
+                    >
+                      {v.platform === 'tiktok' ? 'TT' : 'IG'}
+                    </span>
+                    <span className="truncate">{dayLabel(v.date)}</span>
+                    <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+                  </a>
+                  <span className="shrink-0 tabular-nums">
+                    <span className="font-semibold">{formatNumber(v.views)}</span>
+                    {showBusiness && downloadsByDate.has(v.date) ? (
+                      <span className="ml-1.5 text-xs text-muted-foreground">
+                        · {formatNumber(downloadsByDate.get(v.date) ?? 0)} downloads that day
+                      </span>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function AnalyticsSheet({
   rows,
   downloads,
@@ -420,6 +705,7 @@ export function AnalyticsSheet({
   today,
   projectId,
   projects,
+  showBusiness,
   revenueCatProjectIds,
 }: {
   rows: SheetRow[]
@@ -429,6 +715,8 @@ export function AnalyticsSheet({
   today: string
   projectId: number | null
   projects: Array<{ id: number; name: string }>
+  /** Owner only: downloads, subscriptions, revenue and the impact tab. */
+  showBusiness: boolean
   /** Projects with a RevenueCat link configured (env). */
   revenueCatProjectIds: number[]
 }) {
@@ -444,6 +732,12 @@ export function AnalyticsSheet({
   const [pasteText, setPasteText] = useState('')
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
   const [openDay, setOpenDay] = useState<string | null>(null)
+  const [openPersonId, setOpenPersonId] = useState<number | null>(null)
+  const [chartMode, setChartMode] = useState<ChartMode>('views')
+  const [impactSort, setImpactSort] = useState<{ key: ImpactSort; desc: boolean }>({
+    key: 'estDl',
+    desc: true,
+  })
   const rcConnected =
     projectId != null ? revenueCatProjectIds.includes(projectId) : revenueCatProjectIds.length > 0
 
@@ -482,6 +776,7 @@ export function AnalyticsSheet({
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'Escape') return
       if (openDay) setOpenDay(null)
+      else if (openPersonId != null) setOpenPersonId(null)
       else push({ close: true })
     }
     window.addEventListener('keydown', onKey)
@@ -505,14 +800,18 @@ export function AnalyticsSheet({
   const currentMonth = today.slice(0, 7)
   const lastMonth = shiftYearMonth(currentMonth, -1)
 
-  const { downloadsByDate, downloadSource } = useMemo(() => {
+  const { downloadsByDate, downloadSource, subsByDate, revenueByDate } = useMemo(() => {
     const m = new Map<string, number>()
     const src = new Map<string, string>()
+    const subs = new Map<string, number>()
+    const rev = new Map<string, number>()
     for (const d of downloads) {
       m.set(d.date, d.downloads)
       src.set(d.date, d.source)
+      if (d.subscriptions != null) subs.set(d.date, d.subscriptions)
+      if (d.revenue != null) rev.set(d.date, d.revenue)
     }
-    return { downloadsByDate: m, downloadSource: src }
+    return { downloadsByDate: m, downloadSource: src, subsByDate: subs, revenueByDate: rev }
   }, [downloads])
 
   const { byDay, totals, people } = useMemo(() => {
@@ -580,7 +879,14 @@ export function AnalyticsSheet({
   }, [rows, dates])
 
   const totalDownloads = dates.reduce((sum, d) => sum + (downloadsByDate.get(d) ?? 0), 0)
-  const daysWithDownloads = dates.filter((d) => downloadsByDate.has(d))
+  const totalSubs = dates.reduce((sum, d) => sum + (subsByDate.get(d) ?? 0), 0)
+  const totalRevenue = dates.reduce((sum, d) => sum + (revenueByDate.get(d) ?? 0), 0)
+  const hasSubs = subsByDate.size > 0
+  const hasRevenue = revenueByDate.size > 0
+  const daysWithDownloads = useMemo(
+    () => dates.filter((d) => downloadsByDate.has(d)),
+    [dates, downloadsByDate],
+  )
 
   const visiblePeople = people.filter((p) => roleView === 'all' || p.role === roleView)
   const visibleTotals = useMemo(() => {
@@ -607,44 +913,109 @@ export function AnalyticsSheet({
       creatorViews: a.creatorViews,
       reposterViews: a.reposterViews,
       downloads: downloadsByDate.get(d) ?? null,
+      subs: subsByDate.get(d) ?? null,
+      revenue: revenueByDate.get(d) ?? null,
+      viewsPerDownload: (() => {
+        const dl = downloadsByDate.get(d)
+        return dl ? Math.round(a.views / dl) : null
+      })(),
+      subsPer100: (() => {
+        const dl = downloadsByDate.get(d)
+        const s = subsByDate.get(d)
+        return dl && s != null ? Number(((s / dl) * 100).toFixed(1)) : null
+      })(),
+      revenuePerDownload: (() => {
+        const dl = downloadsByDate.get(d)
+        const r = revenueByDate.get(d)
+        return dl && r != null ? Number((r / dl).toFixed(2)) : null
+      })(),
     }
   })
 
   const impact = useMemo(() => {
     const ds = daysWithDownloads
     const dl = ds.map((d) => downloadsByDate.get(d) ?? 0)
-    const series = (pick: (d: string) => number) => pearson(ds.map(pick), dl)
+    const sb = ds.map((d) => subsByDate.get(d) ?? 0)
+    const series = (pick: (d: string) => number) => ({
+      r: pearson(ds.map(pick), dl),
+      rSubs: pearson(ds.map(pick), sb),
+    })
     const groups = [
-      { label: 'All views', r: series((d) => byDay.get(d)?.views ?? 0) },
-      { label: 'Creator views', r: series((d) => byDay.get(d)?.creatorViews ?? 0) },
-      { label: 'Reposter views', r: series((d) => byDay.get(d)?.reposterViews ?? 0) },
-      { label: 'TikTok views', r: series((d) => byDay.get(d)?.ttViews ?? 0) },
-      { label: 'Instagram views', r: series((d) => byDay.get(d)?.igViews ?? 0) },
-      { label: 'Videos posted', r: series((d) => byDay.get(d)?.videos ?? 0) },
+      { label: 'All views', ...series((d) => byDay.get(d)?.views ?? 0) },
+      { label: 'Creator views', ...series((d) => byDay.get(d)?.creatorViews ?? 0) },
+      { label: 'Reposter views', ...series((d) => byDay.get(d)?.reposterViews ?? 0) },
+      { label: 'TikTok views', ...series((d) => byDay.get(d)?.ttViews ?? 0) },
+      { label: 'Instagram views', ...series((d) => byDay.get(d)?.igViews ?? 0) },
+      { label: 'Videos posted', ...series((d) => byDay.get(d)?.videos ?? 0) },
     ]
+
+    // A "quiet day" baseline: downloads you'd get anyway, without a video push.
+    const baseDl = percentile(dl, 0.2)
+    const baseSubs = percentile(sb, 0.2)
+    const spikeCut = percentile(dl, 0.8)
+    const spikeDays = ds.filter((d) => (downloadsByDate.get(d) ?? 0) >= spikeCut && spikeCut > baseDl)
+
     const perPerson = people.map((p) => {
-      const r = pearson(
-        ds.map((d) => p.byDate.get(d)?.views ?? 0),
-        dl,
-      )
-      const posted = ds.filter((d) => (p.byDate.get(d)?.videos ?? 0) > 0)
-      const notPosted = ds.filter((d) => (p.byDate.get(d)?.videos ?? 0) === 0)
-      const avg = (list: string[]) =>
-        list.length === 0
-          ? null
-          : list.reduce((s, d) => s + (downloadsByDate.get(d) ?? 0), 0) / list.length
+      const postedOn = (d: string) => (p.byDate.get(d)?.videos ?? 0) > 0
+      const posted = ds.filter(postedOn)
+      const notPosted = ds.filter((d) => !postedOn(d))
+      const dlOf = (d: string) => downloadsByDate.get(d) ?? 0
+      const subOf = (d: string) => subsByDate.get(d) ?? 0
+      const avgPosted = average(posted.map(dlOf))
+      const avgNotPosted = average(notPosted.map(dlOf))
+      const subsPosted = average(posted.map(subOf))
+      const subsNotPosted = average(notPosted.map(subOf))
+
+      let estDl = 0
+      let estSubs = 0
+      for (const d of ds) {
+        const dayViews = byDay.get(d)?.views ?? 0
+        const mine = p.byDate.get(d)?.views ?? 0
+        if (dayViews <= 0 || mine <= 0) continue
+        const share = mine / dayViews
+        estDl += share * Math.max(0, dlOf(d) - baseDl)
+        estSubs += share * Math.max(0, subOf(d) - baseSubs)
+      }
+
+      const nextAfterPost = ds.filter((d) => postedOn(addDays(d, -1)))
+      const nextAfterQuiet = ds.filter((d) => !postedOn(addDays(d, -1)))
+      const nextOn = average(nextAfterPost.map(dlOf))
+      const nextOff = average(nextAfterQuiet.map(dlOf))
+
+      const dlLift = avgPosted != null && avgNotPosted != null ? avgPosted - avgNotPosted : null
+      const subLift = subsPosted != null && subsNotPosted != null ? subsPosted - subsNotPosted : null
       return {
         ...p,
-        r,
+        r: pearson(ds.map((d) => p.byDate.get(d)?.views ?? 0), dl),
         share: totals.views > 0 ? p.views / totals.views : 0,
         daysPosted: [...p.byDate.values()].filter((c) => c.videos > 0).length,
-        avgPosted: avg(posted),
-        avgNotPosted: avg(notPosted),
+        avgPosted,
+        avgNotPosted,
+        dlLift,
+        subLift,
+        estDl,
+        estSubs,
+        per1k: p.views > 0 ? (estDl / p.views) * 1000 : null,
+        nextDay: nextOn != null && nextOff != null ? nextOn - nextOff : null,
+        spikes: spikeDays.filter(postedOn).length,
       }
     })
-    perPerson.sort((a, b) => (b.r ?? -2) - (a.r ?? -2) || b.views - a.views)
-    return { groups, perPerson }
-  }, [daysWithDownloads, downloadsByDate, byDay, people, totals.views])
+    return { groups, perPerson, baseDl, baseSubs, spikeDays: spikeDays.length }
+  }, [daysWithDownloads, downloadsByDate, subsByDate, byDay, people, totals.views])
+
+  const sortedImpact = useMemo(() => {
+    const { key, desc } = impactSort
+    const val = (p: (typeof impact.perPerson)[number]): number => {
+      const v = p[key]
+      return v == null ? Number.NEGATIVE_INFINITY : v
+    }
+    return [...impact.perPerson].sort((a, b) => {
+      const diff = desc ? val(b) - val(a) : val(a) - val(b)
+      return diff || b.views - a.views
+    })
+  }, [impact, impactSort])
+
+  const openPerson = openPersonId != null ? people.find((p) => p.id === openPersonId) ?? null : null
 
   const dirtyDates = Object.keys(drafts).filter((d) => {
     const raw = drafts[d].trim()
@@ -699,7 +1070,7 @@ export function AnalyticsSheet({
   function exportDaily() {
     const headers = [
       'date',
-      'downloads',
+      ...(showBusiness ? ['downloads', 'subscriptions', 'revenue_usd'] : []),
       'total_views',
       'tiktok_views',
       'instagram_views',
@@ -717,7 +1088,9 @@ export function AnalyticsSheet({
       const a = byDay.get(d) ?? emptyDay()
       return [
         d,
-        downloadsByDate.get(d) ?? '',
+        ...(showBusiness
+          ? [downloadsByDate.get(d) ?? '', subsByDate.get(d) ?? '', revenueByDate.get(d) ?? '']
+          : []),
         a.views,
         a.ttViews,
         a.igViews,
@@ -736,7 +1109,15 @@ export function AnalyticsSheet({
   }
 
   function exportLong() {
-    const headers = ['date', 'person', 'role', 'platform', 'videos', 'views', 'downloads_that_day']
+    const headers = [
+      'date',
+      'person',
+      'role',
+      'platform',
+      'videos',
+      'views',
+      ...(showBusiness ? ['downloads_that_day'] : []),
+    ]
     const lines = rows.map((r) => [
       r.date,
       r.creator_name,
@@ -744,7 +1125,7 @@ export function AnalyticsSheet({
       r.platform,
       r.videos,
       r.views,
-      downloadsByDate.get(r.date) ?? '',
+      ...(showBusiness ? [downloadsByDate.get(r.date) ?? ''] : []),
     ])
     downloadFile(`posts-by-person-${projectLabel}-${serverFrom}-${serverTo}.csv`, headers, lines)
   }
@@ -775,7 +1156,7 @@ export function AnalyticsSheet({
               type="button"
               onClick={exportDaily}
               className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-sm hover:bg-accent"
-              title="One row per day: downloads, views, videos, and each person's views"
+              title="One row per day: views, videos, and each person's views"
             >
               <Download className="size-3.5" />
               Daily CSV
@@ -891,12 +1272,11 @@ export function AnalyticsSheet({
           </div>
         ) : null}
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
           {[
             { label: 'Total views', value: totals.views },
             { label: 'TikTok views', value: totals.ttViews, color: TT },
             { label: 'Instagram views', value: totals.igViews, color: IG },
-            { label: 'Downloads', value: totalDownloads },
             { label: 'TikTok videos', value: totals.ttVideos, color: TT },
             { label: 'Instagram posts', value: totals.igVideos, color: IG },
             { label: 'By creators', value: totals.creatorVideos, color: CREATOR },
@@ -911,8 +1291,128 @@ export function AnalyticsSheet({
           ))}
         </div>
 
-        <div className="mt-3 h-72 w-full rounded-lg border border-border p-2">
+        {showBusiness ? (
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            {[
+              { label: 'Downloads', value: formatNumber(totalDownloads), color: undefined },
+              {
+                label: 'Subscriptions',
+                value: hasSubs ? formatNumber(totalSubs) : '—',
+                color: SUBS,
+              },
+              {
+                label: 'Revenue',
+                value: hasRevenue ? money(totalRevenue) : '—',
+                color: REVENUE,
+              },
+              {
+                label: 'Views per download',
+                value: fmtRatio(ratio(totals.views, totalDownloads), 0),
+                color: undefined,
+              },
+              {
+                label: 'Subs per 100 downloads',
+                value: hasSubs ? fmtRatio(ratio(totalSubs, totalDownloads, 100)) : '—',
+                color: SUBS,
+              },
+              {
+                label: 'Revenue per download',
+                value: hasRevenue && totalDownloads > 0 ? money(totalRevenue / totalDownloads) : '—',
+                color: REVENUE,
+              },
+            ].map((s) => (
+              <div key={s.label} className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+                <p className="text-xs text-muted-foreground">{s.label}</p>
+                <p className="text-lg font-semibold tabular-nums" style={s.color ? { color: s.color } : undefined}>
+                  {s.value}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {showBusiness ? (
+          <div className="mt-3 inline-flex gap-1 rounded-lg border border-border bg-muted/30 p-1">
+            {(
+              [
+                ['views', 'Views vs downloads'],
+                ['ratios', 'Ratios over time'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setChartMode(id)}
+                className={`rounded-md px-3 py-1 text-xs font-medium ${
+                  chartMode === id ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="mt-2 h-72 w-full rounded-lg border border-border p-2">
           <ResponsiveContainer width="100%" height="100%">
+            {showBusiness && chartMode === 'ratios' ? (
+              <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                <YAxis
+                  yAxisId="vpd"
+                  tick={{ fontSize: 11 }}
+                  width={56}
+                  tickFormatter={(v) => formatNumber(Number(v))}
+                />
+                <YAxis yAxisId="small" orientation="right" tick={{ fontSize: 11 }} width={44} />
+                <Tooltip
+                  formatter={(value, name) => {
+                    if (value == null) return ['—', String(name)]
+                    const v = Number(value)
+                    return [String(name).startsWith('Revenue') ? money(v) : formatNumber(v), String(name)]
+                  }}
+                  labelFormatter={(_, payload) => {
+                    const d = payload?.[0]?.payload?.fullDate as string | undefined
+                    return d ? dayLabel(d) : ''
+                  }}
+                />
+                <Legend />
+                <Line
+                  yAxisId="vpd"
+                  type="monotone"
+                  dataKey="viewsPerDownload"
+                  name="Views per download"
+                  stroke="#0F172A"
+                  strokeWidth={2}
+                  dot={dates.length <= 31}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+                <Line
+                  yAxisId="small"
+                  type="monotone"
+                  dataKey="subsPer100"
+                  name="Subs per 100 downloads"
+                  stroke={SUBS}
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+                <Line
+                  yAxisId="small"
+                  type="monotone"
+                  dataKey="revenuePerDownload"
+                  name="Revenue per download"
+                  stroke={REVENUE}
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              </ComposedChart>
+            ) : (
             <ComposedChart
               data={chartData}
               margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
@@ -931,13 +1431,15 @@ export function AnalyticsSheet({
                 width={60}
                 tickFormatter={(v) => formatNumber(Number(v))}
               />
-              <YAxis
-                yAxisId="downloads"
-                orientation="right"
-                tick={{ fontSize: 11 }}
-                width={48}
-                tickFormatter={(v) => formatNumber(Number(v))}
-              />
+              {showBusiness ? (
+                <YAxis
+                  yAxisId="downloads"
+                  orientation="right"
+                  tick={{ fontSize: 11 }}
+                  width={48}
+                  tickFormatter={(v) => formatNumber(Number(v))}
+                />
+              ) : null}
               <Tooltip
                 formatter={(value, name) =>
                   value == null ? ['—', String(name)] : [formatNumber(Number(value)), String(name)]
@@ -948,15 +1450,30 @@ export function AnalyticsSheet({
                 }}
               />
               <Legend />
-              <Bar
-                yAxisId="downloads"
-                dataKey="downloads"
-                name="Downloads"
-                fill={DOWNLOADS}
-                opacity={0.55}
-                maxBarSize={28}
-                isAnimationActive={false}
-              />
+              {showBusiness ? (
+                <Bar
+                  yAxisId="downloads"
+                  dataKey="downloads"
+                  name="Downloads"
+                  fill={DOWNLOADS}
+                  opacity={0.55}
+                  maxBarSize={28}
+                  isAnimationActive={false}
+                />
+              ) : null}
+              {showBusiness && hasSubs ? (
+                <Line
+                  yAxisId="downloads"
+                  type="monotone"
+                  dataKey="subs"
+                  name="Subscriptions"
+                  stroke={SUBS}
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              ) : null}
               <Line
                 yAxisId="views"
                 type="monotone"
@@ -990,6 +1507,7 @@ export function AnalyticsSheet({
                 isAnimationActive={false}
               />
             </ComposedChart>
+            )}
           </ResponsiveContainer>
         </div>
 
@@ -999,8 +1517,8 @@ export function AnalyticsSheet({
               [
                 ['day', 'By day'],
                 ['person', 'By person'],
-                ['impact', 'What drives downloads'],
-              ] as const
+                ...(showBusiness ? ([['impact', 'Who drives downloads']] as const) : []),
+              ] as ReadonlyArray<readonly [Tab, string]>
             ).map(([id, label]) => (
               <button
                 key={id}
@@ -1014,7 +1532,7 @@ export function AnalyticsSheet({
               </button>
             ))}
           </div>
-          {tab === 'day' ? (
+          {tab === 'day' && showBusiness ? (
             <>
               {rcConnected ? (
                 <button
@@ -1022,7 +1540,7 @@ export function AnalyticsSheet({
                   disabled={savePending}
                   onClick={syncRevenueCat}
                   className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-sm hover:bg-accent disabled:opacity-60"
-                  title="Pull daily new customers from RevenueCat for these dates (hand-typed days are kept)"
+                  title="Pull downloads, subscriptions and revenue from RevenueCat for these dates (hand-typed downloads are kept)"
                 >
                   <RefreshCw className={`size-3.5 ${savePending ? 'animate-spin' : ''}`} />
                   Sync RevenueCat
@@ -1098,7 +1616,7 @@ export function AnalyticsSheet({
           ) : null}
         </div>
 
-        {tab === 'day' && pasteOpen && projectId != null ? (
+        {tab === 'day' && showBusiness && pasteOpen && projectId != null ? (
           <div className="mt-2 flex flex-col gap-2 rounded-lg border border-dashed border-border p-3">
             <p className="text-xs text-muted-foreground">
               Paste two columns from App Store / Play Console / Excel: date and downloads. One day per line,
@@ -1138,8 +1656,16 @@ export function AnalyticsSheet({
                   <th className={th} style={{ color: CREATOR }}>Creator views</th>
                   <th className={th} style={{ color: REPOSTER }}>Reposter views</th>
                   <th className={th}>Total views</th>
-                  <th className={th}>Downloads</th>
-                  <th className={th}>Views / download</th>
+                  {showBusiness ? (
+                    <>
+                      <th className={th}>Downloads</th>
+                      <th className={th} style={{ color: SUBS }}>Subscriptions</th>
+                      <th className={th} style={{ color: REVENUE }}>Revenue</th>
+                      <th className={th}>Views / download</th>
+                      <th className={th} style={{ color: SUBS }}>Subs / 100 downloads</th>
+                      <th className={th} style={{ color: REVENUE }}>$ / download</th>
+                    </>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -1154,10 +1680,20 @@ export function AnalyticsSheet({
                   <td className={totalTd}>{formatNumber(totals.creatorViews)}</td>
                   <td className={totalTd}>{formatNumber(totals.reposterViews)}</td>
                   <td className={totalTd}>{formatNumber(totals.views)}</td>
-                  <td className={totalTd}>{formatNumber(totalDownloads)}</td>
-                  <td className={totalTd}>
-                    {totalDownloads > 0 ? formatNumber(Math.round(totals.views / totalDownloads)) : '—'}
-                  </td>
+                  {showBusiness ? (
+                    <>
+                      <td className={totalTd}>{formatNumber(totalDownloads)}</td>
+                      <td className={totalTd}>{hasSubs ? formatNumber(totalSubs) : '—'}</td>
+                      <td className={totalTd}>{hasRevenue ? money(totalRevenue) : '—'}</td>
+                      <td className={totalTd}>{fmtRatio(ratio(totals.views, totalDownloads), 0)}</td>
+                      <td className={totalTd}>
+                        {hasSubs ? fmtRatio(ratio(totalSubs, totalDownloads, 100)) : '—'}
+                      </td>
+                      <td className={totalTd}>
+                        {hasRevenue && totalDownloads > 0 ? money(totalRevenue / totalDownloads) : '—'}
+                      </td>
+                    </>
+                  ) : null}
                 </tr>
                 {dates.map((d, i) => {
                   const a = byDay.get(d) ?? emptyDay()
@@ -1184,6 +1720,8 @@ export function AnalyticsSheet({
                       <td className={td}>{n(a.creatorViews)}</td>
                       <td className={td}>{n(a.reposterViews)}</td>
                       <td className={`${td} font-semibold`}>{n(a.views)}</td>
+                      {showBusiness ? (
+                      <>
                       <td className={`${td} p-0`}>
                         {projectId != null ? (
                           <span className="inline-flex items-center">
@@ -1207,8 +1745,24 @@ export function AnalyticsSheet({
                         )}
                       </td>
                       <td className={td}>
+                        {subsByDate.has(d) ? n(subsByDate.get(d) ?? 0) : '—'}
+                      </td>
+                      <td className={td}>
+                        {revenueByDate.has(d) ? money(revenueByDate.get(d) ?? 0) : '—'}
+                      </td>
+                      <td className={td}>
                         {dl != null && dl > 0 ? formatNumber(Math.round(a.views / dl)) : '—'}
                       </td>
+                      <td className={td}>
+                        {dl && subsByDate.has(d)
+                          ? fmtRatio(ratio(subsByDate.get(d) ?? 0, dl, 100))
+                          : '—'}
+                      </td>
+                      <td className={td}>
+                        {dl && revenueByDate.has(d) ? money((revenueByDate.get(d) ?? 0) / dl) : '—'}
+                      </td>
+                      </>
+                      ) : null}
                     </tr>
                   )
                 })}
@@ -1267,7 +1821,14 @@ export function AnalyticsSheet({
                   visiblePeople.map((p, i) => (
                     <tr key={p.id} className={i % 2 ? 'bg-muted/20' : ''}>
                       <td className={`${td} sticky left-0 bg-background text-left`}>
-                        <span className="font-medium">{p.name}</span>{' '}
+                        <button
+                          type="button"
+                          onClick={() => setOpenPersonId(p.id)}
+                          className="font-medium text-primary underline-offset-2 hover:underline"
+                          title="Open this person's timeline"
+                        >
+                          {p.name}
+                        </button>{' '}
                         <span
                           className="text-[10px] font-semibold uppercase"
                           style={{ color: p.role === 'reposter' ? REPOSTER : CREATOR }}
@@ -1296,42 +1857,161 @@ export function AnalyticsSheet({
           </div>
         ) : null}
 
-        {tab === 'impact' ? (
+        {tab === 'impact' && showBusiness ? (
           <div className="mt-2 flex flex-col gap-4">
             <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm">
-              <p className="font-medium">
-                This tab answers one question: on the days downloads went up, whose views went up too?
-              </p>
+              <p className="font-medium">Which creators bring downloads and subscriptions?</p>
               <ul className="mt-1.5 list-disc space-y-1 pl-5 text-muted-foreground">
                 <li>
-                  <span className="font-medium text-foreground">Match score</span> — close to{' '}
-                  <span className="font-medium text-emerald-600">1</span>: their views and your downloads go up
-                  and down together (they likely bring downloads). Around{' '}
-                  <span className="font-medium">0</span>: no connection. Negative: the opposite.
+                  <span className="font-medium text-foreground">Est. downloads / subs</span> — each day, downloads
+                  above a quiet day ({formatNumber(Math.round(impact.baseDl))} downloads
+                  {hasSubs ? `, ${formatNumber(Math.round(impact.baseSubs))} subs` : ''}) are split by each
+                  person&apos;s share of that day&apos;s views. Best single number to rank by.
                 </li>
                 <li>
-                  <span className="font-medium text-foreground">Avg downloads when they posted vs. didn&apos;t</span>{' '}
-                  — if downloads are clearly higher on days that person posts, they&apos;re probably helping.
+                  <span className="font-medium text-foreground">Download / subs lift</span> — average on days they
+                  posted minus days they didn&apos;t. <span className="font-medium text-foreground">Next day</span>{' '}
+                  — the same, one day later (videos keep getting views).
                 </li>
                 <li>
-                  It needs downloads for at least 3 days (best 14+). Right now:{' '}
+                  <span className="font-medium text-foreground">Spike days</span> — how many of the top 20% download
+                  days ({impact.spikeDays}) they posted on.{' '}
+                  <span className="font-medium text-foreground">Per 1k views</span> — est. downloads per 1,000 of
+                  their views (efficiency).
+                </li>
+                <li>
+                  Based on{' '}
                   <span className="font-medium text-foreground">
                     {daysWithDownloads.length} day{daysWithDownloads.length === 1 ? '' : 's'}
                   </span>{' '}
-                  with downloads in this range
-                  {daysWithDownloads.length < 3
-                    ? ' — import your RevenueCat CSV in the “By day” tab to fill it.'
-                    : '.'}
+                  with downloads
+                  {daysWithDownloads.length < 14 ? ' — more days (14+) make this more reliable.' : '.'} It shows
+                  a pattern, not proof. Click a column to sort; click a name for their timeline.
                 </li>
-                <li>It shows a pattern, not proof. Tap any day in “By day” to see exactly who drove it.</li>
               </ul>
             </div>
+
+            <div className="overflow-auto rounded-lg border border-border">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr>
+                    {(
+                      [
+                        ['name', 'Person'],
+                        ['views', 'Views'],
+                        ['estDl', 'Est. downloads'],
+                        ...(hasSubs ? ([['estSubs', 'Est. subs']] as const) : []),
+                        ['per1k', 'Downloads per 1k views'],
+                        ['dlLift', 'Download lift'],
+                        ...(hasSubs ? ([['subLift', 'Subs lift']] as const) : []),
+                        ['nextDay', 'Next-day lift'],
+                        ['spikes', 'Spike days'],
+                        ['r', 'Match (−1 to 1)'],
+                      ] as ReadonlyArray<readonly [ImpactSort | 'name', string]>
+                    ).map(([key, label]) =>
+                      key === 'name' ? (
+                        <th key={key} className={`${th} left-0 z-20 text-left`}>
+                          {label}
+                        </th>
+                      ) : (
+                        <th key={key} className={`${th} p-0`}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setImpactSort((prev) =>
+                                prev.key === key ? { key, desc: !prev.desc } : { key, desc: true },
+                              )
+                            }
+                            className="inline-flex w-full items-center justify-end gap-1 px-2 py-1.5 hover:bg-accent"
+                          >
+                            {label}
+                            {impactSort.key === key ? (
+                              impactSort.desc ? (
+                                <ArrowDown className="size-3" />
+                              ) : (
+                                <ArrowUp className="size-3" />
+                              )
+                            ) : null}
+                          </button>
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedImpact.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className={`${td} text-left text-muted-foreground`}>
+                        No videos in this range.
+                      </td>
+                    </tr>
+                  ) : (
+                    sortedImpact.map((p, i) => {
+                      const s = strengthLabel(p.r)
+                      const signed = (v: number | null, digits = 0) =>
+                        v == null ? (
+                          '—'
+                        ) : (
+                          <span className={v > 0 ? 'text-emerald-600' : v < 0 ? 'text-red-600' : ''}>
+                            {v > 0 ? '+' : ''}
+                            {digits === 0 ? formatNumber(Math.round(v)) : v.toFixed(digits)}
+                          </span>
+                        )
+                      return (
+                        <tr key={p.id} className={i % 2 ? 'bg-muted/20' : ''}>
+                          <td className={`${td} sticky left-0 bg-background text-left`}>
+                            <button
+                              type="button"
+                              onClick={() => setOpenPersonId(p.id)}
+                              className="font-medium text-primary underline-offset-2 hover:underline"
+                            >
+                              {p.name}
+                            </button>{' '}
+                            <span
+                              className="text-[10px] font-semibold uppercase"
+                              style={{ color: p.role === 'reposter' ? REPOSTER : CREATOR }}
+                            >
+                              {p.role === 'reposter' ? 'R' : 'C'}
+                            </span>
+                          </td>
+                          <td className={td}>
+                            {formatNumber(p.views)}{' '}
+                            <span className="text-xs text-muted-foreground">
+                              {(p.share * 100).toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className={`${td} font-semibold`}>{formatNumber(Math.round(p.estDl))}</td>
+                          {hasSubs ? (
+                            <td className={td} style={{ color: SUBS }}>
+                              {p.estSubs.toFixed(1)}
+                            </td>
+                          ) : null}
+                          <td className={td}>{fmtRatio(p.per1k, 2)}</td>
+                          <td className={td}>{signed(p.dlLift)}</td>
+                          {hasSubs ? <td className={td}>{signed(p.subLift, 1)}</td> : null}
+                          <td className={td}>{signed(p.nextDay)}</td>
+                          <td className={td}>
+                            {p.spikes}
+                            <span className="text-xs text-muted-foreground"> / {impact.spikeDays}</span>
+                          </td>
+                          <td className={`${td} ${s.className}`} title={s.text}>
+                            {p.r == null ? '—' : p.r.toFixed(2)}
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
             <div className="overflow-auto rounded-lg border border-border">
               <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr>
                     <th className={`${th} text-left`}>Group</th>
-                    <th className={th}>Match with downloads (−1 to 1)</th>
+                    <th className={th}>Match with downloads</th>
+                    {hasSubs ? <th className={th}>Match with subs</th> : null}
                     <th className={`${th} text-left`}>Strength</th>
                   </tr>
                 </thead>
@@ -1342,6 +2022,9 @@ export function AnalyticsSheet({
                       <tr key={g.label}>
                         <td className={`${td} text-left font-medium`}>{g.label}</td>
                         <td className={td}>{g.r == null ? '—' : g.r.toFixed(2)}</td>
+                        {hasSubs ? (
+                          <td className={td}>{g.rSubs == null ? '—' : g.rSubs.toFixed(2)}</td>
+                        ) : null}
                         <td className={`${td} text-left ${s.className}`}>{s.text}</td>
                       </tr>
                     )
@@ -1349,76 +2032,32 @@ export function AnalyticsSheet({
                 </tbody>
               </table>
             </div>
-            <div className="overflow-auto rounded-lg border border-border">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr>
-                    <th className={`${th} text-left`}>Person</th>
-                    <th className={th}>Views</th>
-                    <th className={th}>Share of views</th>
-                    <th className={th}>Days posted</th>
-                    <th className={th}>Avg downloads when they posted</th>
-                    <th className={th}>Avg downloads when they didn&apos;t</th>
-                    <th className={th}>Match with downloads</th>
-                    <th className={`${th} text-left`}>Strength</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {impact.perPerson.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className={`${td} text-left text-muted-foreground`}>
-                        No videos in this range.
-                      </td>
-                    </tr>
-                  ) : (
-                    impact.perPerson.map((p, i) => {
-                      const s = strengthLabel(p.r)
-                      const lift =
-                        p.avgPosted != null && p.avgNotPosted != null ? p.avgPosted - p.avgNotPosted : null
-                      return (
-                        <tr key={p.id} className={i % 2 ? 'bg-muted/20' : ''}>
-                          <td className={`${td} text-left`}>
-                            <span className="font-medium">{p.name}</span>{' '}
-                            <span
-                              className="text-[10px] font-semibold uppercase"
-                              style={{ color: p.role === 'reposter' ? REPOSTER : CREATOR }}
-                            >
-                              {p.role === 'reposter' ? 'R' : 'C'}
-                            </span>
-                          </td>
-                          <td className={td}>{formatNumber(p.views)}</td>
-                          <td className={td}>{(p.share * 100).toFixed(1)}%</td>
-                          <td className={td}>{p.daysPosted}</td>
-                          <td className={td}>
-                            {p.avgPosted == null ? '—' : formatNumber(Math.round(p.avgPosted))}
-                          </td>
-                          <td className={td}>
-                            {p.avgNotPosted == null ? '—' : formatNumber(Math.round(p.avgNotPosted))}
-                            {lift != null && lift !== 0 ? (
-                              <span className={`ml-1 text-xs ${lift > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                ({lift > 0 ? '+' : ''}
-                                {formatNumber(Math.round(lift))} when posting)
-                              </span>
-                            ) : null}
-                          </td>
-                          <td className={td}>{p.r == null ? '—' : p.r.toFixed(2)}</td>
-                          <td className={`${td} text-left ${s.className}`}>{s.text}</td>
-                        </tr>
-                      )
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
           </div>
         ) : null}
       </div>
+
+      {openPerson ? (
+        <PersonTimeline
+          person={openPerson}
+          from={serverFrom}
+          to={serverTo}
+          dates={dates}
+          projectId={projectId}
+          showBusiness={showBusiness}
+          downloadsByDate={downloadsByDate}
+          subsByDate={subsByDate}
+          onClose={() => setOpenPersonId(null)}
+        />
+      ) : null}
 
       {openDay ? (
         <DayDetail
           day={openDay}
           projectId={projectId}
+          showBusiness={showBusiness}
           downloads={downloadsByDate.get(openDay)}
+          subscriptions={subsByDate.get(openDay)}
+          revenue={revenueByDate.get(openDay)}
           avgDownloads={
             daysWithDownloads.length > 0
               ? daysWithDownloads.reduce((s, d) => s + (downloadsByDate.get(d) ?? 0), 0) /

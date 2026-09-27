@@ -39,7 +39,7 @@ function toDay(value: unknown): string | null {
 }
 
 /** Chart `values` come back as `[ts, value, …]` arrays or `{cohort|timestamp|date, value, measure?}` objects. */
-function parseValues(values: unknown): Map<string, number> {
+function parseValues(values: unknown, measure = 0, round = true): Map<string, number> {
   const out = new Map<string, number>()
   if (!Array.isArray(values)) return out
   for (const v of values) {
@@ -50,13 +50,20 @@ function parseValues(values: unknown): Map<string, number> {
       n = typeof v[1] === 'number' ? v[1] : null
     } else if (v && typeof v === 'object') {
       const o = v as Record<string, unknown>
-      if (typeof o.measure === 'number' && o.measure !== 0) continue
+      if (typeof o.measure === 'number' && o.measure !== measure) continue
       day = toDay(o.cohort ?? o.timestamp ?? o.date ?? o.period)
       n = typeof o.value === 'number' ? o.value : null
     }
-    if (day && n != null) out.set(day, (out.get(day) ?? 0) + Math.round(n))
+    if (day && n != null) out.set(day, (out.get(day) ?? 0) + (round ? Math.round(n) : n))
   }
   return out
+}
+
+/** Index of the measure named like `name` (e.g. "Total Paid Subscriptions"); defaults to the last. */
+function measureIndex(data: Record<string, unknown>, name: RegExp): number {
+  const measures = (data.measures as Array<{ display_name?: string }> | null) ?? []
+  const i = measures.findIndex((m) => name.test(m.display_name ?? ''))
+  return i >= 0 ? i : Math.max(0, measures.length - 1)
 }
 
 async function rcGet(link: RevenueCatLink, path: string, params: Record<string, string>) {
@@ -93,19 +100,32 @@ async function dayResolutionId(link: RevenueCatLink): Promise<string> {
   }
 }
 
-/** Daily "New customers" (first-time app users) — our downloads proxy. */
-export async function fetchNewCustomers(
+export type DailyBusiness = {
+  /** New customers (first-time app users) — our downloads proxy. */
+  downloads: Map<string, number>
+  /** New paid subscriptions (trial conversions + direct + resubscriptions…). */
+  subscriptions: Map<string, number>
+  /** Gross revenue in USD. */
+  revenue: Map<string, number>
+}
+
+export async function fetchDailyBusiness(
   link: RevenueCatLink,
   from: string,
   to: string,
-): Promise<Map<string, number>> {
+): Promise<DailyBusiness> {
   const resolution = await dayResolutionId(link)
-  const data = await rcGet(link, '/charts/customers_new', {
-    resolution,
-    start_date: from,
-    end_date: to,
-  })
-  return parseValues(data.values)
+  const params = { resolution, start_date: from, end_date: to }
+  const [customers, actives, revenue] = await Promise.all([
+    rcGet(link, '/charts/customers_new', params),
+    rcGet(link, '/charts/actives_new', params),
+    rcGet(link, '/charts/revenue', params),
+  ])
+  return {
+    downloads: parseValues(customers.values),
+    subscriptions: parseValues(actives.values, measureIndex(actives, /^total/i)),
+    revenue: parseValues(revenue.values, measureIndex(revenue, /^revenue$/i), false),
+  }
 }
 
 export type RevenueCatSyncResult = {
@@ -134,16 +154,31 @@ export async function syncRevenueCatDownloads(opts: {
     }
     if (opts.projectId != null && opts.projectId !== project.id) continue
     try {
-      const byDay = await fetchNewCustomers(link, opts.from, opts.to)
+      const data = await fetchDailyBusiness(link, opts.from, opts.to)
+      const allDays = new Set([
+        ...data.downloads.keys(),
+        ...data.subscriptions.keys(),
+        ...data.revenue.keys(),
+      ])
       let days = 0
-      for (const [day, downloads] of byDay) {
+      for (const day of allDays) {
         if (day < opts.from || day > opts.to) continue
+        const downloads = data.downloads.get(day) ?? 0
+        const subs = data.subscriptions.get(day) ?? 0
+        const revenue = Math.round((data.revenue.get(day) ?? 0) * 100) / 100
         await sql`
-          INSERT INTO daily_downloads (day, project_id, downloads, source, updated_at)
-          VALUES (${day}::date, ${project.id}, ${downloads}, 'revenuecat', NOW())
-          ON CONFLICT (day, project_id) DO UPDATE
-          SET downloads = EXCLUDED.downloads, source = 'revenuecat', updated_at = NOW()
-          WHERE daily_downloads.source <> 'manual'
+          INSERT INTO daily_downloads
+            (day, project_id, downloads, new_subscriptions, revenue, source, updated_at)
+          VALUES
+            (${day}::date, ${project.id}, ${downloads}, ${subs}, ${revenue}, 'revenuecat', NOW())
+          ON CONFLICT (day, project_id) DO UPDATE SET
+            downloads = CASE WHEN daily_downloads.source = 'manual'
+              THEN daily_downloads.downloads ELSE EXCLUDED.downloads END,
+            source = CASE WHEN daily_downloads.source = 'manual'
+              THEN 'manual' ELSE 'revenuecat' END,
+            new_subscriptions = EXCLUDED.new_subscriptions,
+            revenue = EXCLUDED.revenue,
+            updated_at = NOW()
         `
         days++
       }

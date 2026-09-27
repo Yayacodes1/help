@@ -18,6 +18,11 @@ const PALETTE = [
   '#BE123C', // crimson
 ] as const
 
+/** Color by pick order, so every picked person gets a different color. */
+export function colorForPick(index: number): string {
+  return PALETTE[Math.abs(index) % PALETTE.length]
+}
+
 export function colorForCreator(creatorId: number): string {
   const idx = Math.abs(creatorId) % PALETTE.length
   return PALETTE[idx]

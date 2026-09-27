@@ -152,7 +152,9 @@ General rules:
       createProject: 'user-approval',
     },
     experimental_toolApprovalSecret:
-      process.env.TOOL_APPROVAL_SECRET || process.env.ADMIN_PASSWORD,
+      process.env.TOOL_APPROVAL_SECRET ||
+      process.env.ADMIN_PASSWORD_YAHYA ||
+      process.env.ADMIN_PASSWORD,
     tools: {
       // --- Read tools (no approval needed) ---
       listCreators: tool({
