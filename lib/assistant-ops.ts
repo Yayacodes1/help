@@ -295,7 +295,9 @@ export async function getPayDueSnapshot(projectId?: number) {
 export async function getMissesSnapshot(day?: string) {
   const today = await getServerToday()
   const targetDay = isDateString(day) ? day : today
-  const creatorsBase = await getCreatorsWithProgressOnDate(targetDay)
+  const creatorsBase = (await getCreatorsWithProgressOnDate(targetDay)).filter(
+    (c) => !c.paused_at,
+  )
   const creators = await attachTracking(creatorsBase, today)
   const misses = getMissesFromProgress(creators)
   return { ok: true as const, day: targetDay, misses }

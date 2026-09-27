@@ -7,6 +7,7 @@ export async function ensureCreatorTrackingColumns() {
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS last_paid_at date`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS pay_every_days integer NOT NULL DEFAULT 14`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS notes text`
+  await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS paused_at date`
 
   await sql`
     CREATE TABLE IF NOT EXISTS contracts (

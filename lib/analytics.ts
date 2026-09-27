@@ -205,7 +205,8 @@ export async function getViewsLeaderboard(opts: {
           WHERE sp.creator_id = c.id AND sp.project_id = ${projectId}
         )
       )
-    GROUP BY c.id, c.name
+    GROUP BY c.id, c.name, c.paused_at
+    HAVING c.paused_at IS NULL OR COUNT(s.id) > 0
     ORDER BY views DESC, videos DESC, c.name ASC
     LIMIT ${limit}
   `) as CreatorViewsRow[]

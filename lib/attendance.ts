@@ -53,6 +53,7 @@ export async function getAttendanceForDay(day: string): Promise<AttendancePerson
              goal_instagram, goal_tiktok
       FROM creators
       WHERE role IN ('creator', 'reposter')
+        AND (paused_at IS NULL OR paused_at > ${day}::date)
       ORDER BY role ASC, name ASC
     `,
     sql`

@@ -277,6 +277,7 @@ export async function getAllCreators(): Promise<CreatorWithProject[]> {
            c.pay_every_days, c.notes, c.tiktok_username, c.instagram_username, c.login_platform,
            c.notek_tiktok_username, c.notek_instagram_username,
            c.miqat_tiktok_username, c.miqat_instagram_username,
+           c.paused_at::text AS paused_at,
            p.name AS project_name
     FROM creators c
     LEFT JOIN projects p ON p.id = c.project_id
@@ -312,6 +313,7 @@ export async function getCreatorsWithProgressOnDate(
       c.pay_every_days, c.notes, c.tiktok_username, c.instagram_username, c.login_platform,
            c.notek_tiktok_username, c.notek_instagram_username,
            c.miqat_tiktok_username, c.miqat_instagram_username,
+      c.paused_at::text AS paused_at,
       p.name AS project_name,
       COALESCE(SUM(CASE WHEN s.video_date = ${date}::date AND s.platform = 'instagram' AND (${pid}::int IS NULL OR s.project_id = ${pid}) THEN 1 ELSE 0 END), 0)::int AS today_instagram,
       COALESCE(SUM(CASE WHEN s.video_date = ${date}::date AND s.platform = 'tiktok' AND (${pid}::int IS NULL OR s.project_id = ${pid}) THEN 1 ELSE 0 END), 0)::int AS today_tiktok,

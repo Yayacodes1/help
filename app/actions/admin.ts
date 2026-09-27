@@ -400,6 +400,36 @@ export async function deleteCreator(id: number) {
   revalidatePath('/admin')
 }
 
+export async function pauseCreator(id: number) {
+  await requireAdmin()
+  const today = await getServerToday()
+  await sql`
+    UPDATE creators SET paused_at = ${today}::date
+    WHERE id = ${id} AND paused_at IS NULL
+  `
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${id}`)
+}
+
+export async function resumeCreator(id: number) {
+  await requireAdmin()
+  const today = await getServerToday()
+  const rows = (await sql`
+    SELECT paused_at::text AS paused_at FROM creators WHERE id = ${id} LIMIT 1
+  `) as { paused_at: string | null }[]
+  const pausedAt = rows[0]?.paused_at
+  // Cover the paused days with a break so strike sync never backfills them.
+  if (pausedAt && pausedAt < today) {
+    await sql`
+      INSERT INTO schedule_breaks (creator_id, start_date, end_date, reason, days_added)
+      VALUES (${id}, ${pausedAt}::date, ${addDays(today, -1)}::date, 'Paused', 0)
+    `
+  }
+  await sql`UPDATE creators SET paused_at = NULL WHERE id = ${id}`
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${id}`)
+}
+
 // --- Contracts ---
 
 export async function createContract(creatorId: number, formData: FormData) {

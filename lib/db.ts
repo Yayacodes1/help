@@ -47,6 +47,8 @@ export type Creator = {
   miqat_instagram_username: string | null
   /** Which social handle they log in with and that appears on the ranking. */
   login_platform: Platform
+  /** Set when they stopped working with us; hidden from daily lists, kept in history. */
+  paused_at?: string | null
 }
 
 export type StrikeSource = 'auto' | 'manual'

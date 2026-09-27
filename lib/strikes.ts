@@ -80,6 +80,7 @@ export async function syncReposterStrikes(opts: {
     FROM generate_series(${start}::date, ${lastCompleted}::date, interval '1 day') AS days(d)
     JOIN creators c ON c.role = 'reposter'
       AND (${creatorId}::int IS NULL OR c.id = ${creatorId})
+      AND (c.paused_at IS NULL OR days.d < c.paused_at)
     JOIN LATERAL (
       SELECT id
       FROM contracts
@@ -191,7 +192,7 @@ export async function getReposterStrikeBoard(today: string): Promise<StrikeBoard
   const [people, contracts, strikeRows, postRows, breakRows] = (await Promise.all([
     sql`
       SELECT id, name FROM creators
-      WHERE role = 'reposter'
+      WHERE role = 'reposter' AND paused_at IS NULL
       ORDER BY name ASC
     `,
     sql`

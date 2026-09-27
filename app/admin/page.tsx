@@ -367,8 +367,10 @@ export default async function AdminPage({
     .slice(0, 2)
     .map((p) => `${p.name} ${formatNumber(projectViews.totals.viewsByProject[p.id] ?? 0)}`)
     .join(' · ')
-  const creators = await attachTracking(creatorsBase, today)
-  const creatorIds = new Set(creators.map((c) => c.id))
+  const everyone = await attachTracking(creatorsBase, today)
+  const creators = everyone.filter((c) => !c.paused_at)
+  const pausedCreators = everyone.filter((c) => c.paused_at)
+  const creatorIds = new Set(everyone.map((c) => c.id))
   const attendancePeople = (await getAttendanceForDay(selectedDay)).filter((p) => {
     if (!creatorIds.has(p.id)) return false
     if (roleFilter === 'creator' || roleFilter === 'reposter') return p.role === roleFilter
@@ -815,7 +817,7 @@ export default async function AdminPage({
             children: (
               <div className="flex flex-col gap-3">
                 <FiltersBar
-                  creators={creators}
+                  creators={everyone}
                   projects={projects}
                   projectId={projectId}
                   today={today}
@@ -1005,6 +1007,7 @@ export default async function AdminPage({
                 <CreatorsManager
                   key="creators-manager"
                   creators={creators}
+                  pausedCreators={pausedCreators}
                   projects={projects}
                   roleFilter={roleFilter}
                   today={today}

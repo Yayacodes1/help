@@ -1,11 +1,17 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
-import { Pencil, Trash2, X } from 'lucide-react'
+import { Pause, Pencil, Play, Trash2, X } from 'lucide-react'
 import type { Project } from '@/lib/db'
 import type { CreatorTrackingRow } from '@/lib/queries'
 import type { ParticipantRole, RoleFilter } from '@/lib/participant-role'
-import { createCreator, deleteCreator, updateCreator } from '@/app/actions/admin'
+import {
+  createCreator,
+  deleteCreator,
+  pauseCreator,
+  resumeCreator,
+  updateCreator,
+} from '@/app/actions/admin'
 import { RoleQuickSelect } from '@/components/admin/role-quick-select'
 import { BulkReposterPay } from '@/components/admin/bulk-reposter-pay'
 import { BrandHandleFields, PersonHandlesLine } from '@/components/person-handles'
@@ -36,12 +42,14 @@ function GoalPill({
 
 export function CreatorsManager({
   creators,
+  pausedCreators = [],
   projects,
   roleFilter = 'creator',
   today,
   currentProjectId,
 }: {
   creators: CreatorTrackingRow[]
+  pausedCreators?: CreatorTrackingRow[]
   projects: Project[]
   roleFilter?: RoleFilter
   today?: string
@@ -374,6 +382,23 @@ export function CreatorsManager({
                       </button>
                       <button
                         type="button"
+                        disabled={pending}
+                        onClick={() => {
+                          if (
+                            confirm(
+                              `Pause "${c.name}"? They leave the daily lists, Telegram report and strikes. Their past videos stay in analytics.`,
+                            )
+                          )
+                            startTransition(() => pauseCreator(c.id))
+                        }}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
+                        title="Pause — stopped working with us"
+                      >
+                        <Pause className="size-3.5" />
+                        Pause
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => {
                           if (confirm(`Delete "${c.name}" and all their submissions?`))
                             startTransition(() => deleteCreator(c.id))
@@ -399,6 +424,62 @@ export function CreatorsManager({
           ))
         )}
       </ul>
+
+      {pausedCreators.length > 0 ? (
+        <details className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 px-3 py-2">
+          <summary className="cursor-pointer text-sm font-medium">
+            Paused ({pausedCreators.length})
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              stopped working with us — hidden from daily lists, still in analytics
+            </span>
+          </summary>
+          <ul className="mt-2 flex flex-col divide-y divide-border">
+            {pausedCreators.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <div className="min-w-0">
+                  <Link
+                    href={adminPersonHref(c.id, {
+                      role: roleFilter,
+                      projectId: currentProjectId,
+                      from: 'manage',
+                    })}
+                    className="font-medium text-muted-foreground underline-offset-4 hover:underline"
+                  >
+                    {c.name}
+                  </Link>
+                  <div className="text-xs text-muted-foreground">
+                    {c.role === 'reposter' ? 'Reposter' : 'Creator'} · paused since {c.paused_at} ·{' '}
+                    {c.total_videos} total videos
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => startTransition(() => resumeCreator(c.id))}
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-60"
+                    title="Resume — working with us again"
+                  >
+                    <Play className="size-3.5" />
+                    Resume
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`Delete "${c.name}" and all their submissions?`))
+                        startTransition(() => deleteCreator(c.id))
+                    }}
+                    className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-destructive"
+                    title="Delete"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </div>
   )
 }

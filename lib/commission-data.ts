@@ -65,6 +65,16 @@ export async function getCommissionBoard(opts: {
     WHERE (${role}::text IS NULL OR role = ${role})
       AND (${creatorId}::int IS NULL OR id = ${creatorId})
       AND (
+        paused_at IS NULL
+        OR ${creatorId}::int IS NOT NULL
+        OR EXISTS (
+          SELECT 1 FROM submissions sv
+          WHERE sv.creator_id = creators.id
+            AND sv.video_date >= ${from}::date
+            AND sv.video_date <= ${to}::date
+        )
+      )
+      AND (
         ${projectId}::int IS NULL
         OR project_id = ${projectId}
         OR EXISTS (
