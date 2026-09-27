@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import { AlertCircle, ArrowLeft, Lock, Users } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Eye, EyeOff, Lock, Users } from 'lucide-react'
 import { startSubmission } from '@/app/actions/creator'
 import { login } from '@/app/actions/admin'
 import { LanguageToggle } from '@/components/language-toggle'
@@ -18,6 +18,7 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
   const t = createT(locale)
   const rtl = locale === 'ar'
   const [role, setRole] = useState<Role>('creator')
+  const [showPassword, setShowPassword] = useState(true)
   const [creatorState, creatorAction, creatorPending] = useActionState<CreatorState, FormData>(
     startSubmission,
     null,
@@ -105,13 +106,26 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
               <input
                 id="password"
                 name="password"
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 dir="ltr"
-                className={`h-12 w-full rounded-xl border border-input bg-card text-sm font-medium shadow-sm outline-none transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring ${
-                  rtl ? 'pr-10 pl-3 text-right' : 'pl-10 pr-3 text-left'
+                className={`h-12 w-full rounded-xl border border-input bg-card px-10 text-sm font-medium shadow-sm outline-none transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring ${
+                  rtl ? 'text-right' : 'text-left'
                 }`}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className={`absolute top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent ${
+                  rtl ? 'left-2' : 'right-2'
+                }`}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
             </div>
 
             {adminState?.message && (
