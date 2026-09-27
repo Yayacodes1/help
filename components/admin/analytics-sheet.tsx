@@ -2,7 +2,17 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, ClipboardPaste, Download, Loader2, X } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  ClipboardPaste,
+  Download,
+  ExternalLink,
+  FileUp,
+  Loader2,
+  RefreshCw,
+  X,
+} from 'lucide-react'
 import {
   Bar,
   CartesianGrid,
@@ -17,8 +27,8 @@ import {
 import { addDays, rankingMonthRange } from '@/lib/campaign'
 import { shiftYearMonth } from '@/lib/biweekly'
 import { formatNumber } from '@/lib/format'
-import type { DailyDownloadsRow, SheetRow } from '@/lib/analytics'
-import { saveDailyDownloads } from '@/app/actions/downloads'
+import type { DailyDownloadsRow, SheetDayVideo, SheetRow } from '@/lib/analytics'
+import { loadSheetDay, saveDailyDownloads, syncRevenueCatNow } from '@/app/actions/downloads'
 
 const IG = '#E1306C'
 const TT = '#0F766E'
@@ -159,6 +169,249 @@ function parsePastedDownloads(text: string): Array<{ date: string; downloads: nu
   return out
 }
 
+function DayDetail({
+  day,
+  projectId,
+  downloads,
+  avgDownloads,
+  onClose,
+  onPrev,
+  onNext,
+}: {
+  day: string
+  projectId: number | null
+  downloads: number | undefined
+  avgDownloads: number | null
+  onClose: () => void
+  onPrev: (() => void) | null
+  onNext: (() => void) | null
+}) {
+  const [loaded, setLoaded] = useState<{ key: string; videos: SheetDayVideo[] } | null>(null)
+  const key = `${day}|${projectId ?? ''}`
+
+  useEffect(() => {
+    let cancelled = false
+    loadSheetDay(day, projectId).then((videos) => {
+      if (!cancelled) setLoaded({ key, videos })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [day, projectId, key])
+
+  const videos = loaded?.key === key ? loaded.videos : null
+
+  const summary = useMemo(() => {
+    if (!videos) return null
+    const byPerson = new Map<
+      number,
+      { id: number; name: string; role: 'creator' | 'reposter'; views: number; tt: number; ig: number }
+    >()
+    let views = 0
+    let tt = 0
+    let ig = 0
+    for (const v of videos) {
+      views += v.views
+      if (v.platform === 'tiktok') tt++
+      else ig++
+      const p = byPerson.get(v.creator_id) ?? {
+        id: v.creator_id,
+        name: v.creator_name,
+        role: v.role,
+        views: 0,
+        tt: 0,
+        ig: 0,
+      }
+      p.views += v.views
+      if (v.platform === 'tiktok') p.tt++
+      else p.ig++
+      byPerson.set(v.creator_id, p)
+    }
+    const people = [...byPerson.values()].sort((a, b) => b.views - a.views)
+    return {
+      views,
+      tt,
+      ig,
+      people,
+      creators: people.filter((p) => p.role === 'creator').length,
+      reposters: people.filter((p) => p.role === 'reposter').length,
+    }
+  }, [videos])
+
+  const top = summary?.people[0]
+  const topShare = top && summary && summary.views > 0 ? top.views / summary.views : 0
+  const dlDelta =
+    downloads != null && avgDownloads != null && avgDownloads > 0
+      ? (downloads - avgDownloads) / avgDownloads
+      : null
+
+  return (
+    <div className="fixed inset-0 z-[60] flex justify-end bg-black/30" onClick={onClose}>
+      <div
+        className="flex h-full w-full max-w-2xl flex-col overflow-hidden bg-background shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!onPrev}
+              onClick={() => onPrev?.()}
+              className="inline-flex size-8 items-center justify-center rounded-lg border border-border hover:bg-accent disabled:opacity-40"
+              aria-label="Previous day"
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+            <h3 className="text-base font-semibold">{dayLabel(day)}</h3>
+            <button
+              type="button"
+              disabled={!onNext}
+              onClick={() => onNext?.()}
+              className="inline-flex size-8 items-center justify-center rounded-lg border border-border hover:bg-accent disabled:opacity-40"
+              aria-label="Next day"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex size-8 items-center justify-center rounded-lg border border-border hover:bg-accent"
+            aria-label="Close day"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto px-4 py-3">
+          {!summary ? (
+            <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" /> Loading…
+            </p>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Views</p>
+                  <p className="text-lg font-semibold tabular-nums">{formatNumber(summary.views)}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Downloads</p>
+                  <p className="text-lg font-semibold tabular-nums">
+                    {downloads != null ? formatNumber(downloads) : '—'}
+                  </p>
+                  {dlDelta != null ? (
+                    <p className={`text-xs ${dlDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {dlDelta >= 0 ? '+' : ''}
+                      {Math.round(dlDelta * 100)}% vs avg
+                    </p>
+                  ) : null}
+                </div>
+                <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Videos</p>
+                  <p className="text-lg font-semibold tabular-nums">{summary.tt + summary.ig}</p>
+                  <p className="text-xs text-muted-foreground">
+                    <span style={{ color: TT }}>TT {summary.tt}</span> ·{' '}
+                    <span style={{ color: IG }}>IG {summary.ig}</span>
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Who posted</p>
+                  <p className="text-lg font-semibold tabular-nums">{summary.people.length}</p>
+                  <p className="text-xs text-muted-foreground">
+                    <span style={{ color: CREATOR }}>{summary.creators} creators</span> ·{' '}
+                    <span style={{ color: REPOSTER }}>{summary.reposters} reposters</span>
+                  </p>
+                </div>
+              </div>
+
+              {top && summary.views > 0 ? (
+                <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+                  <span className="font-semibold">{top.name}</span> drove{' '}
+                  <span className="font-semibold">{Math.round(topShare * 100)}%</span> of this day&apos;s views
+                  ({formatNumber(top.views)}) with {top.tt + top.ig} video{top.tt + top.ig === 1 ? '' : 's'}.
+                </p>
+              ) : null}
+
+              <div>
+                <h4 className="mb-1.5 text-sm font-semibold">Who drove this day</h4>
+                {summary.people.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nobody posted this day.</p>
+                ) : (
+                  <ul className="divide-y divide-border rounded-lg border border-border">
+                    {summary.people.map((p, i) => {
+                      const share = summary.views > 0 ? p.views / summary.views : 0
+                      return (
+                        <li key={p.id} className="px-3 py-2 text-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="min-w-0 truncate">
+                              <span className="text-muted-foreground">{i + 1}.</span>{' '}
+                              <span className="font-medium">{p.name}</span>{' '}
+                              <span
+                                className="text-[10px] font-semibold uppercase"
+                                style={{ color: p.role === 'reposter' ? REPOSTER : CREATOR }}
+                              >
+                                {p.role === 'reposter' ? 'Reposter' : 'Creator'}
+                              </span>
+                            </span>
+                            <span className="shrink-0 tabular-nums">
+                              <span className="font-semibold">{formatNumber(p.views)}</span>{' '}
+                              <span className="text-xs text-muted-foreground">
+                                ({(share * 100).toFixed(1)}%) · TT {p.tt} · IG {p.ig}
+                              </span>
+                            </span>
+                          </div>
+                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${Math.max(share * 100, 1)}%`,
+                                backgroundColor: p.role === 'reposter' ? REPOSTER : CREATOR,
+                              }}
+                            />
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </div>
+
+              {videos && videos.length > 0 ? (
+                <div>
+                  <h4 className="mb-1.5 text-sm font-semibold">Top videos</h4>
+                  <ul className="divide-y divide-border rounded-lg border border-border">
+                    {videos.slice(0, 20).map((v) => (
+                      <li key={v.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-sm">
+                        <a
+                          href={v.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex min-w-0 items-center gap-1.5 truncate underline-offset-2 hover:underline"
+                        >
+                          <span
+                            className="text-[10px] font-semibold"
+                            style={{ color: v.platform === 'tiktok' ? TT : IG }}
+                          >
+                            {v.platform === 'tiktok' ? 'TT' : 'IG'}
+                          </span>
+                          <span className="truncate">{v.creator_name}</span>
+                          <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+                        </a>
+                        <span className="shrink-0 font-semibold tabular-nums">{formatNumber(v.views)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function AnalyticsSheet({
   rows,
   downloads,
@@ -167,6 +420,7 @@ export function AnalyticsSheet({
   today,
   projectId,
   projects,
+  revenueCatProjectIds,
 }: {
   rows: SheetRow[]
   downloads: DailyDownloadsRow[]
@@ -175,6 +429,8 @@ export function AnalyticsSheet({
   today: string
   projectId: number | null
   projects: Array<{ id: number; name: string }>
+  /** Projects with a RevenueCat link configured (env). */
+  revenueCatProjectIds: number[]
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -187,6 +443,9 @@ export function AnalyticsSheet({
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const [openDay, setOpenDay] = useState<string | null>(null)
+  const rcConnected =
+    projectId != null ? revenueCatProjectIds.includes(projectId) : revenueCatProjectIds.length > 0
 
   const serverKey = `${serverFrom}|${serverTo}|${projectId ?? ''}`
   const [syncedKey, setSyncedKey] = useState(serverKey)
@@ -221,7 +480,9 @@ export function AnalyticsSheet({
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') push({ close: true })
+      if (e.key !== 'Escape') return
+      if (openDay) setOpenDay(null)
+      else push({ close: true })
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -244,10 +505,14 @@ export function AnalyticsSheet({
   const currentMonth = today.slice(0, 7)
   const lastMonth = shiftYearMonth(currentMonth, -1)
 
-  const downloadsByDate = useMemo(() => {
+  const { downloadsByDate, downloadSource } = useMemo(() => {
     const m = new Map<string, number>()
-    for (const d of downloads) m.set(d.date, d.downloads)
-    return m
+    const src = new Map<string, string>()
+    for (const d of downloads) {
+      m.set(d.date, d.downloads)
+      src.set(d.date, d.source)
+    }
+    return { downloadsByDate: m, downloadSource: src }
   }, [downloads])
 
   const { byDay, totals, people } = useMemo(() => {
@@ -388,11 +653,34 @@ export function AnalyticsSheet({
     return Number(raw) !== current
   })
 
-  function saveDrafts(entries: Array<{ date: string; downloads: number | null }>) {
+  function importFile(file: File) {
+    file.text().then((text) => {
+      const entries = parsePastedDownloads(text)
+      if (entries.length === 0) {
+        setSaveMsg('No "date, number" rows found in that file.')
+        return
+      }
+      saveDrafts(entries, 'import')
+    })
+  }
+
+  function syncRevenueCat() {
+    setSaveMsg(null)
+    startSave(async () => {
+      const res = await syncRevenueCatNow(serverFrom, serverTo, projectId)
+      setSaveMsg(res.ok ? `RevenueCat: updated ${res.days} day${res.days === 1 ? '' : 's'}.` : res.error)
+      if (res.ok) router.refresh()
+    })
+  }
+
+  function saveDrafts(
+    entries: Array<{ date: string; downloads: number | null }>,
+    source: 'manual' | 'import' = 'manual',
+  ) {
     if (projectId == null || entries.length === 0) return
     setSaveMsg(null)
     startSave(async () => {
-      const res = await saveDailyDownloads(projectId, entries)
+      const res = await saveDailyDownloads(projectId, entries, source)
       if (res.ok) {
         setDrafts({})
         setPasteText('')
@@ -625,7 +913,16 @@ export function AnalyticsSheet({
 
         <div className="mt-3 h-72 w-full rounded-lg border border-border p-2">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+            <ComposedChart
+              data={chartData}
+              margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
+              onClick={(state) => {
+                const i = Number(state?.activeIndex)
+                const d = Number.isInteger(i) ? chartData[i]?.fullDate : undefined
+                if (d) setOpenDay(d)
+              }}
+              style={{ cursor: 'pointer' }}
+            >
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
               <XAxis dataKey="date" tick={{ fontSize: 11 }} />
               <YAxis
@@ -719,8 +1016,37 @@ export function AnalyticsSheet({
           </div>
           {tab === 'day' ? (
             <>
+              {rcConnected ? (
+                <button
+                  type="button"
+                  disabled={savePending}
+                  onClick={syncRevenueCat}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-sm hover:bg-accent disabled:opacity-60"
+                  title="Pull daily new customers from RevenueCat for these dates (hand-typed days are kept)"
+                >
+                  <RefreshCw className={`size-3.5 ${savePending ? 'animate-spin' : ''}`} />
+                  Sync RevenueCat
+                </button>
+              ) : null}
               {projectId != null ? (
                 <>
+                  <label
+                    className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-border px-3 text-sm hover:bg-accent"
+                    title="Upload the RevenueCat “New customers” CSV (or any date, number file)"
+                  >
+                    <FileUp className="size-3.5" />
+                    Import CSV
+                    <input
+                      type="file"
+                      accept=".csv,text/csv,text/plain"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (f) importFile(f)
+                        e.target.value = ''
+                      }}
+                    />
+                  </label>
                   <button
                     type="button"
                     onClick={() => setPasteOpen((v) => !v)}
@@ -839,8 +1165,15 @@ export function AnalyticsSheet({
                   const draft = drafts[d]
                   return (
                     <tr key={d} className={i % 2 ? 'bg-muted/20' : ''}>
-                      <td className={`${td} sticky left-0 bg-background text-left font-medium`}>
-                        {dayLabel(d)}
+                      <td className={`${td} sticky left-0 bg-background p-0 text-left font-medium`}>
+                        <button
+                          type="button"
+                          onClick={() => setOpenDay(d)}
+                          className="w-full px-2 py-1 text-left text-primary underline-offset-2 hover:underline"
+                          title="See who posted and who drove this day"
+                        >
+                          {dayLabel(d)}
+                        </button>
                       </td>
                       <td className={td}>{n(a.ttVideos)}</td>
                       <td className={td}>{n(a.igVideos)}</td>
@@ -853,6 +1186,12 @@ export function AnalyticsSheet({
                       <td className={`${td} font-semibold`}>{n(a.views)}</td>
                       <td className={`${td} p-0`}>
                         {projectId != null ? (
+                          <span className="inline-flex items-center">
+                          {downloadSource.get(d) === 'revenuecat' && draft == null ? (
+                            <span className="pl-1 text-[9px] font-semibold text-muted-foreground" title="Synced from RevenueCat">
+                              RC
+                            </span>
+                          ) : null}
                           <input
                             type="number"
                             min={0}
@@ -862,6 +1201,7 @@ export function AnalyticsSheet({
                             placeholder="—"
                             className="h-7 w-24 bg-transparent px-2 text-right tabular-nums outline-none focus:bg-accent/40"
                           />
+                          </span>
                         ) : (
                           <span className="px-2">{dl != null ? formatNumber(dl) : '—'}</span>
                         )}
@@ -889,8 +1229,14 @@ export function AnalyticsSheet({
                   <th className={th} style={{ color: TT }}>TikTok views</th>
                   <th className={th} style={{ color: IG }}>Instagram views</th>
                   {dates.map((d) => (
-                    <th key={d} className={th}>
-                      {dayLabel(d)}
+                    <th key={d} className={`${th} p-0`}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenDay(d)}
+                        className="px-2 py-1.5 text-primary underline-offset-2 hover:underline"
+                      >
+                        {dayLabel(d)}
+                      </button>
                     </th>
                   ))}
                 </tr>
@@ -952,12 +1298,34 @@ export function AnalyticsSheet({
 
         {tab === 'impact' ? (
           <div className="mt-2 flex flex-col gap-4">
-            <p className="text-sm text-muted-foreground">
-              Compares each day&apos;s views with that day&apos;s downloads ({daysWithDownloads.length} day
-              {daysWithDownloads.length === 1 ? '' : 's'} with downloads entered). A higher score means
-              downloads tend to go up on the days those views go up. It&apos;s a pattern, not proof — more
-              days of downloads make it more reliable (aim for 14+).
-            </p>
+            <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm">
+              <p className="font-medium">
+                This tab answers one question: on the days downloads went up, whose views went up too?
+              </p>
+              <ul className="mt-1.5 list-disc space-y-1 pl-5 text-muted-foreground">
+                <li>
+                  <span className="font-medium text-foreground">Match score</span> — close to{' '}
+                  <span className="font-medium text-emerald-600">1</span>: their views and your downloads go up
+                  and down together (they likely bring downloads). Around{' '}
+                  <span className="font-medium">0</span>: no connection. Negative: the opposite.
+                </li>
+                <li>
+                  <span className="font-medium text-foreground">Avg downloads when they posted vs. didn&apos;t</span>{' '}
+                  — if downloads are clearly higher on days that person posts, they&apos;re probably helping.
+                </li>
+                <li>
+                  It needs downloads for at least 3 days (best 14+). Right now:{' '}
+                  <span className="font-medium text-foreground">
+                    {daysWithDownloads.length} day{daysWithDownloads.length === 1 ? '' : 's'}
+                  </span>{' '}
+                  with downloads in this range
+                  {daysWithDownloads.length < 3
+                    ? ' — import your RevenueCat CSV in the “By day” tab to fill it.'
+                    : '.'}
+                </li>
+                <li>It shows a pattern, not proof. Tap any day in “By day” to see exactly who drove it.</li>
+              </ul>
+            </div>
             <div className="overflow-auto rounded-lg border border-border">
               <table className="w-full border-collapse text-sm">
                 <thead>
@@ -1045,6 +1413,29 @@ export function AnalyticsSheet({
           </div>
         ) : null}
       </div>
+
+      {openDay ? (
+        <DayDetail
+          day={openDay}
+          projectId={projectId}
+          downloads={downloadsByDate.get(openDay)}
+          avgDownloads={
+            daysWithDownloads.length > 0
+              ? daysWithDownloads.reduce((s, d) => s + (downloadsByDate.get(d) ?? 0), 0) /
+                daysWithDownloads.length
+              : null
+          }
+          onClose={() => setOpenDay(null)}
+          onPrev={
+            dates.indexOf(openDay) > 0 ? () => setOpenDay(dates[dates.indexOf(openDay) - 1]) : null
+          }
+          onNext={
+            dates.indexOf(openDay) >= 0 && dates.indexOf(openDay) < dates.length - 1
+              ? () => setOpenDay(dates[dates.indexOf(openDay) + 1])
+              : null
+          }
+        />
+      ) : null}
     </div>
   )
 }

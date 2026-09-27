@@ -293,6 +293,7 @@ export async function ensureCreatorTrackingColumns() {
       PRIMARY KEY (day, project_id)
     )
   `
+  await sql`ALTER TABLE daily_downloads ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'manual'`
 
   const { ensureStreakSettingsTable } = await import('@/lib/streak-epoch')
   await ensureStreakSettingsTable()

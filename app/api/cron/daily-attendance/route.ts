@@ -34,6 +34,17 @@ async function run(req: Request) {
   const streakEpoch = await ensureStreakEpoch(await getServerToday())
   const telegram = await sendDailyAttendanceTelegram(opToday)
 
+  const { syncRevenueCatDownloads } = await import('@/lib/revenuecat')
+  const { addDays } = await import('@/lib/campaign')
+  const serverToday = await getServerToday()
+  let revenueCat: Awaited<ReturnType<typeof syncRevenueCatDownloads>> | null = null
+  try {
+    // Re-pull the last week: RevenueCat keeps finalizing recent days.
+    revenueCat = await syncRevenueCatDownloads({ from: addDays(serverToday, -7), to: serverToday })
+  } catch (e) {
+    revenueCat = [{ appName: '*', projectId: null, days: 0, error: e instanceof Error ? e.message : String(e) }]
+  }
+
   const url = new URL(req.url)
   const skipViews = url.searchParams.get('skipViews') === '1'
   let views: Awaited<ReturnType<typeof refreshViews>> | null = null
@@ -60,6 +71,7 @@ async function run(req: Request) {
     streakEpoch,
     telegramSkipped: telegram.skipped ?? false,
     telegramError: telegram.error ?? null,
+    revenueCat,
     views,
     viewsError,
   })

@@ -299,7 +299,8 @@ export async function getDailySheet(opts: {
   `) as SheetRow[]
 }
 
-export type DailyDownloadsRow = { date: string; downloads: number }
+/** `source`: manual | import | revenuecat (mixed when summed across projects). */
+export type DailyDownloadsRow = { date: string; downloads: number; source: string }
 
 /** App downloads per day; summed across projects when projectId is null. */
 export async function getDailyDownloads(opts: {
@@ -309,7 +310,10 @@ export async function getDailyDownloads(opts: {
 }): Promise<DailyDownloadsRow[]> {
   const projectId = opts.projectId ?? null
   return (await sql`
-    SELECT day::text AS date, SUM(downloads)::int AS downloads
+    SELECT
+      day::text AS date,
+      SUM(downloads)::int AS downloads,
+      CASE WHEN COUNT(DISTINCT source) = 1 THEN MIN(source) ELSE 'mixed' END AS source
     FROM daily_downloads
     WHERE day >= ${opts.from}::date
       AND day <= ${opts.to}::date
@@ -317,6 +321,39 @@ export async function getDailyDownloads(opts: {
     GROUP BY day
     ORDER BY day ASC
   `) as DailyDownloadsRow[]
+}
+
+export type SheetDayVideo = {
+  id: number
+  creator_id: number
+  creator_name: string
+  role: 'creator' | 'reposter'
+  platform: string
+  url: string
+  views: number
+}
+
+/** Every video posted on one day (for the tap-a-day breakdown). */
+export async function getSheetDayVideos(opts: {
+  day: string
+  projectId?: number | null
+}): Promise<SheetDayVideo[]> {
+  const projectId = opts.projectId ?? null
+  return (await sql`
+    SELECT
+      s.id,
+      c.id AS creator_id,
+      c.name AS creator_name,
+      CASE WHEN c.role = 'reposter' THEN 'reposter' ELSE 'creator' END AS role,
+      s.platform,
+      s.url,
+      COALESCE(s.views, 0)::int AS views
+    FROM submissions s
+    JOIN creators c ON c.id = s.creator_id
+    WHERE s.video_date = ${opts.day}::date
+      AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
+    ORDER BY s.views DESC NULLS LAST, s.id ASC
+  `) as SheetDayVideo[]
 }
 
 export function defaultAnalyticsRange(today: string): { from: string; to: string } {
