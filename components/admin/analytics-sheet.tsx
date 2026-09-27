@@ -585,7 +585,7 @@ function PersonTimeline({
             ))}
           </div>
 
-          <div className="mt-3 h-64 w-full rounded-lg border border-border p-2">
+          <div className="mt-3 h-64 w-full rounded-lg border border-border p-2 text-slate-900 dark:text-slate-100">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
@@ -1560,7 +1560,7 @@ export function AnalyticsSheet({
         <span className="text-xs text-muted-foreground">Click a day on the chart to see who drove it.</span>
         </div>
 
-        <div className="mt-2 h-72 w-full rounded-lg border border-border p-2">
+        <div className="mt-2 h-72 w-full rounded-lg border border-border p-2 text-slate-900 dark:text-slate-100">
           <ResponsiveContainer width="100%" height="100%">
             {showBusiness && chartMode === 'ratios' ? (
               <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
@@ -1590,7 +1590,7 @@ export function AnalyticsSheet({
                   type="monotone"
                   dataKey="viewsPer100"
                   name="Views per 100 downloads"
-                  stroke="#0F172A"
+                  stroke="currentColor"
                   strokeWidth={2}
                   dot={dates.length <= 31}
                   connectNulls
@@ -1686,7 +1686,7 @@ export function AnalyticsSheet({
                 type="monotone"
                 dataKey="views"
                 name="Total views"
-                stroke="#0F172A"
+                stroke="currentColor"
                 strokeWidth={2.5}
                 dot={dates.length <= 31}
                 isAnimationActive={false}

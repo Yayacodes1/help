@@ -3,6 +3,7 @@
 import { useTransition } from 'react'
 import { setLocale } from '@/app/actions/locale'
 import type { Locale } from '@/lib/i18n'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 export function LanguageToggle({
   locale,
@@ -14,6 +15,8 @@ export function LanguageToggle({
   const [pending, startTransition] = useTransition()
 
   return (
+    <div className="inline-flex items-center gap-2">
+    <ThemeToggle />
     <div
       className="inline-flex items-center rounded-lg border border-border bg-card p-0.5 text-xs font-semibold"
       role="group"
@@ -43,6 +46,7 @@ export function LanguageToggle({
       >
         {labels.arabic}
       </button>
+    </div>
     </div>
   )
 }

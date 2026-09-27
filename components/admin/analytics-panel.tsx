@@ -30,7 +30,7 @@ import { DateRangePresets } from '@/components/admin/date-range-presets'
 
 const IG = '#E1306C'
 const TT = '#0F766E'
-const TOTAL = '#0F172A'
+const TOTAL = 'currentColor'
 const LOG_TICKS = [1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000]
 
 type ChartType = 'line' | 'bar'
@@ -559,7 +559,7 @@ export function AnalyticsPanel({
           {!hasChart ? (
             <p className="text-sm text-muted-foreground">{labels.empty}</p>
           ) : (
-            <div className="h-80 w-full xl:h-[28rem]">
+            <div className="h-80 w-full text-slate-900 dark:text-slate-100 xl:h-[28rem]">
               <ResponsiveContainer width="100%" height="100%">
                 {chartType === 'bar' ? (
                   <BarChart data={plotted} margin={{ top: 8, right: 12, left: 4, bottom: 0 }} barGap={2}>

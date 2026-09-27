@@ -23,7 +23,7 @@ export function MissList({
 
   return (
     <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-4">
-      <h2 className="text-sm font-semibold tracking-tight text-[#9a0d18]">
+      <h2 className="text-sm font-semibold tracking-tight text-[#9a0d18] dark:text-card-foreground">
         Needs attention · {dayLabel}
       </h2>
       <ul className="mt-3 flex flex-col gap-2">

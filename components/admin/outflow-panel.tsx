@@ -57,7 +57,7 @@ function MoneyCell({ usd, emphasize }: { usd: number; emphasize?: boolean }) {
 
 function TermPill({ label }: { label: string }) {
   return (
-    <span className="inline-block rounded-md bg-sky-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-sky-900 ring-1 ring-sky-100">
+    <span className="inline-block rounded-md bg-sky-50 dark:bg-sky-950/40 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-sky-900 dark:text-sky-200 ring-1 ring-sky-100">
       {label}
     </span>
   )
@@ -81,7 +81,7 @@ function CollapsibleSection({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 border-b border-border bg-slate-900 px-3 py-2.5 text-left"
+        className="flex w-full items-center justify-between gap-2 border-b border-border bg-slate-900 dark:bg-primary px-3 py-2.5 text-left"
       >
         <h3 className="text-xs font-semibold uppercase tracking-wide text-white">{title}</h3>
         <ChevronDown
@@ -153,8 +153,8 @@ function MonthByMonthLine({
               </tr>
             )
           })}
-          <tr className="bg-sky-50/80">
-            <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-sky-950">
+          <tr className="bg-sky-50/80 dark:bg-sky-950/40">
+            <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-sky-950 dark:text-sky-100">
               All months
             </td>
             <MoneyCell usd={creatorsSum} emphasize />
@@ -187,7 +187,7 @@ function PersonPayList({
   const monthly = sumField(people, 'monthly')
   return (
     <div>
-      <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-sky-950">
+      <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-sky-950 dark:text-sky-100">
         {title}
         <span className="ml-1.5 font-normal text-muted-foreground">
           {people.length} {people.length === 1 ? 'person' : 'people'}
@@ -212,8 +212,8 @@ function PersonPayList({
                 <MoneyCell usd={p.monthly} emphasize />
               </tr>
             ))}
-            <tr className="bg-sky-50/80">
-              <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-sky-950">
+            <tr className="bg-sky-50/80 dark:bg-sky-950/40">
+              <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-sky-950 dark:text-sky-100">
                 {title} total
               </td>
               <MoneyCell usd={biweekly} emphasize />
@@ -241,7 +241,7 @@ function PeopleTotals({ people }: { people: OutflowPersonTotal[] }) {
       {creators.length > 0 ? <PersonPayList title="Creators" people={creators} /> : null}
       {reposters.length > 0 ? <PersonPayList title="Reposters" people={reposters} /> : null}
       {showBoth ? (
-        <div className="mx-3 overflow-hidden rounded-lg bg-slate-900 px-3 py-3 text-sm text-white">
+        <div className="mx-3 overflow-hidden rounded-lg bg-slate-900 dark:bg-primary px-3 py-3 text-sm text-white">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
             Creators + reposters
           </p>
@@ -311,10 +311,10 @@ function ScheduleTable({
               <FragmentMonth key={key} label={label} rows={list} monthTotal={monthTotal} />
             )
           })}
-          <tr className="bg-sky-50/80">
+          <tr className="bg-sky-50/80 dark:bg-sky-950/40">
             <td
               colSpan={4}
-              className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-sky-950"
+              className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-sky-950 dark:text-sky-100"
             >
               Schedule total
             </td>
@@ -349,7 +349,7 @@ function FragmentMonth({
         </tr>
       ))}
       <tr className="bg-secondary/20">
-        <td colSpan={4} className="px-3 py-2 text-xs font-medium text-sky-800">
+        <td colSpan={4} className="px-3 py-2 text-xs font-medium text-sky-800 dark:text-sky-200">
           {label}
         </td>
         <MoneyCell usd={monthTotal} emphasize />
@@ -500,7 +500,7 @@ export function OutflowPanel({
                 onClick={() => push({ ofView: v.id })}
                 className={
                   (view === v.id
-                    ? 'bg-slate-900 text-white'
+                    ? 'bg-slate-900 dark:bg-primary text-white'
                     : 'text-muted-foreground hover:text-foreground') +
                   ' rounded-md px-3 py-1.5 text-xs font-medium transition-colors'
                 }

@@ -265,16 +265,16 @@ export default async function SubmitPage({
           />
         </div>
 
-        <header className="animate-in fade-in slide-in-from-top-2 overflow-hidden rounded-2xl border border-[#e8cfc0] bg-[#fff1e6] p-6 text-[#9a0d18] shadow-sm">
+        <header className="animate-in fade-in slide-in-from-top-2 overflow-hidden rounded-2xl border border-[#e8cfc0] dark:border-border bg-[#fff1e6] dark:bg-card p-6 text-[#9a0d18] dark:text-card-foreground shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-base font-semibold text-[#9a0d18]">
+              <p className="text-base font-semibold text-[#9a0d18] dark:text-card-foreground">
                 {t('hey')} @{username}
               </p>
-              <p className="mt-0.5 text-xs text-[#a05a55]">
+              <p className="mt-0.5 text-xs text-[#a05a55] dark:text-muted-foreground">
                 {login.platform === 'instagram' ? t('instagram') : t('tiktok')}
               </p>
-              <h1 className="mt-1 text-balance text-2xl font-bold tracking-tight text-[#9a0d18]">
+              <h1 className="mt-1 text-balance text-2xl font-bold tracking-tight text-[#9a0d18] dark:text-card-foreground">
                 {t('submitHeading')}
               </h1>
             </div>
@@ -282,14 +282,14 @@ export default async function SubmitPage({
               {isMiqatHome ? 'ميقات' : 'نوتك'}
             </div>
           </div>
-          <p className="mt-3 text-sm font-medium text-[#b01020]">
+          <p className="mt-3 text-sm font-medium text-[#b01020] dark:text-primary">
             {active
               ? `${active.name} · ${formatDate(active.start_date)}${
                   active.end_date ? ` → ${formatDate(active.end_date)}` : ` → ${t('openEnded')}`
                 }`
               : t('submitToday')}
           </p>
-          <p className="mt-1 text-xs text-[#a05a55]">{t('platformsBoth')}</p>
+          <p className="mt-1 text-xs text-[#a05a55] dark:text-muted-foreground">{t('platformsBoth')}</p>
         </header>
 
         {strikeSummary ? (

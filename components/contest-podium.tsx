@@ -63,9 +63,9 @@ export function ContestPodium({
     m === 'both' ? labels.both : m === 'instagram' ? labels.instagram : labels.tiktok
 
   return (
-    <section className="flex max-h-[30vh] flex-col gap-2 overflow-hidden rounded-2xl border border-[#e8cfc0] bg-[#fff8f3] p-3 shadow-sm">
-      <h3 className="shrink-0 text-sm font-semibold text-[#9a0d18]">{labels.title}</h3>
-      <div className="flex shrink-0 gap-1 rounded-lg bg-[#f5e6dc] p-0.5">
+    <section className="flex max-h-[30vh] flex-col gap-2 overflow-hidden rounded-2xl border border-[#e8cfc0] dark:border-border bg-[#fff8f3] dark:bg-card p-3 shadow-sm">
+      <h3 className="shrink-0 text-sm font-semibold text-[#9a0d18] dark:text-card-foreground">{labels.title}</h3>
+      <div className="flex shrink-0 gap-1 rounded-lg bg-[#f5e6dc] dark:bg-muted p-0.5">
         {MODES.map((m) => (
           <button
             key={m}
@@ -73,8 +73,8 @@ export function ContestPodium({
             onClick={() => setMode(m)}
             className={`flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
               mode === m
-                ? 'bg-white text-[#9a0d18] shadow-sm'
-                : 'text-[#a05a55] hover:text-[#9a0d18]'
+                ? 'bg-white dark:bg-card text-[#9a0d18] dark:text-card-foreground shadow-sm'
+                : 'text-[#a05a55] dark:text-muted-foreground hover:text-[#9a0d18] dark:hover:text-foreground'
             }`}
           >
             {modeLabel(m)}
@@ -110,7 +110,7 @@ export function ContestPodium({
                   <Icon className="size-4" strokeWidth={2.25} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-foreground">
+                  <p className="truncate text-sm font-semibold text-[#3a1712]">
                     #{slot.rank} · @{row.loginHandle}
                   </p>
                   <p className={`text-[11px] font-medium uppercase tracking-wide ${slot.icon}`}>

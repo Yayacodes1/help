@@ -34,14 +34,14 @@ export function UsernameGate({
           />
         </div>
 
-        <header className="overflow-hidden rounded-2xl border border-[#e8cfc0] bg-[#fff1e6] p-6 text-[#9a0d18] shadow-sm">
+        <header className="overflow-hidden rounded-2xl border border-[#e8cfc0] dark:border-border bg-[#fff1e6] dark:bg-card p-6 text-[#9a0d18] dark:text-card-foreground shadow-sm">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#c41e2a] text-lg font-bold text-[#fff7f0]">
             نوتك
           </div>
-          <h1 className="mt-4 text-balance text-2xl font-bold tracking-tight text-[#9a0d18]">
+          <h1 className="mt-4 text-balance text-2xl font-bold tracking-tight text-[#9a0d18] dark:text-card-foreground">
             {t('gateTitle')}
           </h1>
-          <p className="mt-2 text-sm text-[#a05a55] text-pretty">{t('gateSubtitle')}</p>
+          <p className="mt-2 text-sm text-[#a05a55] dark:text-muted-foreground text-pretty">{t('gateSubtitle')}</p>
         </header>
 
         <form action={formAction} className="mt-6 flex flex-col gap-3">

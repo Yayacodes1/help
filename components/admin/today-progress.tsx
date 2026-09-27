@@ -76,7 +76,7 @@ export function TodayProgress({
                       <span className="ml-2 text-xs font-medium text-primary">done</span>
                     )}
                     {c.pay_due && (
-                      <span className="ml-2 text-xs font-medium text-amber-700">pay due</span>
+                      <span className="ml-2 text-xs font-medium text-amber-700 dark:text-amber-300">pay due</span>
                     )}
                     <PersonHandlesLine person={c} />
                   </div>

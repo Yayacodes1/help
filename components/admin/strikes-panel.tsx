@@ -66,7 +66,7 @@ export function StrikesPanel({
           </div>
         </div>
         <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3">
-          <div className="text-xl font-semibold tabular-nums text-[#9a0d18]">
+          <div className="text-xl font-semibold tabular-nums text-[#9a0d18] dark:text-card-foreground">
             {board.needsCorrective}
           </div>
           <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -188,18 +188,18 @@ export function StrikesPanel({
                       {row.contractName ?? labels.noContract}
                     </p>
                     {row.needsCorrective ? (
-                      <p className="mt-0.5 text-xs font-medium text-[#9a0d18]">
+                      <p className="mt-0.5 text-xs font-medium text-[#9a0d18] dark:text-card-foreground">
                         {labels.correctiveFlag} ({row.maxStrikes}+)
                       </p>
                     ) : null}
                   </td>
                   <td className="px-3 py-2 text-xs">
                     {row.onBreak ? (
-                      <span className="font-medium text-sky-700">{labels.onBreak}</span>
+                      <span className="font-medium text-sky-700 dark:text-sky-300">{labels.onBreak}</span>
                     ) : row.postedToday ? (
-                      <span className="font-medium text-emerald-700">{labels.posted}</span>
+                      <span className="font-medium text-emerald-700 dark:text-emerald-300">{labels.posted}</span>
                     ) : row.missedToday ? (
-                      <span className="font-medium text-rose-700">{labels.missed}</span>
+                      <span className="font-medium text-rose-700 dark:text-rose-300">{labels.missed}</span>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}

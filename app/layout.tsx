@@ -2,6 +2,7 @@ import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Fraunces, Noto_Sans_Arabic, Source_Sans_3 } from 'next/font/google'
 import { getLocale } from '@/lib/locale'
+import { getTheme } from '@/lib/theme'
 import './globals.css'
 
 const display = Fraunces({
@@ -25,9 +26,12 @@ export const metadata: Metadata = {
   generator: 'v0.app',
 }
 
-export const viewport: Viewport = {
-  colorScheme: 'light',
-  themeColor: '#f7ebe0',
+export async function generateViewport(): Promise<Viewport> {
+  const theme = await getTheme()
+  return {
+    colorScheme: theme,
+    themeColor: theme === 'dark' ? '#17100f' : '#f7ebe0',
+  }
 }
 
 export default async function RootLayout({
@@ -35,14 +39,15 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  const locale = await getLocale()
+  const [locale, theme] = await Promise.all([getLocale(), getTheme()])
   const dir = locale === 'ar' ? 'rtl' : 'ltr'
 
   return (
     <html
       lang={locale}
       dir={dir}
-      className={`${display.variable} ${body.variable} ${arabic.variable} light bg-background`}
+      className={`${display.variable} ${body.variable} ${arabic.variable} ${theme} bg-background`}
+      suppressHydrationWarning
     >
       <body className={`${locale === 'ar' ? arabic.className : body.className} antialiased`}>
         {children}
