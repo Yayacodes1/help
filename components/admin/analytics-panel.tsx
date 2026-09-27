@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import {
   Bar,
   BarChart,
@@ -63,6 +63,9 @@ type Labels = {
   month: string
   people: string
   loading: string
+  day: string
+  prevDay: string
+  nextDay: string
 }
 
 type NavPatch = {
@@ -225,6 +228,8 @@ export function AnalyticsPanel({
   const currentMonth = today.slice(0, 7)
   const lastMonth = shiftYearMonth(currentMonth, -1)
   const selectedMonth = monthOfRange(from, to, today)
+  const singleDay = from === to ? from : ''
+  const stepAnchor = singleDay || (to > today ? today : to)
 
   const multiCreator = selectedCreatorId == null
   const sourceDaily = selectedCreatorId != null ? creatorDaily : daily
@@ -328,6 +333,13 @@ export function AnalyticsPanel({
 
   function navigate(nextFrom: string, nextTo: string, nextCreator: number | '') {
     push({ from: nextFrom, to: nextTo, creator: nextCreator })
+  }
+
+  function selectDay(day: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > today) return
+    setFrom(day)
+    setTo(day)
+    push({ from: day, to: day })
   }
 
   function selectMonth(yearMonth: string) {
@@ -484,6 +496,37 @@ export function AnalyticsPanel({
             className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
           />
         </label>
+        <span className="mx-1 h-6 w-px bg-border" aria-hidden />
+        <div className="inline-flex items-center gap-1" role="group" aria-label={labels.day}>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => selectDay(singleDay ? addDays(singleDay, -1) : stepAnchor)}
+            className="inline-flex size-9 items-center justify-center rounded-lg border border-border hover:bg-accent disabled:opacity-50"
+            title={labels.prevDay}
+            aria-label={labels.prevDay}
+          >
+            <ChevronLeft className="size-4" />
+          </button>
+          <input
+            type="date"
+            value={singleDay}
+            max={today}
+            onChange={(e) => selectDay(e.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+            aria-label={labels.day}
+          />
+          <button
+            type="button"
+            disabled={isPending || (singleDay !== '' && singleDay >= today)}
+            onClick={() => selectDay(singleDay ? addDays(singleDay, 1) : stepAnchor)}
+            className="inline-flex size-9 items-center justify-center rounded-lg border border-border hover:bg-accent disabled:opacity-50"
+            title={labels.nextDay}
+            aria-label={labels.nextDay}
+          >
+            <ChevronRight className="size-4" />
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
