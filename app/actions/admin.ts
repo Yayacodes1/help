@@ -137,7 +137,7 @@ export async function login(_prev: unknown, formData: FormData) {
   const password = (formData.get('password') ?? '').toString()
   const accountId = verifyLogin(name, password)
   if (!accountId) {
-    return { ok: false, message: 'Incorrect name or password.' }
+    return { ok: false, message: 'Incorrect password.' }
   }
   await createAdminSession(accountId)
   redirect('/admin')

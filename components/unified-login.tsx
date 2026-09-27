@@ -8,7 +8,7 @@ import { LanguageToggle } from '@/components/language-toggle'
 import { CreatorLoginFields } from '@/components/creator-login-fields'
 import { createT, type Locale } from '@/lib/i18n'
 
-type Role = 'creator' | 'admin'
+type Role = 'creator' | 'yahya' | 'ahmed'
 type CreatorState = { ok: boolean; message: string } | null
 type AdminState = { ok: boolean; message: string }
 
@@ -61,7 +61,8 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
             }`}
           >
             <option value="creator">{t('creatorRole')}</option>
-            <option value="admin">{t('adminRole')}</option>
+            <option value="yahya">Yahya</option>
+            <option value="ahmed">Ahmed</option>
           </select>
         </div>
 
@@ -91,20 +92,7 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
           </form>
         ) : (
           <form action={adminAction} className="mt-5 flex flex-col gap-3">
-            <label htmlFor="admin-name" className="text-sm font-semibold text-foreground">
-              {t('adminName')}
-            </label>
-            <input
-              id="admin-name"
-              name="name"
-              type="text"
-              autoComplete="username"
-              placeholder="Yahya / Ahmed"
-              dir="ltr"
-              className={`h-12 w-full rounded-xl border border-input bg-card px-3 text-sm font-medium shadow-sm outline-none transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring ${
-                rtl ? 'text-right' : 'text-left'
-              }`}
-            />
+            <input type="hidden" name="name" value={role} />
             <label htmlFor="password" className="text-sm font-semibold text-foreground">
               {t('password')}
             </label>
