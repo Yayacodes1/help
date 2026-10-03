@@ -84,6 +84,8 @@ import {
 import type { AttendancePerson } from '@/lib/attendance'
 import { SplitColumns } from '@/components/admin/split-columns'
 import { SideRoleToggle } from '@/components/admin/side-role-toggle'
+import { TeamGoalsBoard } from '@/components/admin/team-goals-board'
+import { getTeamCounts, getTeamGoals } from '@/lib/team-goals'
 import { CONTEST } from '@/lib/contest'
 import { MiqatContestPanel } from '@/components/admin/miqat-contest-panel'
 
@@ -532,6 +534,11 @@ export default async function AdminPage({
 
   const splitData =
     splitProjects.length === 2 ? await Promise.all(splitProjects.map(loadSplitSide)) : null
+  const teamProjects = selectedProject ? [selectedProject] : splitProjects.length === 2 ? splitProjects : projects
+  const [teamCounts, teamGoals] =
+    tab === 'people'
+      ? await Promise.all([getTeamCounts(teamProjects, selectedDay), getTeamGoals()])
+      : [[], []]
   const splitSummary = (part: (side: NonNullable<typeof splitData>[number]) => string) =>
     (splitData ?? []).map((side) => `${side.project.name} ${part(side)}`).join(' · ')
   const sideControls = (side: NonNullable<typeof splitData>[number]) => (
@@ -738,6 +745,8 @@ export default async function AdminPage({
         />
       </section>
       )}
+
+      {tab === 'people' ? <TeamGoalsBoard counts={teamCounts} goals={teamGoals} today={today} /> : null}
 
       <p className="mt-6 mb-3 text-xs text-muted-foreground">{t('tapSection')}</p>
 
