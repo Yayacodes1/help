@@ -23,3 +23,14 @@ export function findMiyqatProject<T extends { id: number; name: string }>(
 ): T | null {
   return projects.find((p) => isMiyqatProjectName(p.name)) ?? null
 }
+
+/** `?project=split`: Notek and Miqat shown left/right instead of one project. */
+export const SPLIT_PROJECT_VALUE = 'split'
+
+/** Notek left, Miqat right; falls back to the first two projects. */
+export function splitProjectPair<T extends { id: number; name: string }>(projects: T[]): T[] {
+  const notek = projects.find((p) => isNotekProjectName(p.name))
+  const miqat = projects.find((p) => isMiyqatProjectName(p.name))
+  if (notek && miqat && notek.id !== miqat.id) return [notek, miqat]
+  return projects.slice(0, 2)
+}

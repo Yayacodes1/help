@@ -1,29 +1,10 @@
 import 'server-only'
 import { sql } from '@/lib/db'
 import { addDays } from '@/lib/campaign'
-import {
-  CORRECTIVE_STRIKE_COUNT,
-  OPERATIONAL_TZ,
-  lastCompletedOperationalDay,
-  strikeLimit,
-} from '@/lib/operational-day'
-import type {
-  AttendancePerson,
-  AttendanceReport,
-  AttendanceStatus,
-} from '@/lib/attendance-types'
+import { CORRECTIVE_STRIKE_COUNT, OPERATIONAL_TZ, strikeLimit } from '@/lib/operational-day'
+import type { AttendancePerson, AttendanceStatus } from '@/lib/attendance-types'
 
 export type { AttendancePerson, AttendanceReport, AttendanceStatus } from '@/lib/attendance-types'
-
-function formatDayLabel(ymd: string): string {
-  return new Date(`${ymd}T12:00:00Z`).toLocaleDateString('en-US', {
-    weekday: 'short',
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  })
-}
 
 function personStatus(opts: {
   onBreak: boolean
@@ -45,8 +26,15 @@ function personStatus(opts: {
   return any ? 'partial' : 'miss'
 }
 
-/** Roster for one calendar/operational day (creators + reposters). */
-export async function getAttendanceForDay(day: string): Promise<AttendancePerson[]> {
+/**
+ * Roster for one calendar/operational day (creators + reposters).
+ * With `projectId`, only posts for that project count.
+ */
+export async function getAttendanceForDay(
+  day: string,
+  projectId?: number | null,
+): Promise<AttendancePerson[]> {
+  const pid = projectId ?? null
   const [people, contracts, postRows, breakRows, strikeRows] = (await Promise.all([
     sql`
       SELECT id, name, role,
@@ -54,6 +42,7 @@ export async function getAttendanceForDay(day: string): Promise<AttendancePerson
       FROM creators
       WHERE role IN ('creator', 'reposter')
         AND (paused_at IS NULL OR paused_at > ${day}::date)
+        AND (created_at AT TIME ZONE ${OPERATIONAL_TZ})::date <= ${day}::date
       ORDER BY role ASC, name ASC
     `,
     sql`
@@ -72,6 +61,7 @@ export async function getAttendanceForDay(day: string): Promise<AttendancePerson
              COALESCE(SUM(CASE WHEN platform = 'tiktok' THEN 1 ELSE 0 END), 0)::int AS tt
       FROM submissions
       WHERE video_date = ${day}::date
+        AND (${pid}::int IS NULL OR project_id = ${pid})
       GROUP BY creator_id
     `,
     sql`
@@ -177,187 +167,4 @@ export async function getAttendanceForDay(day: string): Promise<AttendancePerson
       contractName: contract?.name ?? null,
     }
   })
-}
-
-export async function buildAttendanceReport(opToday: string): Promise<AttendanceReport> {
-  const day = lastCompletedOperationalDay(opToday)
-  const people = await getAttendanceForDay(day)
-  return {
-    day,
-    opToday,
-    dayLabel: formatDayLabel(day),
-    people,
-  }
-}
-
-function missingParts(p: AttendancePerson): string {
-  const parts: string[] = []
-  if (p.goalInstagram > 0 && p.todayInstagram < p.goalInstagram) {
-    parts.push(`IG ${p.goalInstagram - p.todayInstagram}`)
-  }
-  if (p.goalTiktok > 0 && p.todayTiktok < p.goalTiktok) {
-    parts.push(`TT ${p.goalTiktok - p.todayTiktok}`)
-  }
-  return parts.join(' · ')
-}
-
-function countsLine(p: AttendancePerson): string {
-  const bits: string[] = []
-  if (p.goalInstagram > 0) bits.push(`IG ${p.todayInstagram}/${p.goalInstagram}`)
-  if (p.goalTiktok > 0) bits.push(`TT ${p.todayTiktok}/${p.goalTiktok}`)
-  if (bits.length === 0) {
-    bits.push(`IG ${p.todayInstagram}`, `TT ${p.todayTiktok}`)
-  }
-  return bits.join(' · ')
-}
-
-function countStatuses(people: AttendancePerson[]) {
-  let full = 0
-  let partial = 0
-  let miss = 0
-  let onBreak = 0
-  for (const p of people) {
-    if (p.status === 'hit') full += 1
-    else if (p.status === 'partial') partial += 1
-    else if (p.status === 'miss') miss += 1
-    else if (p.status === 'break') onBreak += 1
-  }
-  return { total: people.length, full, partial, miss, onBreak }
-}
-
-function formatTotalsBlock(
-  label: string,
-  stats: ReturnType<typeof countStatuses>,
-): string {
-  return (
-    `${label}: ${stats.total} · full ${stats.full} · partial ${stats.partial}` +
-    ` · miss ${stats.miss} · break ${stats.onBreak}`
-  )
-}
-
-/** Arabic outreach templates (reposters). English lists stay in formatAttendanceTelegram. */
-export function arabicStrikeTemplate(
-  name: string,
-  strikes: number,
-  max: number,
-  missedDayLabel: string,
-): string {
-  const left = Math.max(0, max - strikes)
-  if (strikes <= 1) {
-    return (
-      `مرحباً ${name}، لاحظنا أنك لم تنشر يوم ${missedDayLabel}.\n` +
-      `هذا الإنذار رقم 1 من ${max}. يرجى الانتباه — متبقي لديك ${left} إنذار.\n` +
-      `إذا واجهت أي مشكلة، أخبرنا قبل أن تفوّت الموعد.`
-    )
-  }
-  if (strikes === 2 || (strikes < max && strikes > 1)) {
-    return (
-      `مرحباً ${name}، هذا الإنذار رقم ${strikes} من ${max} (يوم ${missedDayLabel}).\n` +
-      `سبق أن حصلت على إنذار. إذا لديك ظرف، تواصل معنا أولاً — متبقي ${left}.`
-    )
-  }
-  return (
-    `مرحباً ${name}، هذا الإنذار رقم ${strikes} من ${max} (يوم ${missedDayLabel}).\n` +
-    `للأسف استُهلكت كل الإنذارات. إذا تكرر التأخير مرة أخرى قد نتوقف عن العمل معك.`
-  )
-}
-
-export function arabicPartialTemplate(
-  name: string,
-  missing: string,
-  dayLabel: string,
-): string {
-  return (
-    `مرحباً ${name}، يرجى إكمال منشورات يوم ${dayLabel} قبل الساعة 12:00 منتصف الليل بتوقيت السعودية.\n` +
-    `ما زال ينقصك: ${missing || 'إكمال الهدف'}.\n` +
-    `وتأكد من النشر على جميع الحسابات المطلوبة.`
-  )
-}
-
-export function formatAttendanceTelegram(report: AttendanceReport): string {
-  const reposters = report.people.filter((p) => p.role === 'reposter')
-  const creators = report.people.filter((p) => p.role === 'creator')
-  const allStats = countStatuses(report.people)
-  const reposterStats = countStatuses(reposters)
-  const creatorStats = countStatuses(creators)
-
-  const lines: string[] = [
-    `📋 Last 24h · ${report.dayLabel}`,
-    `Cutoff: 12:00 AM ${OPERATIONAL_TZ}`,
-    '',
-    `Totals: ${allStats.total} people`,
-    formatTotalsBlock('Reposters', reposterStats),
-    formatTotalsBlock('Creators', creatorStats),
-    '',
-    '── REPOSTERS ──',
-  ]
-
-  if (reposters.length === 0) {
-    lines.push('(none)')
-  } else {
-    for (const p of reposters) {
-      lines.push(formatPersonLine(p, true))
-    }
-  }
-
-  lines.push('', '── CREATORS (track only) ──')
-  if (creators.length === 0) {
-    lines.push('(none)')
-  } else {
-    for (const p of creators) {
-      lines.push(formatPersonLine(p, false))
-    }
-  }
-
-  const templates: string[] = []
-  for (const p of reposters) {
-    if (p.status === 'partial') {
-      templates.push(
-        `[${p.name} — partial · ${report.dayLabel}]\n${arabicPartialTemplate(p.name, missingParts(p), report.dayLabel)}`,
-      )
-    } else if (p.status === 'miss') {
-      // After a strike reset, waived rows no longer count — next miss starts at 1 again.
-      const strikes = Math.max(p.contractStrikes, 1)
-      templates.push(
-        `[${p.name} — strike ${strikes}/${p.maxStrikes} · ${report.dayLabel}]\n${arabicStrikeTemplate(p.name, strikes, p.maxStrikes, report.dayLabel)}`,
-      )
-    }
-  }
-
-  if (templates.length > 0) {
-    lines.push('', '── COPY TEMPLATES ──', '')
-    lines.push(templates.join('\n\n'))
-  }
-
-  return lines.join('\n')
-}
-
-function formatPersonLine(p: AttendancePerson, withStrikes: boolean): string {
-  if (p.status === 'break') return `🏖 ${p.name} — break / rest`
-  if (p.status === 'hit') return `✅ ${p.name} — ${countsLine(p)}`
-  if (p.status === 'partial') {
-    return `⚠️ ${p.name} — ${countsLine(p)}  (need ${missingParts(p)})`
-  }
-  // miss
-  const x = p.missStreak > 0 ? `${p.missStreak}X` : '1X'
-  if (withStrikes) {
-    return `❌ ${p.name} — ${x} · strikes ${p.contractStrikes}/${p.maxStrikes}`
-  }
-  return `❌ ${p.name} — no post`
-}
-
-export async function sendDailyAttendanceTelegram(opToday: string): Promise<{
-  ok: boolean
-  day: string
-  error?: string
-  skipped?: boolean
-}> {
-  const { telegramConfigured, sendTelegramMessage } = await import('@/lib/telegram')
-  if (!telegramConfigured()) {
-    return { ok: true, day: lastCompletedOperationalDay(opToday), skipped: true }
-  }
-  const report = await buildAttendanceReport(opToday)
-  const text = formatAttendanceTelegram(report)
-  const result = await sendTelegramMessage(text)
-  return { ok: result.ok, day: report.day, error: result.error }
 }

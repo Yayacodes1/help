@@ -16,6 +16,8 @@ import {
   getServerToday,
   getOperationalToday,
   type AdminFilters,
+  type AdminSubmissionRow,
+  type CreatorProgress,
 } from '@/lib/queries'
 import {
   defaultAnalyticsRange,
@@ -60,7 +62,7 @@ import { formatDate, formatMoney, formatNumber, formatYearMonth } from '@/lib/fo
 import { getOutflowSnapshot, type OutflowView } from '@/lib/outflow'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
-import type { Platform } from '@/lib/db'
+import type { Platform, Project } from '@/lib/db'
 import { parseRoleFilter, roleFilterToSql } from '@/lib/participant-role'
 import { getLeagueBoard } from '@/lib/ranking'
 import { RankingBoard } from '@/components/ranking-board'
@@ -72,7 +74,15 @@ import { getProjectViewsBoard } from '@/lib/project-views'
 import { ProjectViewsPanel } from '@/components/admin/project-views-panel'
 import { getCommissionBoard, getCommissionEstimate } from '@/lib/commission-data'
 import { CommissionBoardPanel } from '@/components/admin/commission-board'
-import { isMiyqatProjectName, findProjectById, findMiyqatProject } from '@/lib/project-scope'
+import {
+  SPLIT_PROJECT_VALUE,
+  findMiyqatProject,
+  findProjectById,
+  isMiyqatProjectName,
+  splitProjectPair,
+} from '@/lib/project-scope'
+import type { AttendancePerson } from '@/lib/attendance'
+import { SplitColumns } from '@/components/admin/split-columns'
 import { CONTEST } from '@/lib/contest'
 import { MiqatContestPanel } from '@/components/admin/miqat-contest-panel'
 
@@ -141,7 +151,10 @@ export default async function AdminPage({
   const selectedDay = /^\d{4}-\d{2}-\d{2}$/.test(sp.day ?? '') ? sp.day! : today
   const isToday = selectedDay === today
 
-  const projectId = sp.project ? Number(sp.project) : undefined
+  const splitRequested = sp.project === SPLIT_PROJECT_VALUE
+  const projectRaw = Number(sp.project)
+  const projectId =
+    !splitRequested && sp.project && Number.isFinite(projectRaw) ? projectRaw : undefined
   const roleFilter = parseRoleFilter(sp.role)
   const roleSql = roleFilterToSql(roleFilter)
 
@@ -440,6 +453,79 @@ export default async function AdminPage({
 
   const everyone =
     tab === 'today' || tab === 'people' ? await attachTracking(creatorsBase, today) : []
+
+  // Notek | Miqat side by side: same panels, one column per project.
+  const splitProjects = splitRequested ? splitProjectPair(projects) : []
+  const trackedById = new Map(everyone.map((c) => [c.id, c]))
+
+  async function loadSplitSide(project: Project) {
+    const pid = project.id
+    const wantsPeople = tab === 'today' || tab === 'people'
+    const [base, sideAttendance, sideSubmissions, sideAnalytics] = await Promise.all([
+      wantsPeople
+        ? getCreatorsWithProgressOnDate(selectedDay, pid, roleSql, {
+            includeAllReposters: true,
+            includeAllCreators: isMiyqatProjectName(project.name),
+          })
+        : Promise.resolve([] as CreatorProgress[]),
+      tab === 'today'
+        ? getAttendanceForDay(selectedDay, pid)
+        : Promise.resolve([] as AttendancePerson[]),
+      tab === 'today'
+        ? getAdminSubmissions({ ...filters, projectId: pid })
+        : Promise.resolve([] as AdminSubmissionRow[]),
+      tab === 'analytics'
+        ? Promise.all([
+            getDailyAnalytics({ from: aFrom, to: aTo, projectId: pid, role: aRoleSql }),
+            getDailyViewsByCreator({ from: aFrom, to: aTo, projectId: pid, role: aRoleSql }),
+            getViewsLeaderboard({ from: aFrom, to: aTo, projectId: pid, role: aRoleSql, limit: 1000 }),
+            getViewsSummary({ from: aFrom, to: aTo, projectId: pid, role: aRoleSql }),
+          ]).then(([daily, byCreatorDaily, leaderboard, summary]) => ({
+            daily,
+            byCreatorDaily,
+            leaderboard,
+            summary,
+          }))
+        : Promise.resolve(null),
+    ])
+    // Tracking (goals, streaks, pay) is per person; only today's counts are per project.
+    const tracked = base.flatMap((c) => {
+      const row = trackedById.get(c.id)
+      return row
+        ? [
+            {
+              ...row,
+              today_instagram: c.today_instagram,
+              today_tiktok: c.today_tiktok,
+              total_videos: c.total_videos,
+            },
+          ]
+        : []
+    })
+    const active = tracked.filter((c) => !c.paused_at)
+    const ids = new Set(base.map((c) => c.id))
+    const attention = sideAttendance.filter((p) => {
+      if (!ids.has(p.id)) return false
+      if (roleFilter === 'creator' || roleFilter === 'reposter') return p.role === roleFilter
+      return true
+    })
+    return {
+      project,
+      creators: active,
+      paused: tracked.filter((c) => c.paused_at),
+      postedPeople: active.filter((c) => c.today_instagram + c.today_tiktok > 0).length,
+      attention,
+      attentionCount: attention.filter((p) => p.status === 'miss' || p.status === 'partial').length,
+      submissions: sideSubmissions,
+      views: sideSubmissions.reduce((sum, v) => sum + (v.views ?? 0), 0),
+      analytics: sideAnalytics,
+    }
+  }
+
+  const splitData =
+    splitProjects.length === 2 ? await Promise.all(splitProjects.map(loadSplitSide)) : null
+  const splitSummary = (part: (side: NonNullable<typeof splitData>[number]) => string) =>
+    (splitData ?? []).map((side) => `${side.project.name} ${part(side)}`).join(' · ')
   const creators = everyone.filter((c) => !c.paused_at)
   const pausedCreators = everyone.filter((c) => c.paused_at)
   const creatorIds = new Set(creatorsBase.map((c) => c.id))
@@ -494,6 +580,53 @@ export default async function AdminPage({
           ? t('creatorsActiveToday')
           : t('creatorsActiveThatDay')
 
+  const analyticsLabels = {
+    views: t('views'),
+    videos: t('videos'),
+    roleCreators: t('roleFilterCreators'),
+    roleReposters: t('roleFilterReposters'),
+    roleAll: t('roleFilterAll'),
+    month: t('rankingMonth'),
+    people: t('people'),
+    loading: t('analyticsLoading'),
+    day: t('analyticsDay'),
+    prevDay: t('analyticsPrevDay'),
+    nextDay: t('analyticsNextDay'),
+    openSheet: t('analyticsOpenSheet'),
+    instagram: t('instagram'),
+    tiktok: t('tiktok'),
+    showVideos: t('showVideos'),
+    topCreators:
+      aRoleFilter === 'reposter'
+        ? t('topReposters')
+        : aRoleFilter === 'all'
+          ? t('topPeople')
+          : t('topCreators'),
+    empty: t('analyticsEmpty'),
+    from: t('from'),
+    to: t('to'),
+    apply: t('apply'),
+    chartLine: t('chartLine'),
+    chartBar: t('chartBar'),
+    chartLog: t('chartLog'),
+    chartLinear: t('chartLinear'),
+    allProjects: t('allProjects'),
+    total: t('analyticsTotal'),
+    clear: t('analyticsClear'),
+    pickHint: t('analyticsPickHint'),
+    splitPlatforms: t('analyticsSplit'),
+  }
+
+  const attentionLabels = {
+    legendHit: t('attentionHit'),
+    legendPartial: t('attentionPartial'),
+    legendMiss: t('attentionMiss'),
+    legendBreak: t('attentionBreak'),
+    missing: t('attentionNoPost'),
+    allClear: t('allClear'),
+    strikes: t('strikeCount'),
+  }
+
   const tabPanels: readonly string[] = ADMIN_TABS[tab]
   const defaultPanel =
     sp.panel && tabPanels.includes(sp.panel)
@@ -503,7 +636,11 @@ export default async function AdminPage({
         : null
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 py-8">
+    <main
+      className={`mx-auto flex min-h-dvh w-full flex-col px-5 py-8 ${
+        splitData ? 'max-w-[96rem]' : 'max-w-6xl'
+      }`}
+    >
       <header className="mb-6 flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -595,7 +732,33 @@ export default async function AdminPage({
             title: t('analytics'),
             summary: formatNumber(viewsSummary.views),
             hint: `${viewsSummary.videos} ${t('videos')} · ${aFrom.slice(5)}→${aTo.slice(5)}`,
-            children: (
+            children: splitData ? (
+              <SplitColumns
+                sides={splitData.map((side) => ({
+                  key: side.project.id,
+                  title: side.project.name,
+                  summary: side.analytics
+                    ? `${formatNumber(side.analytics.summary.views)} ${t('views')} · ${side.analytics.summary.videos} ${t('videos')}`
+                    : undefined,
+                  children: side.analytics ? (
+                    <AnalyticsPanel
+                      sideBySide
+                      daily={side.analytics.daily}
+                      byCreatorDaily={side.analytics.byCreatorDaily}
+                      leaderboard={side.analytics.leaderboard}
+                      summary={side.analytics.summary}
+                      projects={projects}
+                      projectId={side.project.id}
+                      role={aRoleFilter}
+                      today={today}
+                      defaultFrom={aFrom}
+                      defaultTo={aTo}
+                      labels={analyticsLabels}
+                    />
+                  ) : null,
+                }))}
+              />
+            ) : (
               <AnalyticsPanel
                 daily={dailyAnalytics}
                 byCreatorDaily={byCreatorDaily}
@@ -607,42 +770,7 @@ export default async function AdminPage({
                 today={today}
                 defaultFrom={aFrom}
                 defaultTo={aTo}
-                labels={{
-                  views: t('views'),
-                  videos: t('videos'),
-                  roleCreators: t('roleFilterCreators'),
-                  roleReposters: t('roleFilterReposters'),
-                  roleAll: t('roleFilterAll'),
-                  month: t('rankingMonth'),
-                  people: t('people'),
-                  loading: t('analyticsLoading'),
-                  day: t('analyticsDay'),
-                  prevDay: t('analyticsPrevDay'),
-                  nextDay: t('analyticsNextDay'),
-                  openSheet: t('analyticsOpenSheet'),
-                  instagram: t('instagram'),
-                  tiktok: t('tiktok'),
-                  showVideos: t('showVideos'),
-                  topCreators:
-                    aRoleFilter === 'reposter'
-                      ? t('topReposters')
-                      : aRoleFilter === 'all'
-                        ? t('topPeople')
-                        : t('topCreators'),
-                  empty: t('analyticsEmpty'),
-                  from: t('from'),
-                  to: t('to'),
-                  apply: t('apply'),
-                  chartLine: t('chartLine'),
-                  chartBar: t('chartBar'),
-                  chartLog: t('chartLog'),
-                  chartLinear: t('chartLinear'),
-                  allProjects: t('allProjects'),
-                  total: t('analyticsTotal'),
-                  clear: t('analyticsClear'),
-                  pickHint: t('analyticsPickHint'),
-                  splitPlatforms: t('analyticsSplit'),
-                }}
+                labels={analyticsLabels}
               />
             ),
           },
@@ -794,16 +922,35 @@ export default async function AdminPage({
           {
             id: 'progress',
             title: isToday ? t('todaysProgress') : t('dailyProgress'),
-            summary: `${creatorsPostedToday}/${creators.length} ${t('active')}`,
+            summary: splitData
+              ? splitSummary((side) => `${side.postedPeople}/${side.creators.length}`)
+              : `${creatorsPostedToday}/${creators.length} ${t('active')}`,
             hint: isToday ? t('goalsForToday') : formatDate(selectedDay),
             children: (
               <div className="flex flex-col gap-3">
                 <DayNavigator selectedDay={selectedDay} today={today} />
-                <TodayProgress
-                  creators={creators}
-                  linkRole={roleFilter}
-                  projectId={projectId}
-                />
+                {splitData ? (
+                  <SplitColumns
+                    sides={splitData.map((side) => ({
+                      key: side.project.id,
+                      title: side.project.name,
+                      summary: `${side.postedPeople}/${side.creators.length} ${t('active')}`,
+                      children: (
+                        <TodayProgress
+                          creators={side.creators}
+                          linkRole={roleFilter}
+                          projectId={side.project.id}
+                        />
+                      ),
+                    }))}
+                  />
+                ) : (
+                  <TodayProgress
+                    creators={creators}
+                    linkRole={roleFilter}
+                    projectId={projectId}
+                  />
+                )}
               </div>
             ),
           },
@@ -847,9 +994,35 @@ export default async function AdminPage({
           {
             id: 'attention',
             title: t('needsAttention'),
-            summary: attentionCount === 0 ? t('allClear') : `${attentionCount} ${t('behind')}`,
+            summary: splitData
+              ? splitSummary((side) => `${side.attentionCount}`)
+              : attentionCount === 0
+                ? t('allClear')
+                : `${attentionCount} ${t('behind')}`,
             hint: isToday ? t('today') : formatDate(selectedDay),
-            children: (
+            children: splitData ? (
+              <SplitColumns
+                sides={splitData.map((side) => ({
+                  key: side.project.id,
+                  title: side.project.name,
+                  summary:
+                    side.attentionCount === 0
+                      ? t('allClear')
+                      : `${side.attentionCount} ${t('behind')}`,
+                  children: (
+                    <AttentionBoard
+                      people={side.attention}
+                      selectedDay={selectedDay}
+                      today={today}
+                      dayLabel={isToday ? t('today') : formatDate(selectedDay)}
+                      linkRole={roleFilter}
+                      projectId={side.project.id}
+                      labels={attentionLabels}
+                    />
+                  ),
+                }))}
+              />
+            ) : (
               <AttentionBoard
                 people={attendancePeople}
                 selectedDay={selectedDay}
@@ -857,22 +1030,16 @@ export default async function AdminPage({
                 dayLabel={isToday ? t('today') : formatDate(selectedDay)}
                 linkRole={roleFilter}
                 projectId={projectId}
-                labels={{
-                  legendHit: t('attentionHit'),
-                  legendPartial: t('attentionPartial'),
-                  legendMiss: t('attentionMiss'),
-                  legendBreak: t('attentionBreak'),
-                  missing: t('attentionNoPost'),
-                  allClear: t('allClear'),
-                  strikes: t('strikeCount'),
-                }}
+                labels={attentionLabels}
               />
             ),
           },
           {
             id: 'videos',
             title: t('videos'),
-            summary: `${totalVideos}`,
+            summary: splitData
+              ? splitSummary((side) => `${side.submissions.length}`)
+              : `${totalVideos}`,
             hint: `${formatNumber(totalViews)} ${t('views')}`,
             children: (
               <div className="flex flex-col gap-3">
@@ -906,17 +1073,40 @@ export default async function AdminPage({
                     />
                   </Suspense>
                 </div>
-                <SubmissionsTable
-                  submissions={submissions}
-                  emptyLabel={t('noVideosMatch')}
-                  linkRole={roleFilter}
-                  projectId={projectId}
-                  linkFrom="videos"
-                  editableProject
-                  projects={projects}
-                  noProjectLabel={t('noProject')}
-                  refreshLabel={t('refreshThisVideo')}
-                />
+                {splitData ? (
+                  <SplitColumns
+                    sides={splitData.map((side) => ({
+                      key: side.project.id,
+                      title: side.project.name,
+                      summary: `${side.submissions.length} ${t('videos')} · ${formatNumber(side.views)} ${t('views')}`,
+                      children: (
+                        <SubmissionsTable
+                          submissions={side.submissions}
+                          emptyLabel={t('noVideosMatch')}
+                          linkRole={roleFilter}
+                          projectId={side.project.id}
+                          linkFrom="videos"
+                          editableProject
+                          projects={projects}
+                          noProjectLabel={t('noProject')}
+                          refreshLabel={t('refreshThisVideo')}
+                        />
+                      ),
+                    }))}
+                  />
+                ) : (
+                  <SubmissionsTable
+                    submissions={submissions}
+                    emptyLabel={t('noVideosMatch')}
+                    linkRole={roleFilter}
+                    projectId={projectId}
+                    linkFrom="videos"
+                    editableProject
+                    projects={projects}
+                    noProjectLabel={t('noProject')}
+                    refreshLabel={t('refreshThisVideo')}
+                  />
+                )}
               </div>
             ),
           },
@@ -1065,9 +1255,33 @@ export default async function AdminPage({
           {
             id: 'manage',
             title: t('manage'),
-            summary: `${creators.length} ${peopleNoun}`,
+            summary: splitData
+              ? splitSummary((side) => `${side.creators.length}`)
+              : `${creators.length} ${peopleNoun}`,
             hint: `${projects.length} ${t('projects')}`,
-            children: (
+            children: splitData ? (
+              <div key="manage-split" className="flex flex-col gap-4">
+                <SplitColumns
+                  sides={splitData.map((side) => ({
+                    key: side.project.id,
+                    title: side.project.name,
+                    summary: `${side.creators.length} ${peopleNoun}`,
+                    children: (
+                      <CreatorsManager
+                        creators={side.creators}
+                        pausedCreators={side.paused}
+                        projects={projects}
+                        roleFilter={roleFilter}
+                        today={today}
+                        currentProjectId={side.project.id}
+                        isOwner={showBusiness}
+                      />
+                    ),
+                  }))}
+                />
+                <ProjectsManager projects={projects} />
+              </div>
+            ) : (
               <div key="manage-grid" className="grid gap-4 lg:grid-cols-2">
                 <CreatorsManager
                   key="creators-manager"

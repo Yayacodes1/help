@@ -72,7 +72,8 @@ function readFilters(
   const roleRaw = params.get('role')
   const platformRaw = params.get('platform')
   const creatorFromUrl = creatorRaw ? Number(creatorRaw) : undefined
-  const projectId = projectRaw ? Number(projectRaw) : undefined
+  const projectId =
+    projectRaw && Number.isFinite(Number(projectRaw)) ? Number(projectRaw) : undefined
   const role =
     roleRaw === 'creator' || roleRaw === 'reposter' ? roleRaw : undefined
   const platform =

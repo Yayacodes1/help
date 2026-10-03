@@ -138,6 +138,7 @@ export function AnalyticsPanel({
   defaultFrom,
   defaultTo,
   labels,
+  sideBySide = false,
 }: {
   daily: DailyAnalyticsRow[]
   byCreatorDaily: CreatorDailyViewsRow[]
@@ -150,6 +151,8 @@ export function AnalyticsPanel({
   defaultFrom: string
   defaultTo: string
   labels: Labels
+  /** Half-width column next to another project: no project chips, stacked layout. */
+  sideBySide?: boolean
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -369,20 +372,24 @@ export function AnalyticsPanel({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => push({ project: 'all' })} className={chipClass(projectId == null)}>
-          {labels.allProjects}
-        </button>
-        {projects.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => push({ project: p.id })}
-            className={chipClass(projectId === p.id)}
-          >
-            {p.name}
-          </button>
-        ))}
-        <span className="mx-1 h-6 w-px bg-border" aria-hidden />
+        {sideBySide ? null : (
+          <>
+            <button type="button" onClick={() => push({ project: 'all' })} className={chipClass(projectId == null)}>
+              {labels.allProjects}
+            </button>
+            {projects.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => push({ project: p.id })}
+                className={chipClass(projectId === p.id)}
+              >
+                {p.name}
+              </button>
+            ))}
+            <span className="mx-1 h-6 w-px bg-border" aria-hidden />
+          </>
+        )}
         {(
           [
             ['creator', labels.roleCreators],
@@ -482,7 +489,9 @@ export function AnalyticsPanel({
         </form>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      <div
+        className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${sideBySide ? '' : 'lg:grid-cols-5'}`}
+      >
         {statTiles.map((tile) => (
           <div key={tile.label} className="rounded-lg border border-border bg-muted/20 px-3 py-2">
             <p className="text-xs text-muted-foreground">{tile.label}</p>
@@ -554,12 +563,14 @@ export function AnalyticsPanel({
         ) : null}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
+      <div className={`grid gap-4 ${sideBySide ? '' : 'xl:grid-cols-[minmax(0,1fr)_24rem]'}`}>
         <div className="min-w-0">
           {!hasChart ? (
             <p className="text-sm text-muted-foreground">{labels.empty}</p>
           ) : (
-            <div className="h-80 w-full text-slate-900 dark:text-slate-100 xl:h-[28rem]">
+            <div
+              className={`h-80 w-full text-slate-900 dark:text-slate-100 ${sideBySide ? '' : 'xl:h-[28rem]'}`}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 {chartType === 'bar' ? (
                   <BarChart data={plotted} margin={{ top: 8, right: 12, left: 4, bottom: 0 }} barGap={2}>

@@ -25,13 +25,15 @@ async function run(req: Request) {
   const { getOperationalToday, getServerToday } = await import('@/lib/queries')
   const { syncReposterStrikes } = await import('@/lib/strikes')
   const { ensureCreatorTrackingColumns } = await import('@/lib/schema')
-  const { sendDailyAttendanceTelegram } = await import('@/lib/attendance')
+  const { sendAttendanceReports } = await import('@/lib/telegram-report')
+  const { ensureTelegramWebhook } = await import('@/lib/telegram')
   await ensureCreatorTrackingColumns()
   const opToday = await getOperationalToday()
   const strikesAdded = await syncReposterStrikes({ today: opToday })
   const { ensureStreakEpoch } = await import('@/lib/streak-epoch')
   const streakEpoch = await ensureStreakEpoch(await getServerToday())
-  const telegram = await sendDailyAttendanceTelegram(opToday)
+  const telegram = await sendAttendanceReports(opToday, 'final')
+  const webhook = await ensureTelegramWebhook(new URL(req.url).origin).catch((e) => ({ ok: false, error: String(e) }))
 
   if (!process.env.TIKHUB_API_KEY?.trim()) {
     revalidatePath('/admin')
@@ -41,6 +43,7 @@ async function run(req: Request) {
       strikesAdded,
       streakEpoch,
       telegram,
+      webhook,
     }, { status: 500 })
   }
 
@@ -52,7 +55,7 @@ async function run(req: Request) {
   const result = await refreshViews(scope, { delayMs: 80, limit: 40 })
   revalidatePath('/admin')
   revalidatePath('/submit')
-  return NextResponse.json({ ...result, strikesAdded, streakEpoch, telegram })
+  return NextResponse.json({ ...result, strikesAdded, streakEpoch, telegram, webhook })
 }
 
 export async function GET(req: Request) {

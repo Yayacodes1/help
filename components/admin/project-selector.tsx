@@ -3,13 +3,14 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { FolderKanban } from 'lucide-react'
 import type { Project } from '@/lib/db'
-import { isMiyqatProjectName } from '@/lib/project-scope'
+import { SPLIT_PROJECT_VALUE, isMiyqatProjectName, splitProjectPair } from '@/lib/project-scope'
 import { sortProjects } from '@/lib/project-order'
 
 export function ProjectSelector({ projects }: { projects: Project[] }) {
   const router = useRouter()
   const params = useSearchParams()
   const ordered = sortProjects(projects)
+  const pair = splitProjectPair(ordered)
 
   function onChange(value: string) {
     const next = new URLSearchParams(params.toString())
@@ -18,14 +19,20 @@ export function ProjectSelector({ projects }: { projects: Project[] }) {
     // Reset person filters when switching projects so lists stay consistent.
     next.delete('creator')
     next.delete('aCreator')
+    next.delete('aProject')
     next.delete('pvPerson')
 
     // Miqat posts are almost all from reposters; staying on the default
     // "Creators" role makes Videos / Analytics look empty.
     const picked = ordered.find((p) => String(p.id) === value)
     const role = params.get('role')
-    if (picked && isMiyqatProjectName(picked.name) && (!role || role === 'creator')) {
+    const needsEveryone =
+      value === SPLIT_PROJECT_VALUE || (picked != null && isMiyqatProjectName(picked.name))
+    if (needsEveryone && (!role || role === 'creator')) {
       next.set('role', 'all')
+    }
+    if (needsEveryone && (!params.get('aRole') || params.get('aRole') === 'creator')) {
+      next.delete('aRole')
     }
 
     router.push(`/admin?${next.toString()}`, { scroll: false })
@@ -41,6 +48,11 @@ export function ProjectSelector({ projects }: { projects: Project[] }) {
         className="h-10 appearance-none rounded-lg border border-input bg-background pl-9 pr-8 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <option value="">All projects</option>
+        {pair.length === 2 ? (
+          <option value={SPLIT_PROJECT_VALUE}>
+            {`${pair[0].name} + ${pair[1].name} (side by side)`}
+          </option>
+        ) : null}
         {ordered.map((p) => (
           <option key={p.id} value={p.id}>
             {p.name}
