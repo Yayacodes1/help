@@ -139,6 +139,7 @@ export function AnalyticsPanel({
   defaultTo,
   labels,
   sideBySide = false,
+  urlKeys = { from: 'aFrom', to: 'aTo', role: 'aRole' },
 }: {
   daily: DailyAnalyticsRow[]
   byCreatorDaily: CreatorDailyViewsRow[]
@@ -153,6 +154,8 @@ export function AnalyticsPanel({
   labels: Labels
   /** Half-width column next to another project: no project chips, stacked layout. */
   sideBySide?: boolean
+  /** Query keys for dates/role, so each side-by-side column keeps its own. */
+  urlKeys?: { from: string; to: string; role: string }
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -226,11 +229,11 @@ export function AnalyticsPanel({
   function push(patch: NavPatch) {
     const params = new URLSearchParams(window.location.search)
     params.set('panel', 'analytics')
-    params.set('aFrom', patch.from ?? from)
-    params.set('aTo', patch.to ?? to)
+    params.set(urlKeys.from, patch.from ?? from)
+    params.set(urlKeys.to, patch.to ?? to)
     params.delete('aCreator')
-    params.set('aProject', String(patch.project ?? projectId ?? 'all'))
-    params.set('aRole', patch.role ?? role)
+    if (!sideBySide) params.set('aProject', String(patch.project ?? projectId ?? 'all'))
+    params.set(urlKeys.role, patch.role ?? role)
     startTransition(() => {
       router.push(`?${params.toString()}`, { scroll: false })
     })
@@ -392,9 +395,9 @@ export function AnalyticsPanel({
         )}
         {(
           [
+            ['all', labels.roleAll],
             ['creator', labels.roleCreators],
             ['reposter', labels.roleReposters],
-            ['all', labels.roleAll],
           ] as const
         ).map(([value, label]) => (
           <button key={value} type="button" onClick={() => push({ role: value })} className={chipClass(role === value)}>

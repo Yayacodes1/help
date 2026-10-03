@@ -295,14 +295,17 @@ export async function getCreatorsWithProgressOnDate(
   date: string,
   projectId?: number,
   role?: ParticipantRole | null,
-  opts?: { includeAllReposters?: boolean; includeAllCreators?: boolean },
+  opts?: { includeAllReposters?: boolean; includeAllCreators?: boolean; projectMembersOnly?: boolean },
 ): Promise<CreatorProgress[]> {
   const pid = projectId ?? null
   const roleFilter = role ?? null
   // Miyqat: show every reposter + every creator (homes not assigned yet).
   // Other projects: all reposters still, creators by home / unassigned / posts.
-  const includeAllReposters = opts?.includeAllReposters ?? pid != null
-  const includeAllCreators = opts?.includeAllCreators ?? false
+  // projectMembersOnly: creators by home project (unassigned ones where they posted),
+  // reposters by home project or where they posted.
+  const membersOnly = opts?.projectMembersOnly ?? false
+  const includeAllReposters = !membersOnly && (opts?.includeAllReposters ?? pid != null)
+  const includeAllCreators = !membersOnly && (opts?.includeAllCreators ?? false)
   return (await sql`
     SELECT
       c.id, c.name, c.token, c.project_id, c.created_at, c.role,
@@ -327,10 +330,13 @@ export async function getCreatorsWithProgressOnDate(
         OR (c.role = 'reposter' AND ${includeAllReposters}::boolean)
         OR (c.role <> 'reposter' AND ${includeAllCreators}::boolean)
         OR c.project_id = ${pid}
-        OR (c.role <> 'reposter' AND c.project_id IS NULL)
-        OR EXISTS (
-          SELECT 1 FROM submissions sx
-          WHERE sx.creator_id = c.id AND sx.project_id = ${pid}
+        OR (c.role <> 'reposter' AND c.project_id IS NULL AND NOT ${membersOnly}::boolean)
+        OR (
+          (c.role = 'reposter' OR c.project_id IS NULL OR NOT ${membersOnly}::boolean)
+          AND EXISTS (
+            SELECT 1 FROM submissions sx
+            WHERE sx.creator_id = c.id AND sx.project_id = ${pid}
+          )
         )
       )
     GROUP BY c.id, p.name

@@ -84,7 +84,7 @@ export function MiqatContestPanel({
       <div>
         <h3 className="text-base font-semibold">{labels.title}</h3>
         <p className="text-xs text-muted-foreground">
-          {CONTEST.from.slice(5)} → {CONTEST.to.slice(5)} · Miqat · reposters
+          {CONTEST.from.slice(5)} → {CONTEST.to.slice(5)} · Notek + Miqat · reposters
         </p>
       </div>
 

@@ -4,6 +4,8 @@ export type SplitSide = {
   key: string | number
   title: string
   summary?: ReactNode
+  /** Filters that apply to this column only. */
+  controls?: ReactNode
   children: ReactNode
 }
 
@@ -22,6 +24,7 @@ export function SplitColumns({ sides }: { sides: SplitSide[] }) {
               <span className="text-xs tabular-nums text-muted-foreground">{side.summary}</span>
             ) : null}
           </header>
+          {side.controls}
           {side.children}
         </section>
       ))}

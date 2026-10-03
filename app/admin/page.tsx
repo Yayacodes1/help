@@ -76,13 +76,14 @@ import { getCommissionBoard, getCommissionEstimate } from '@/lib/commission-data
 import { CommissionBoardPanel } from '@/components/admin/commission-board'
 import {
   SPLIT_PROJECT_VALUE,
-  findMiyqatProject,
   findProjectById,
   isMiyqatProjectName,
+  sideRoleKey,
   splitProjectPair,
 } from '@/lib/project-scope'
 import type { AttendancePerson } from '@/lib/attendance'
 import { SplitColumns } from '@/components/admin/split-columns'
+import { SideRoleToggle } from '@/components/admin/side-role-toggle'
 import { CONTEST } from '@/lib/contest'
 import { MiqatContestPanel } from '@/components/admin/miqat-contest-panel'
 
@@ -128,6 +129,8 @@ export default async function AdminPage({
     cmFrom?: string
     cmTo?: string
     cmContract?: string
+    /** Side by side: `role<projectId>`, `aFrom<projectId>`, `aTo<projectId>`. */
+    [key: string]: string | undefined
   }>
 }) {
   if (!(await isAdmin())) redirect('/login')
@@ -151,11 +154,14 @@ export default async function AdminPage({
   const selectedDay = /^\d{4}-\d{2}-\d{2}$/.test(sp.day ?? '') ? sp.day! : today
   const isToday = selectedDay === today
 
-  const splitRequested = sp.project === SPLIT_PROJECT_VALUE
   const projectRaw = Number(sp.project)
   const projectId =
-    !splitRequested && sp.project && Number.isFinite(projectRaw) ? projectRaw : undefined
-  const roleFilter = parseRoleFilter(sp.role)
+    sp.project && sp.project !== SPLIT_PROJECT_VALUE && Number.isFinite(projectRaw) ? projectRaw : undefined
+  // Default view: Notek | Miqat side by side; picking one project narrows it.
+  const splitRequested = projectId == null
+  // Miqat is mostly reposters, so side by side defaults to everyone.
+  const roleParam = sp.role ?? (splitRequested ? 'all' : undefined)
+  const roleFilter = parseRoleFilter(roleParam)
   const roleSql = roleFilterToSql(roleFilter)
 
   const filters: AdminFilters = {
@@ -186,7 +192,7 @@ export default async function AdminPage({
   const aRoleFilter = parseRoleFilter(
     sp.aRole === 'creator' || sp.aRole === 'reposter' || sp.aRole === 'all'
       ? sp.aRole
-      : sp.role,
+      : roleParam,
   )
   const aRoleSql = roleFilterToSql(aRoleFilter)
 
@@ -211,7 +217,7 @@ export default async function AdminPage({
   const pvKind = parseRoleFilter(
     sp.pvKind === 'creator' || sp.pvKind === 'reposter' || sp.pvKind === 'all'
       ? sp.pvKind
-      : sp.role,
+      : roleParam,
   )
   const pvKindSql = roleFilterToSql(pvKind)
   const pvPersonId = sp.pvPerson ? Number(sp.pvPerson) : null
@@ -238,8 +244,6 @@ export default async function AdminPage({
   const miyqatScope = selectedProject != null && isMiyqatProjectName(selectedProject.name)
   const includeAllReposters = projectId != null
   const includeAllCreators = miyqatScope
-  const miqatProject = findMiyqatProject(projectsEarly)
-  const miqatId = miqatProject?.id ?? null
 
   const tab = resolveAdminTab(sp.tab, sp.panel)
   const session = await getAdminSession()
@@ -295,14 +299,12 @@ export default async function AdminPage({
         limit: 50,
       }),
       getLeagueBoard({ from: rankFrom, to: rankTo, projectId: rankProjectId, role: rankRoleSql }),
-      miqatId != null
-        ? getLeagueBoard({
-            from: CONTEST.from,
-            to: CONTEST.to,
-            projectId: miqatId,
-            role: 'reposter',
-          })
-        : Promise.resolve(null),
+      getLeagueBoard({
+        from: CONTEST.from,
+        to: CONTEST.to,
+        projectId: null,
+        role: 'reposter',
+      }),
       getProjectViewsBoard({
         from: pvFrom,
         to: pvTo,
@@ -461,25 +463,28 @@ export default async function AdminPage({
   async function loadSplitSide(project: Project) {
     const pid = project.id
     const wantsPeople = tab === 'today' || tab === 'people'
+    // Each column keeps its own filters; picking one on Miqat leaves Notek alone.
+    const role = parseRoleFilter(sp[sideRoleKey(pid)] ?? 'all')
+    const sideRoleSql = roleFilterToSql(role)
+    const sideFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp[`aFrom${pid}`] ?? '') ? sp[`aFrom${pid}`]! : aFrom
+    const sideTo = /^\d{4}-\d{2}-\d{2}$/.test(sp[`aTo${pid}`] ?? '') ? sp[`aTo${pid}`]! : aTo
+    const range = { from: sideFrom, to: sideTo, projectId: pid, role: sideRoleSql }
     const [base, sideAttendance, sideSubmissions, sideAnalytics] = await Promise.all([
       wantsPeople
-        ? getCreatorsWithProgressOnDate(selectedDay, pid, roleSql, {
-            includeAllReposters: true,
-            includeAllCreators: isMiyqatProjectName(project.name),
-          })
+        ? getCreatorsWithProgressOnDate(selectedDay, pid, sideRoleSql, { projectMembersOnly: true })
         : Promise.resolve([] as CreatorProgress[]),
       tab === 'today'
         ? getAttendanceForDay(selectedDay, pid)
         : Promise.resolve([] as AttendancePerson[]),
       tab === 'today'
-        ? getAdminSubmissions({ ...filters, projectId: pid })
+        ? getAdminSubmissions({ ...filters, projectId: pid, role: sideRoleSql })
         : Promise.resolve([] as AdminSubmissionRow[]),
       tab === 'analytics'
         ? Promise.all([
-            getDailyAnalytics({ from: aFrom, to: aTo, projectId: pid, role: aRoleSql }),
-            getDailyViewsByCreator({ from: aFrom, to: aTo, projectId: pid, role: aRoleSql }),
-            getViewsLeaderboard({ from: aFrom, to: aTo, projectId: pid, role: aRoleSql, limit: 1000 }),
-            getViewsSummary({ from: aFrom, to: aTo, projectId: pid, role: aRoleSql }),
+            getDailyAnalytics(range),
+            getDailyViewsByCreator(range),
+            getViewsLeaderboard({ ...range, limit: 1000 }),
+            getViewsSummary(range),
           ]).then(([daily, byCreatorDaily, leaderboard, summary]) => ({
             daily,
             byCreatorDaily,
@@ -506,11 +511,14 @@ export default async function AdminPage({
     const ids = new Set(base.map((c) => c.id))
     const attention = sideAttendance.filter((p) => {
       if (!ids.has(p.id)) return false
-      if (roleFilter === 'creator' || roleFilter === 'reposter') return p.role === roleFilter
+      if (role === 'creator' || role === 'reposter') return p.role === role
       return true
     })
     return {
       project,
+      role,
+      analyticsFrom: sideFrom,
+      analyticsTo: sideTo,
       creators: active,
       paused: tracked.filter((c) => c.paused_at),
       postedPeople: active.filter((c) => c.today_instagram + c.today_tiktok > 0).length,
@@ -526,6 +534,17 @@ export default async function AdminPage({
     splitProjects.length === 2 ? await Promise.all(splitProjects.map(loadSplitSide)) : null
   const splitSummary = (part: (side: NonNullable<typeof splitData>[number]) => string) =>
     (splitData ?? []).map((side) => `${side.project.name} ${part(side)}`).join(' · ')
+  const sideControls = (side: NonNullable<typeof splitData>[number]) => (
+    <SideRoleToggle
+      projectId={side.project.id}
+      value={side.role}
+      labels={{
+        all: t('roleFilterAll'),
+        creators: t('roleFilterCreators'),
+        reposters: t('roleFilterReposters'),
+      }}
+    />
+  )
   const creators = everyone.filter((c) => !c.paused_at)
   const pausedCreators = everyone.filter((c) => c.paused_at)
   const creatorIds = new Set(creatorsBase.map((c) => c.id))
@@ -656,13 +675,15 @@ export default async function AdminPage({
               locale={locale}
               labels={{ english: t('english'), arabic: t('arabic') }}
             />
-            <RoleSelector
-              labels={{
-                creators: t('roleFilterCreators'),
-                reposters: t('roleFilterReposters'),
-                all: t('roleFilterAll'),
-              }}
-            />
+            {splitData ? null : (
+              <RoleSelector
+                labels={{
+                  creators: t('roleFilterCreators'),
+                  reposters: t('roleFilterReposters'),
+                  all: t('roleFilterAll'),
+                }}
+              />
+            )}
             <ProjectSelector projects={projects} />
             <LogoutButton label={t('logOut')} />
           </div>
@@ -749,11 +770,16 @@ export default async function AdminPage({
                       summary={side.analytics.summary}
                       projects={projects}
                       projectId={side.project.id}
-                      role={aRoleFilter}
+                      role={side.role}
                       today={today}
-                      defaultFrom={aFrom}
-                      defaultTo={aTo}
+                      defaultFrom={side.analyticsFrom}
+                      defaultTo={side.analyticsTo}
                       labels={analyticsLabels}
+                      urlKeys={{
+                        from: `aFrom${side.project.id}`,
+                        to: `aTo${side.project.id}`,
+                        role: sideRoleKey(side.project.id),
+                      }}
                     />
                   ) : null,
                 }))}
@@ -780,7 +806,7 @@ export default async function AdminPage({
             summary: contestBoard?.rows[0]
               ? formatNumber(contestBoard.rows[0].views)
               : '0',
-            hint: `${CONTEST.from.slice(5)}→${CONTEST.to.slice(5)} · Miqat`,
+            hint: `${CONTEST.from.slice(5)}→${CONTEST.to.slice(5)} · ${projects.map((p) => p.name).join(' + ')}`,
             children: (
               <MiqatContestPanel
                 board={contestBoard}
@@ -935,10 +961,11 @@ export default async function AdminPage({
                       key: side.project.id,
                       title: side.project.name,
                       summary: `${side.postedPeople}/${side.creators.length} ${t('active')}`,
+                      controls: sideControls(side),
                       children: (
                         <TodayProgress
                           creators={side.creators}
-                          linkRole={roleFilter}
+                          linkRole={side.role}
                           projectId={side.project.id}
                         />
                       ),
@@ -1009,13 +1036,14 @@ export default async function AdminPage({
                     side.attentionCount === 0
                       ? t('allClear')
                       : `${side.attentionCount} ${t('behind')}`,
+                  controls: sideControls(side),
                   children: (
                     <AttentionBoard
                       people={side.attention}
                       selectedDay={selectedDay}
                       today={today}
                       dayLabel={isToday ? t('today') : formatDate(selectedDay)}
-                      linkRole={roleFilter}
+                      linkRole={side.role}
                       projectId={side.project.id}
                       labels={attentionLabels}
                     />
@@ -1079,11 +1107,12 @@ export default async function AdminPage({
                       key: side.project.id,
                       title: side.project.name,
                       summary: `${side.submissions.length} ${t('videos')} · ${formatNumber(side.views)} ${t('views')}`,
+                      controls: sideControls(side),
                       children: (
                         <SubmissionsTable
                           submissions={side.submissions}
                           emptyLabel={t('noVideosMatch')}
-                          linkRole={roleFilter}
+                          linkRole={side.role}
                           projectId={side.project.id}
                           linkFrom="videos"
                           editableProject
@@ -1266,12 +1295,13 @@ export default async function AdminPage({
                     key: side.project.id,
                     title: side.project.name,
                     summary: `${side.creators.length} ${peopleNoun}`,
+                    controls: sideControls(side),
                     children: (
                       <CreatorsManager
                         creators={side.creators}
                         pausedCreators={side.paused}
                         projects={projects}
-                        roleFilter={roleFilter}
+                        roleFilter={side.role}
                         today={today}
                         currentProjectId={side.project.id}
                         isOwner={showBusiness}

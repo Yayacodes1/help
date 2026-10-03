@@ -27,6 +27,11 @@ export function findMiyqatProject<T extends { id: number; name: string }>(
 /** `?project=split`: Notek and Miqat shown left/right instead of one project. */
 export const SPLIT_PROJECT_VALUE = 'split'
 
+/** URL key for one project's people filter in the side-by-side view. */
+export function sideRoleKey(projectId: number): string {
+  return `role${projectId}`
+}
+
 /** Notek left, Miqat right; falls back to the first two projects. */
 export function splitProjectPair<T extends { id: number; name: string }>(projects: T[]): T[] {
   const notek = projects.find((p) => isNotekProjectName(p.name))

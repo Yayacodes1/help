@@ -15,15 +15,18 @@ export function RoleSelector({
 }) {
   const router = useRouter()
   const params = useSearchParams()
-  const current = (params.get('role') as RoleFilter | null) ?? 'creator'
+  const project = params.get('project')
+  // Side by side (no single project) defaults to everyone; one project defaults to creators.
+  const fallback: RoleFilter = project && project !== 'split' ? 'creator' : 'all'
+  const current = (params.get('role') as RoleFilter | null) ?? fallback
   const value =
     current === 'reposter' || current === 'all' || current === 'creator'
       ? current
-      : 'creator'
+      : fallback
 
   function onChange(nextValue: string) {
     const next = new URLSearchParams(params.toString())
-    if (nextValue === 'creator') next.delete('role')
+    if (nextValue === fallback) next.delete('role')
     else next.set('role', nextValue)
     // Reset creator filter when switching role so it stays consistent.
     next.delete('creator')
