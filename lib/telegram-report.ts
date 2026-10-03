@@ -264,52 +264,62 @@ export function buildMessageTemplates(report: WindowReport, today: string): stri
 export const REPORT_BUTTONS = {
   inline_keyboard: [
     [
-      { text: '🔄 Today so far', callback_data: 'report:live' },
-      { text: '📋 Yesterday (full day)', callback_data: 'report:final' },
+      { text: '📊 Today', callback_data: 'report:live' },
+      { text: '📋 Yesterday', callback_data: 'report:final' },
     ],
     [
-      { text: '✉️ Messages · today', callback_data: 'msgs:live' },
-      { text: '✉️ Messages · yesterday', callback_data: 'msgs:final' },
+      { text: '✉️ Today', callback_data: 'msgs:live' },
+      { text: '✉️ Yesterday', callback_data: 'msgs:final' },
     ],
   ],
 }
 
-const MESSAGES_HINT =
-  'Copy-ready messages for each person: send /messages (today) or /messages_yesterday, or tap a button below.'
+export const BUTTON_GUIDE =
+  'WHAT YOU CAN DO\n' +
+  '📊 Today — today so far: who posted and who still needs to (last 3 days). Or type /update\n' +
+  '📋 Yesterday — full report for yesterday (last 3 days). Or type /report\n' +
+  '✉️ Today — only the copy-ready Arabic messages for everyone still behind today. Or type /messages\n' +
+  '✉️ Yesterday — only the messages for everyone who missed yesterday. Or type /messages_yesterday'
 
 /**
- * Two info messages: reposters, then creators (with the buttons).
- * `withMessages`: then one Arabic template message per person who needs a nudge.
+ * Default: two info messages, reposters then creators (guide + buttons on the last one).
+ * `messagesOnly`: skip the info; send one Arabic template per person who needs a nudge, then the guide.
  */
 export async function sendAttendanceReports(
   opToday: string,
   mode: ReportMode,
-  opts: { chatId?: string | number; withMessages?: boolean } = {},
+  opts: { chatId?: string | number; messagesOnly?: boolean } = {},
 ): Promise<{ ok: boolean; day: string; error?: string; skipped?: boolean; messages?: number }> {
   const { telegramConfigured, sendTelegramMessage } = await import('@/lib/telegram')
   const reportDay = mode === 'live' ? opToday : lastCompletedOperationalDay(opToday)
   if (!telegramConfigured()) return { ok: true, day: reportDay, skipped: true }
-  const { chatId, withMessages = false } = opts
+  const { chatId, messagesOnly = false } = opts
 
   const report = await buildWindowReport(opToday, mode)
-  const reposters = await sendTelegramMessage(formatRoleMessage(report, 'reposter'), { chatId })
-  const creators = await sendTelegramMessage(
-    withMessages ? formatRoleMessage(report, 'creator') : `${formatRoleMessage(report, 'creator')}\n\n${MESSAGES_HINT}`,
-    { chatId, replyMarkup: REPORT_BUTTONS },
-  )
-  const errors = [reposters.error, creators.error]
+
+  if (!messagesOnly) {
+    const reposters = await sendTelegramMessage(formatRoleMessage(report, 'reposter'), { chatId })
+    const creators = await sendTelegramMessage(`${formatRoleMessage(report, 'creator')}\n\n${BUTTON_GUIDE}`, {
+      chatId,
+      replyMarkup: REPORT_BUTTONS,
+    })
+    const error = [reposters.error, creators.error].filter(Boolean).join(' · ') || undefined
+    return { ok: !error, day: report.reportDay, error }
+  }
+
+  const templates = buildMessageTemplates(report, opToday)
+  const dayLabel = `${enDay(report.reportDay)}${mode === 'live' ? ' so far' : ' (full day)'}`
+  const errors: Array<string | undefined> = []
   let sent = 0
 
-  if (withMessages) {
-    const templates = buildMessageTemplates(report, opToday)
+  if (templates.length > 0) {
     const reposterCount = report.people.filter((p) => p.role === 'reposter' && needsMessage(p)).length
-    const header =
-      templates.length === 0
-        ? `✉️ No messages needed — everyone is done for ${enDay(report.reportDay)}${mode === 'live' ? ' so far' : ''}.`
-        : `✉️ MESSAGES TO SEND · ${enDay(report.reportDay)}${mode === 'live' ? ' so far' : ' (full day)'}\n` +
-          `${templates.length} people (${reposterCount} reposters, ${templates.length - reposterCount} creators).\n` +
-          'Each one is its own message — tap the grey box to copy it.'
-    const head = await sendTelegramMessage(header, { chatId })
+    const head = await sendTelegramMessage(
+      `✉️ MESSAGES · ${dayLabel}\n` +
+        `${templates.length} people (${reposterCount} reposters, ${templates.length - reposterCount} creators). ` +
+        'Tap the grey box to copy.',
+      { chatId },
+    )
     errors.push(head.error)
     // Groups allow ~20 bot messages a minute; private chats are much faster.
     const gapMs = String(chatId ?? process.env.TELEGRAM_CHAT_ID ?? '').startsWith('-') ? 3100 : 400
@@ -321,6 +331,13 @@ export async function sendAttendanceReports(
     }
   }
 
+  const footer =
+    templates.length === 0
+      ? `✉️ No messages needed — everyone is done for ${dayLabel}.\n\n${BUTTON_GUIDE}`
+      : `✅ That's all ${templates.length} messages.\n\n${BUTTON_GUIDE}`
+  const tail = await sendTelegramMessage(footer, { chatId, replyMarkup: REPORT_BUTTONS })
+  errors.push(tail.error)
+
   const error = errors.filter(Boolean).join(' · ') || undefined
-  return { ok: !error, day: report.reportDay, error, messages: withMessages ? sent : undefined }
+  return { ok: !error, day: report.reportDay, error, messages: sent }
 }

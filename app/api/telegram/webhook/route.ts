@@ -1,7 +1,7 @@
 import { NextResponse, after } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { answerCallbackQuery, sendTelegramMessage, telegramWebhookSecret } from '@/lib/telegram'
-import { REPORT_BUTTONS, sendAttendanceReports, type ReportMode } from '@/lib/telegram-report'
+import { BUTTON_GUIDE, REPORT_BUTTONS, sendAttendanceReports, type ReportMode } from '@/lib/telegram-report'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -14,11 +14,7 @@ type Update = {
 type Request_ = { mode: ReportMode; withMessages: boolean } | 'help' | null
 
 const HELP =
-  'Tap a button or send a command:\n' +
-  '/update — today so far (who posted, who still needs to)\n' +
-  '/report — yesterday, full day\n' +
-  '/messages — today so far + a copy-ready Arabic message for each person who still needs to post\n' +
-  '/messages_yesterday — the same for yesterday (full day)\n\n' +
+  `${BUTTON_GUIDE}\n\n` +
   'Automatic (info only, no messages): 5:00 PM Riyadh (today so far) and 12:00 AM Riyadh (full day).'
 
 function secretMatches(header: string | null): boolean {
@@ -90,7 +86,7 @@ export async function POST(req: Request) {
         await ensureCreatorTrackingColumns()
         const result = await sendAttendanceReports(await getOperationalToday(), mode, {
           chatId,
-          withMessages,
+          messagesOnly: withMessages,
         })
         if (!result.ok && result.error) {
           await sendTelegramMessage(`Could not send everything: ${result.error.slice(0, 500)}`, { chatId })
