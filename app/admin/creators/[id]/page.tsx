@@ -314,6 +314,7 @@ export default async function CreatorDetailPage({
                   creatorId={creator.id}
                   today={today}
                   comparisons={comparisons}
+                  projects={projects}
                 />
                 <BreaksManager creatorId={creator.id} today={today} breaks={breaks} />
               </div>
@@ -416,11 +417,6 @@ export default async function CreatorDetailPage({
                 creatorId={creator.id}
                 today={today}
                 projects={projects}
-                defaultProjectId={
-                  sp.project && Number.isFinite(Number(sp.project))
-                    ? Number(sp.project)
-                    : creator.project_id
-                }
                 submissions={submissions.map((s) => ({
                   ...s,
                   creator_name: creator.name,

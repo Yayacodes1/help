@@ -3,10 +3,11 @@
 import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Trash2 } from 'lucide-react'
-import { deleteOwnSubmission } from '@/app/actions/creator'
+import { deleteOwnSubmission, updateOwnSubmissionProject } from '@/app/actions/creator'
 import { CopyLink } from '@/components/copy-link'
 import { formatDateTime } from '@/lib/format'
 import { PLATFORM_META } from '@/lib/platforms'
+import { projectToneClass } from '@/lib/project-scope'
 import type { Submission } from '@/lib/db'
 import type { Locale } from '@/lib/i18n'
 
@@ -14,10 +15,14 @@ export function TodayVideos({
   username,
   submissions,
   locale,
+  projects = [],
+  changeProjectLabel = 'Change project',
 }: {
   username: string
   submissions: Array<Submission & { project_name?: string | null }>
   locale: Locale
+  projects?: { id: number; name: string }[]
+  changeProjectLabel?: string
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -42,8 +47,32 @@ export function TodayVideos({
             <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
               {meta.ar}
             </span>
-            {s.project_name ? (
-              <span className="shrink-0 rounded-full border border-border px-2 py-1 text-[11px] text-muted-foreground">
+            {projects.length > 0 ? (
+              <select
+                value={s.project_id ?? ''}
+                disabled={pending}
+                aria-label={changeProjectLabel}
+                onChange={(e) => {
+                  const next = Number(e.target.value)
+                  if (!Number.isFinite(next) || next <= 0) return
+                  startTransition(async () => {
+                    await updateOwnSubmissionProject(username, s.id, next)
+                    router.refresh()
+                  })
+                }}
+                className={`h-7 shrink-0 rounded-full border px-2 text-[11px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 ${projectToneClass(s.project_name)}`}
+              >
+                {s.project_id == null ? <option value="">—</option> : null}
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            ) : s.project_name ? (
+              <span
+                className={`shrink-0 rounded-full border px-2 py-1 text-[11px] ${projectToneClass(s.project_name)}`}
+              >
                 {s.project_name}
               </span>
             ) : null}

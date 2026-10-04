@@ -26,7 +26,7 @@ import { getLeagueBoard } from '@/lib/ranking'
 import { RankingBoard } from '@/components/ranking-board'
 import { ContestPodium } from '@/components/contest-podium'
 import { CONTEST, isContestLive } from '@/lib/contest'
-import { findMiyqatProject, isMiyqatProjectName } from '@/lib/project-scope'
+import { findMiyqatProject, isMiyqatProjectName, projectToneClass } from '@/lib/project-scope'
 import { StrikeBanner } from '@/components/strike-banner'
 import { operationalDayFromIso } from '@/lib/operational-day'
 import { getCreatorStrikeSummary, syncReposterStrikes } from '@/lib/strikes'
@@ -251,6 +251,20 @@ export default async function SubmitPage({
                 } ${t('videosWord')}`
               : `${t('daysCommitment')} ${consistency.hitDays}/${consistency.requiredDays} · ${row.videoCount} ${t('videosWord')}`}
         </p>
+
+        {row.projects.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {row.projects.map((p) => (
+              <span
+                key={p.projectId}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-medium tabular-nums ${projectToneClass(p.projectName)}`}
+              >
+                {p.projectName} {p.posted}
+                {p.target > 0 ? `/${p.target}` : ''} {t('videosWord')}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     )
   }
@@ -326,7 +340,6 @@ export default async function SubmitPage({
               username={username}
               fields={fields}
               projects={projects}
-              defaultProjectId={creator.project_id}
               videoDate={date}
               minDate={rangeStart}
               maxDate={rangeEnd}
@@ -336,6 +349,7 @@ export default async function SubmitPage({
                 pasteLinks: t('pasteLinks'),
                 pasteHint: t('pasteLinksHint'),
                 send: t('submitVideos'),
+                sendTo: t('submitVideosTo'),
                 sending: '…',
                 project: t('submitProject'),
                 projectHint: t('submitProjectHint'),
@@ -369,6 +383,8 @@ export default async function SubmitPage({
               username={username}
               submissions={submissions}
               locale={locale}
+              projects={projects}
+              changeProjectLabel={t('changeProject')}
             />
           </section>
         </div>

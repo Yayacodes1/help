@@ -10,6 +10,17 @@ export function isNotekProjectName(name: string | null | undefined): boolean {
   return n.includes('not')
 }
 
+/** Badge/select colors so Notek and Miqat rows are easy to tell apart. */
+export function projectToneClass(name: string | null | undefined): string {
+  if (isMiyqatProjectName(name)) {
+    return 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
+  }
+  if (isNotekProjectName(name)) {
+    return 'border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200'
+  }
+  return 'border-border bg-background text-muted-foreground'
+}
+
 export function findProjectById<T extends { id: number; name: string }>(
   projects: T[],
   projectId: number | null | undefined,

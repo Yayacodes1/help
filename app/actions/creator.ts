@@ -53,8 +53,12 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   if (!Number.isFinite(projectId) || projectId <= 0) {
     return { ok: false, message: 'Choose Notek or Miqat before posting.' }
   }
-  const projects = (await sql`SELECT id FROM projects WHERE id = ${projectId} LIMIT 1`) as { id: number }[]
+  const projects = (await sql`SELECT id, name FROM projects WHERE id = ${projectId} LIMIT 1`) as {
+    id: number
+    name: string
+  }[]
   if (!projects[0]) return { ok: false, message: 'That project is not available.' }
+  const projectName = projects[0].name
 
   // Prefer unified "links" field; fall back to legacy per-platform fields.
   const unified = (formData.get('links') ?? '').toString()
@@ -173,7 +177,7 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   const tt = fresh.filter((r) => r.platform === 'tiktok').length
   return {
     ok: true,
-    message: `Added ${fresh.length} video${fresh.length > 1 ? 's' : ''} (IG ${ig} · TT ${tt}).${skipped}${blockedNote}`,
+    message: `Added ${fresh.length} video${fresh.length > 1 ? 's' : ''} to ${projectName} (IG ${ig} · TT ${tt}).${skipped}${blockedNote}`,
     blocked: blocked.length,
   }
 }
@@ -186,4 +190,27 @@ export async function deleteOwnSubmission(username: string, submissionId: number
     WHERE id = ${submissionId} AND creator_id = ${creator.id}
   `
   revalidatePath('/submit')
+}
+
+/** Creators can only move their own videos from today or yesterday. */
+export async function updateOwnSubmissionProject(
+  username: string,
+  submissionId: number,
+  projectId: number,
+) {
+  const creator = await getCreatorByName(normalizeHandle(username))
+  if (!creator) return
+  const [calendarToday, serverNow] = await Promise.all([getServerToday(), getServerNowIso()])
+  const opToday = operationalDayFromIso(serverNow)
+  const earliest = [addDays(calendarToday, -1), addDays(opToday, -1)].sort()[0]
+  await sql`
+    UPDATE submissions
+    SET project_id = ${projectId}
+    WHERE id = ${submissionId}
+      AND creator_id = ${creator.id}
+      AND video_date >= ${earliest}::date
+      AND EXISTS (SELECT 1 FROM projects WHERE id = ${projectId})
+  `
+  revalidatePath('/submit')
+  revalidatePath('/admin')
 }

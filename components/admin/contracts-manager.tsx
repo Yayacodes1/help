@@ -3,6 +3,7 @@
 import { useState, useTransition, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 import type { ContractCompareRow } from '@/lib/queries'
+import type { Project } from '@/lib/db'
 import type { PlatformsMode } from '@/lib/platforms-mode'
 import {
   createContract,
@@ -125,6 +126,33 @@ function QuotaFields({
         TT {totalLabel}
         <input type="number" min={0} name="target_tiktok" defaultValue={targetTt} className={inputClass} />
       </label>
+    </div>
+  )
+}
+
+function ProjectTargetFields({
+  projects,
+  targets,
+}: {
+  projects: Project[]
+  targets?: Record<string, number> | null
+}) {
+  if (projects.length === 0) return null
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {projects.map((p) => (
+        <label key={p.id} className="flex flex-col gap-1 text-xs text-muted-foreground">
+          {p.name} videos
+          <input
+            type="number"
+            min={0}
+            name={`project_target_${p.id}`}
+            defaultValue={targets?.[String(p.id)] || ''}
+            placeholder="0"
+            className={inputClass}
+          />
+        </label>
+      ))}
     </div>
   )
 }
@@ -487,10 +515,12 @@ export function ContractsManager({
   creatorId,
   today,
   comparisons,
+  projects,
 }: {
   creatorId: number
   today: string
   comparisons: ContractCompareRow[]
+  projects: Project[]
 }) {
   const [pending, startTransition] = useTransition()
   const stickyBase =
@@ -613,6 +643,17 @@ export function ContractsManager({
                     {' · '}
                     daily IG {contract.goal_instagram}/d · TT {contract.goal_tiktok}/d
                   </p>
+                  {row.projects.length > 0 ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      {row.projects
+                        .map((p) =>
+                          p.target > 0
+                            ? `${p.projectName} ${p.posted}/${p.target} videos`
+                            : `${p.projectName} ${p.posted} videos`,
+                        )
+                        .join(' · ')}
+                    </p>
+                  ) : null}
                   <p className="text-[11px] font-medium text-foreground">{paySummaryLine(row)}</p>
                   {halves.length === 2 ? (
                     <p className="text-[11px] text-muted-foreground">
@@ -667,6 +708,12 @@ export function ContractsManager({
             <QuotaFields variant="current" />
           </FormSection>
           <FormSection
+            title="Videos per project"
+            hint="How many videos this person posts for each project during this contract."
+          >
+            <ProjectTargetFields projects={projects} />
+          </FormSection>
+          <FormSection
             title="Pay (base)"
             hint="Fixed pay for the period. Flat bonus is optional."
           >
@@ -711,6 +758,12 @@ export function ContractsManager({
             </FormSection>
             <FormSection title="Videos" hint="Daily posting and IG / TikTok goals only.">
               <QuotaFields variant="current" />
+            </FormSection>
+            <FormSection
+              title="Videos per project"
+              hint="How many videos this person posts for each project during this contract."
+            >
+              <ProjectTargetFields projects={projects} />
             </FormSection>
             <FormSection title="Pay (base)" hint="Fixed pay for the period. Flat bonus is optional.">
               <PayFields requireBase variant="current" />
@@ -814,6 +867,15 @@ export function ContractsManager({
                           targetIg={contract.target_instagram}
                           targetTt={contract.target_tiktok}
                           variant={pastVariant ? 'past' : 'current'}
+                        />
+                      </FormSection>
+                      <FormSection
+                        title="Videos per project"
+                        hint="How many videos this person posts for each project during this contract."
+                      >
+                        <ProjectTargetFields
+                          projects={projects}
+                          targets={contract.project_targets}
                         />
                       </FormSection>
                       <FormSection

@@ -131,6 +131,8 @@ export type Contract = {
   commission_reels: number | null
   /** Max active strikes allowed this contract before corrective action (default 3). */
   max_strikes: number
+  /** Videos promised per project over the contract, keyed by project id (e.g. Notek 20, Miqat 10). */
+  project_targets?: Record<string, number> | null
 }
 
 export type CommissionSettings = {

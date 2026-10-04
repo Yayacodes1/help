@@ -37,6 +37,7 @@ type Labels = {
   pasteLinks: string
   pasteHint: string
   send: string
+  sendTo: string
   sending: string
   project: string
   projectHint: string
@@ -52,7 +53,6 @@ export function SubmitForm({
   fields,
   labels,
   projects,
-  defaultProjectId,
   videoDate,
   minDate,
   maxDate,
@@ -63,7 +63,6 @@ export function SubmitForm({
   fields: PlatformField[]
   labels: Labels
   projects: { id: number; name: string }[]
-  defaultProjectId?: number | null
   videoDate: string
   minDate: string
   maxDate: string
@@ -74,10 +73,9 @@ export function SubmitForm({
   const formRef = useRef<HTMLFormElement>(null)
   const action = submitVideos.bind(null, username)
   const [state, formAction, pending] = useActionState<State, FormData>(action, null)
-  const [projectId, setProjectId] = useState<string>(
-    defaultProjectId != null ? String(defaultProjectId) : '',
-  )
+  const [projectId, setProjectId] = useState<string>('')
   const [autoPicked, setAutoPicked] = useState<string | null>(null)
+  const projectName = projects.find((p) => String(p.id) === projectId)?.name ?? null
 
   function onLinksChange(text: string) {
     const found = handlesInLinks(text)
@@ -97,6 +95,8 @@ export function SubmitForm({
       formRef.current?.reset()
       if (dateInput && keepDate) dateInput.value = keepDate
       if (timeInput && keepTime) timeInput.value = keepTime
+      setProjectId('')
+      setAutoPicked(null)
       router.refresh()
     }
   }, [state, router])
@@ -249,7 +249,7 @@ export function SubmitForm({
         className="flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-60"
       >
         <Send className="h-4 w-4" />
-        {pending ? labels.sending : labels.send}
+        {pending ? labels.sending : projectName ? `${labels.sendTo} ${projectName}` : labels.send}
       </button>
     </form>
   )

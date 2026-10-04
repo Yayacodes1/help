@@ -9,6 +9,7 @@ import { CopyLink } from '@/components/copy-link'
 import { formatDateTime, formatNumber } from '@/lib/format'
 import { PLATFORM_META } from '@/lib/platforms'
 import { adminPersonHref } from '@/lib/admin-href'
+import { projectToneClass } from '@/lib/project-scope'
 import type { Project } from '@/lib/db'
 
 export function SubmissionsTable({
@@ -113,8 +114,14 @@ export function SubmissionsTable({
                         projects={projects}
                         noneLabel={noProjectLabel}
                       />
+                    ) : s.project_name ? (
+                      <span
+                        className={`rounded-md border px-2 py-1 text-xs font-medium ${projectToneClass(s.project_name)}`}
+                      >
+                        {s.project_name}
+                      </span>
                     ) : (
-                      s.project_name ?? '—'
+                      '—'
                     )}
                   </td>
                 )}

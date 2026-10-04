@@ -442,7 +442,8 @@ export async function getContractsForCreator(creatorId: number): Promise<Contrac
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
            commission_reels,
-           COALESCE(max_strikes, 3)::int AS max_strikes
+           COALESCE(max_strikes, 3)::int AS max_strikes,
+           COALESCE(project_targets, '{}'::jsonb) AS project_targets
     FROM contracts
     WHERE creator_id = ${creatorId}
     ORDER BY start_date DESC, id DESC
@@ -467,7 +468,8 @@ export async function getActiveContract(
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
            commission_reels,
-           COALESCE(max_strikes, 3)::int AS max_strikes
+           COALESCE(max_strikes, 3)::int AS max_strikes,
+           COALESCE(project_targets, '{}'::jsonb) AS project_targets
     FROM contracts
     WHERE creator_id = ${creatorId}
       AND start_date <= ${today}::date
@@ -491,7 +493,8 @@ export async function getActiveContract(
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
            commission_reels,
-           COALESCE(max_strikes, 3)::int AS max_strikes
+           COALESCE(max_strikes, 3)::int AS max_strikes,
+           COALESCE(project_targets, '{}'::jsonb) AS project_targets
     FROM contracts
     WHERE creator_id = ${creatorId}
     ORDER BY start_date DESC, id DESC
@@ -671,6 +674,33 @@ export async function getContractVideoCounts(
   return rows[0] ?? { instagram: 0, tiktok: 0, total: 0 }
 }
 
+/** Videos posted per project in a contract window, keyed by project id. */
+export async function getContractProjectCounts(
+  creatorId: number,
+  start: string,
+  end: string,
+): Promise<Map<number, number>> {
+  const window = contractVideoWindow(start, end)
+  const rows = (await sql`
+    SELECT project_id, COUNT(*)::int AS total
+    FROM submissions
+    WHERE creator_id = ${creatorId}
+      AND project_id IS NOT NULL
+      AND video_date >= ${window.start}::date
+      AND video_date <= ${window.end}::date
+    GROUP BY project_id
+  `) as { project_id: number; total: number }[]
+  return new Map(rows.map((r) => [r.project_id, r.total]))
+}
+
+export type ContractProjectProgress = {
+  projectId: number
+  projectName: string
+  posted: number
+  /** 0 = no number set for this project on the contract */
+  target: number
+}
+
 export type ContractCompareRow = {
   contract: Contract
   consistency: ConsistencySummary
@@ -703,6 +733,8 @@ export type ContractCompareRow = {
    * Empty when the span is too short for two waves.
    */
   halves: ContractHalfStatus[]
+  /** Per-project video promise vs. posted (projects with a target or any posts). */
+  projects: ContractProjectProgress[]
 }
 
 export function targetVideoTotal(contract: Contract): number {
@@ -846,8 +878,11 @@ export async function getContractComparisons(
   creator: Creator,
   today: string,
 ): Promise<ContractCompareRow[]> {
-  const contracts = await getContractsForCreator(creator.id)
-  const active = await getActiveContract(creator.id, today)
+  const [contracts, active, allProjects] = await Promise.all([
+    getContractsForCreator(creator.id),
+    getActiveContract(creator.id, today),
+    getAllProjects(),
+  ])
   const yearEnd = yearRange(today).end
   const everyDays =
     creator.pay_every_days && creator.pay_every_days > 0
@@ -870,6 +905,20 @@ export async function getContractComparisons(
         contract.start_date,
         windowEnd,
       )
+      const projectCounts = await getContractProjectCounts(
+        creator.id,
+        contract.start_date,
+        windowEnd,
+      )
+      const projectTargets = contract.project_targets ?? {}
+      const projects: ContractProjectProgress[] = allProjects
+        .map((p) => ({
+          projectId: p.id,
+          projectName: p.name,
+          posted: projectCounts.get(p.id) ?? 0,
+          target: Math.max(0, Number(projectTargets[String(p.id)]) || 0),
+        }))
+        .filter((p) => p.target > 0 || p.posted > 0)
       const paidAmount = await getPaidForContract(
         creator.id,
         contract.id,
@@ -960,6 +1009,7 @@ export async function getContractComparisons(
         showBalanceDue: true,
         isActive,
         halves,
+        projects,
       }
     }),
   )

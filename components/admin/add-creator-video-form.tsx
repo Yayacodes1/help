@@ -7,13 +7,11 @@ export function AddCreatorVideoForm({
   creatorId,
   today,
   projects = [],
-  defaultProjectId,
   pickProjectLabel = 'Choose a project',
 }: {
   creatorId: number
   today: string
   projects?: Array<{ id: number; name: string }>
-  defaultProjectId?: number | null
   pickProjectLabel?: string
 }) {
   const formRef = useRef<HTMLFormElement>(null)
@@ -46,7 +44,7 @@ export function AddCreatorVideoForm({
           <select
             name="project_id"
             required
-            defaultValue={defaultProjectId ?? ''}
+            defaultValue=""
             className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label={pickProjectLabel}
           >

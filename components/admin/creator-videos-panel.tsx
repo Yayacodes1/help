@@ -30,7 +30,6 @@ export function CreatorVideosPanel({
   creatorId,
   submissions,
   projects,
-  defaultProjectId,
   emptyLabel,
   today,
   labels,
@@ -38,7 +37,6 @@ export function CreatorVideosPanel({
   creatorId: number
   submissions: Submission[]
   projects: ProjectOption[]
-  defaultProjectId?: number | null
   emptyLabel: string
   today: string
   labels: {
@@ -56,11 +54,7 @@ export function CreatorVideosPanel({
 }) {
   const [platform, setPlatform] = useState<PlatformFilter>('both')
   const orderedProjects = useMemo(() => sortProjects(projects), [projects])
-  const initialProject =
-    defaultProjectId != null && orderedProjects.some((p) => p.id === defaultProjectId)
-      ? String(defaultProjectId)
-      : 'all'
-  const [project, setProject] = useState<string>(initialProject)
+  const [project, setProject] = useState<string>('all')
 
   const counts = useMemo(() => {
     let instagram = 0
@@ -85,6 +79,16 @@ export function CreatorVideosPanel({
       viewsTt,
     }
   }, [submissions])
+
+  const projectCounts = useMemo(() => {
+    const byProject = new Map<string, number>()
+    for (const s of submissions) {
+      if (platform !== 'both' && s.platform !== platform) continue
+      const key = String(s.project_id ?? '')
+      byProject.set(key, (byProject.get(key) ?? 0) + 1)
+    }
+    return byProject
+  }, [submissions, platform])
 
   const filtered = useMemo(() => {
     return submissions.filter((s) => {
@@ -150,10 +154,12 @@ export function CreatorVideosPanel({
             className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
             aria-label={labels.pickProject}
           >
-            <option value="all">{labels.allProjects}</option>
+            <option value="all">
+              {labels.allProjects} ({activeCount})
+            </option>
             {orderedProjects.map((p) => (
               <option key={p.id} value={String(p.id)}>
-                {p.name}
+                {p.name} ({projectCounts.get(String(p.id)) ?? 0})
               </option>
             ))}
           </select>
@@ -186,7 +192,6 @@ export function CreatorVideosPanel({
         creatorId={creatorId}
         today={today}
         projects={orderedProjects}
-        defaultProjectId={defaultProjectId}
         pickProjectLabel={labels.pickProject}
       />
 
