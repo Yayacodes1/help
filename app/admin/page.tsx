@@ -161,8 +161,7 @@ export default async function AdminPage({
     sp.project && sp.project !== SPLIT_PROJECT_VALUE && Number.isFinite(projectRaw) ? projectRaw : undefined
   // Default view: Notek | Miqat side by side; picking one project narrows it.
   const splitRequested = projectId == null
-  // Miqat is mostly reposters, so side by side defaults to everyone.
-  const roleParam = sp.role ?? (splitRequested ? 'all' : undefined)
+  const roleParam = sp.role ?? 'all'
   const roleFilter = parseRoleFilter(roleParam)
   const roleSql = roleFilterToSql(roleFilter)
 
@@ -466,7 +465,7 @@ export default async function AdminPage({
     const pid = project.id
     const wantsPeople = tab === 'today' || tab === 'people'
     // Each column keeps its own filters; picking one on Miqat leaves Notek alone.
-    const role = parseRoleFilter(sp[sideRoleKey(pid)] ?? 'all')
+    const role = parseRoleFilter(sp[sideRoleKey(pid)] ?? roleParam)
     const sideRoleSql = roleFilterToSql(role)
     const sideFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp[`aFrom${pid}`] ?? '') ? sp[`aFrom${pid}`]! : aFrom
     const sideTo = /^\d{4}-\d{2}-\d{2}$/.test(sp[`aTo${pid}`] ?? '') ? sp[`aTo${pid}`]! : aTo
@@ -682,15 +681,13 @@ export default async function AdminPage({
               locale={locale}
               labels={{ english: t('english'), arabic: t('arabic') }}
             />
-            {splitData ? null : (
-              <RoleSelector
-                labels={{
-                  creators: t('roleFilterCreators'),
-                  reposters: t('roleFilterReposters'),
-                  all: t('roleFilterAll'),
-                }}
-              />
-            )}
+            <RoleSelector
+              labels={{
+                creators: t('roleFilterCreators'),
+                reposters: t('roleFilterReposters'),
+                all: t('roleFilterAll'),
+              }}
+            />
             <ProjectSelector projects={projects} />
             <LogoutButton label={t('logOut')} />
           </div>

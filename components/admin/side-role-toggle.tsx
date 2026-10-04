@@ -21,7 +21,8 @@ export function SideRoleToggle({
 
   function pick(next: RoleFilter) {
     const q = new URLSearchParams(params.toString())
-    if (next === 'all') q.delete(sideRoleKey(projectId))
+    const dashboardRole = params.get('role') ?? 'all'
+    if (next === dashboardRole) q.delete(sideRoleKey(projectId))
     else q.set(sideRoleKey(projectId), next)
     startTransition(() => router.push(`/admin?${q.toString()}`, { scroll: false }))
   }

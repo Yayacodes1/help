@@ -17,26 +17,77 @@ type WindowPerson = AttendancePerson & {
   days: Array<AttendanceStatus | null>
 }
 
+/** Per project: posted anything for that project that day. `null` = not on the team yet. */
+type ProjectDay = 'posted' | 'none' | 'break' | null
+
+type ProjectPerson = Pick<
+  AttendancePerson,
+  'id' | 'name' | 'role' | 'contractId' | 'contractStrikes' | 'maxStrikes'
+> & { days: ProjectDay[] }
+
+type ProjectSection = { id: number; name: string; people: ProjectPerson[] }
+
 export type WindowReport = {
   mode: ReportMode
   reportDay: string
   days: string[]
+  /** Everyone, all projects combined (drives the copy-ready messages). */
   people: WindowPerson[]
+  /** Who posted for each project (drives the info messages). */
+  projects: ProjectSection[]
   generatedAt: Date
 }
 
+async function buildProjectSection(
+  project: { id: number; name: string },
+  reportDay: string,
+  days: string[],
+): Promise<ProjectSection> {
+  const { getCreatorsWithProgressOnDate } = await import('@/lib/queries')
+  const [members, ...rosters] = await Promise.all([
+    getCreatorsWithProgressOnDate(reportDay, project.id, null, { projectMembersOnly: true }),
+    ...days.map((d) => getAttendanceForDay(d, project.id)),
+  ])
+  const memberIds = new Set(members.map((m) => m.id))
+  const byDay = rosters.map(
+    (r) =>
+      new Map(
+        r.map((p): [number, ProjectDay] => [
+          p.id,
+          p.status === 'break' ? 'break' : p.todayInstagram + p.todayTiktok > 0 ? 'posted' : 'none',
+        ]),
+      ),
+  )
+  const people = rosters[rosters.length - 1]
+    .filter((p) => memberIds.has(p.id))
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      role: p.role,
+      contractId: p.contractId,
+      contractStrikes: p.contractStrikes,
+      maxStrikes: p.maxStrikes,
+      days: byDay.map((m) => m.get(p.id) ?? null),
+    }))
+  return { id: project.id, name: project.name, people }
+}
+
 export async function buildWindowReport(opToday: string, mode: ReportMode): Promise<WindowReport> {
+  const { getAllProjects } = await import('@/lib/queries')
   const reportDay = mode === 'live' ? opToday : lastCompletedOperationalDay(opToday)
   const days = Array.from({ length: REPORT_WINDOW_DAYS }, (_, i) =>
     addDays(reportDay, i - (REPORT_WINDOW_DAYS - 1)),
   )
-  const rosters = await Promise.all(days.map((d) => getAttendanceForDay(d)))
+  const [rosters, projects] = await Promise.all([
+    Promise.all(days.map((d) => getAttendanceForDay(d))),
+    getAllProjects().then((list) => Promise.all(list.map((p) => buildProjectSection(p, reportDay, days)))),
+  ])
   const byDay = rosters.map((r) => new Map(r.map((p) => [p.id, p.status])))
   const people = rosters[rosters.length - 1].map((p) => ({
     ...p,
     days: byDay.map((m) => m.get(p.id) ?? null),
   }))
-  return { mode, reportDay, days, people, generatedAt: new Date() }
+  return { mode, reportDay, days, people, projects, generatedAt: new Date() }
 }
 
 function enDay(ymd: string, withWeekday = true): string {
@@ -68,31 +119,25 @@ function arJoin(items: string[]): string {
   return `${items.slice(0, -1).join('، ')} و${items[items.length - 1]}`
 }
 
-function icon(status: AttendanceStatus | null, isLiveToday: boolean): string {
-  if (status == null) return '▫️'
-  if (status === 'hit') return '✅'
-  if (status === 'partial') return '⚠️'
+function dayIcon(status: ProjectDay): string {
+  if (status == null) return '–'
+  if (status === 'posted') return '✅'
   if (status === 'break') return '🏖'
-  return isLiveToday ? '⏳' : '❌'
+  return '❌'
 }
 
-function countsLine(p: AttendancePerson): string {
-  const bits: string[] = []
-  if (p.goalInstagram > 0) bits.push(`IG ${p.todayInstagram}/${p.goalInstagram}`)
-  if (p.goalTiktok > 0) bits.push(`TT ${p.todayTiktok}/${p.goalTiktok}`)
-  if (bits.length === 0) bits.push(`IG ${p.todayInstagram}`, `TT ${p.todayTiktok}`)
-  return bits.join(' · ')
+/** "Sat Oct 3 ✅ · Fri Oct 2 ❌ · Thu Oct 1 ✅" (newest first). */
+function daysLine(statuses: ProjectDay[], days: string[]): string {
+  return days
+    .map((d, i) => `${enDay(d)} ${dayIcon(statuses[i])}`)
+    .reverse()
+    .join(' · ')
 }
 
-function missingEn(p: AttendancePerson): string {
-  const parts: string[] = []
-  if (p.goalInstagram > 0 && p.todayInstagram < p.goalInstagram) {
-    parts.push(`IG ${p.goalInstagram - p.todayInstagram}`)
-  }
-  if (p.goalTiktok > 0 && p.todayTiktok < p.goalTiktok) {
-    parts.push(`TT ${p.goalTiktok - p.todayTiktok}`)
-  }
-  return parts.join(' · ')
+function overallDay(status: AttendanceStatus | null): ProjectDay {
+  if (status == null) return null
+  if (status === 'break') return 'break'
+  return status === 'miss' ? 'none' : 'posted'
 }
 
 function missingAr(p: AttendancePerson): string {
@@ -115,25 +160,6 @@ function needsMessage(p: WindowPerson): boolean {
 /** Days in the window (before the last one) with no post at all. */
 function earlierMisses(p: WindowPerson, days: string[]): string[] {
   return days.slice(0, -1).filter((_, i) => p.days[i] === 'miss')
-}
-
-function personLine(p: WindowPerson, report: WindowReport): string {
-  const live = report.mode === 'live'
-  const icons = p.days.map((s, i) => icon(s, live && i === p.days.length - 1)).join('')
-  const last = p.days[p.days.length - 1]
-  const missedAll = p.days.every((s) => s === 'miss')
-  let detail: string
-  if (last === 'break') detail = 'on break'
-  else if (last === 'hit') detail = countsLine(p)
-  else if (last === 'partial') detail = `${countsLine(p)} (needs ${missingEn(p)})`
-  else if (missedAll) {
-    detail = live
-      ? `missed ${REPORT_WINDOW_DAYS - 1} days · nothing yet today`
-      : `no post for ${REPORT_WINDOW_DAYS} days`
-  }
-  else detail = live ? 'nothing yet today' : 'no post'
-  const strikes = p.role === 'reposter' && p.contractId != null ? ` · strikes ${p.contractStrikes}/${p.maxStrikes}` : ''
-  return `${icons} ${p.name} — ${detail}${strikes}`
 }
 
 function arabicTemplate(p: WindowPerson, report: WindowReport, today: string): string {
@@ -200,40 +226,50 @@ function splitBehind(people: WindowPerson[], report: WindowReport) {
   return { urgent, pending, fine: people.filter((p) => !needsMessage(p)) }
 }
 
-/** One English message for one role (info only; templates are sent separately). */
+function projectPersonLine(p: ProjectPerson, days: string[]): string {
+  const strikes =
+    p.role === 'reposter' && p.contractId != null ? ` · strikes ${p.contractStrikes}/${p.maxStrikes}` : ''
+  return `${p.name} — ${daysLine(p.days, days)}${strikes}`
+}
+
+/** One English message for one role: a section per project with who posted and who didn't. */
 export function formatRoleMessage(report: WindowReport, role: 'reposter' | 'creator'): string {
   const live = report.mode === 'live'
-  const people = sortForReport(report.people.filter((p) => p.role === role))
   const title = role === 'reposter' ? 'REPOSTERS' : 'CREATORS'
-  const count = (s: AttendanceStatus) => people.filter((p) => p.days[p.days.length - 1] === s).length
-
+  const day = enDay(report.reportDay)
   const lines: string[] = [
     live
-      ? `🔄 ${title} · Live update · ${enDay(report.reportDay)} so far (${riyadhTime(report.generatedAt)} Riyadh)`
-      : `📋 ${title} · Daily report · ${enDay(report.reportDay)} (closed 12:00 AM Riyadh)`,
-    `Last ${REPORT_WINDOW_DAYS} days: ${report.days.map((d) => enDay(d, false)).join(' · ')}`,
-    `✅ done · ⚠️ partial · ${live ? '⏳ not yet today · ' : ''}❌ no post · 🏖 break · ▫️ not on team yet`,
-    '',
-    `${enDay(report.reportDay, false)}${live ? ' so far' : ''}: ${people.length} ${role === 'reposter' ? 'reposters' : 'creators'} · ✅ ${count('hit')} · ⚠️ ${count('partial')} · ${live ? '⏳' : '❌'} ${count('miss')} · 🏖 ${count('break')}`,
+      ? `${role === 'creator' ? '🎬' : '🔁'} ${title} · ${day} so far (${riyadhTime(report.generatedAt)} Riyadh)`
+      : `${role === 'creator' ? '🎬' : '🔁'} ${title} · ${day} (full day)`,
   ]
 
-  if (people.length === 0) {
-    lines.push('', '(nobody)')
-    return lines.join('\n')
-  }
+  for (const project of report.projects) {
+    const people = project.people
+      .filter((p) => (role === 'reposter' ? p.role === 'reposter' : p.role !== 'reposter'))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    const last = (p: ProjectPerson) => p.days[p.days.length - 1]
+    const missed = people.filter((p) => last(p) === 'none')
+    const posted = people.filter((p) => last(p) === 'posted')
+    const away = people.filter((p) => last(p) === 'break')
 
-  const { urgent, pending, fine } = splitBehind(people, report)
-  if (urgent.length > 0) {
-    lines.push('', live ? `MISSED BEFORE + NOT DONE TODAY (${urgent.length})` : `NEEDS A MESSAGE (${urgent.length})`)
-    for (const p of urgent) lines.push(personLine(p, report))
-  }
-  if (pending.length > 0) {
-    lines.push('', `NOT DONE YET TODAY (${pending.length})`)
-    for (const p of pending) lines.push(personLine(p, report))
-  }
-  if (fine.length > 0) {
-    lines.push('', urgent.length + pending.length > 0 ? `OK (${fine.length})` : `ALL OK (${fine.length})`)
-    for (const p of fine) lines.push(personLine(p, report))
+    lines.push('', `━━ ${project.name.toUpperCase()} · ${posted.length}/${people.length - away.length} posted ━━`)
+    if (people.length === 0) {
+      lines.push('(nobody)')
+      continue
+    }
+    if (missed.length > 0) {
+      lines.push(live ? `Not posted yet today (${missed.length})` : `Didn't post (${missed.length})`)
+      for (const p of missed) lines.push(projectPersonLine(p, report.days))
+    }
+    if (posted.length > 0) {
+      if (missed.length > 0) lines.push('')
+      lines.push(`Posted (${posted.length})`)
+      for (const p of posted) lines.push(projectPersonLine(p, report.days))
+    }
+    if (away.length > 0) {
+      lines.push('', `On break (${away.length})`)
+      for (const p of away) lines.push(projectPersonLine(p, report.days))
+    }
   }
   return lines.join('\n')
 }
@@ -242,9 +278,9 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-/** One copy-ready Telegram message per person who needs a nudge (reposters first). */
+/** One copy-ready Telegram message per person who needs a nudge (creators first). */
 export function buildMessageTemplates(report: WindowReport, today: string): string[] {
-  const behind = (['reposter', 'creator'] as const).flatMap((role) => {
+  const behind = (['creator', 'reposter'] as const).flatMap((role) => {
     const { urgent, pending } = splitBehind(
       sortForReport(report.people.filter((p) => p.role === role)),
       report,
@@ -253,9 +289,9 @@ export function buildMessageTemplates(report: WindowReport, today: string): stri
   })
   return behind.map((p, i) => {
     const role = p.role === 'reposter' ? 'Reposter' : 'Creator'
-    const icons = p.days.map((s, j) => icon(s, report.mode === 'live' && j === p.days.length - 1)).join('')
     return (
-      `<b>${i + 1}/${behind.length} · ${escapeHtml(p.name)}</b> · ${role} ${icons}\n` +
+      `<b>${i + 1}/${behind.length} · ${escapeHtml(p.name)}</b> · ${role}\n` +
+      `${daysLine(p.days.map(overallDay), report.days)}\n` +
       `<pre>${escapeHtml(arabicTemplate(p, report, today))}</pre>`
     )
   })
@@ -266,23 +302,19 @@ export const REPORT_BUTTONS = {
     [
       { text: '📊 Today', callback_data: 'report:live' },
       { text: '📋 Yesterday', callback_data: 'report:final' },
-    ],
-    [
-      { text: '✉️ Today', callback_data: 'msgs:live' },
-      { text: '✉️ Yesterday', callback_data: 'msgs:final' },
+      { text: '✉️ Messages', callback_data: 'msgs:live' },
     ],
   ],
 }
 
 export const BUTTON_GUIDE =
   'WHAT YOU CAN DO\n' +
-  '📊 Today — today so far: who posted and who still needs to (last 3 days). Or type /update\n' +
-  '📋 Yesterday — full report for yesterday (last 3 days). Or type /report\n' +
-  '✉️ Today — only the copy-ready Arabic messages for everyone still behind today. Or type /messages\n' +
-  '✉️ Yesterday — only the messages for everyone who missed yesterday. Or type /messages_yesterday'
+  '📊 Today — today so far: who posted and who didn\'t, for each project (last 3 days). Or type /update\n' +
+  '📋 Yesterday — the full report for yesterday (last 3 days). Or type /report\n' +
+  '✉️ Messages — only the copy-ready Arabic messages, one per person still behind today. Or type /messages'
 
 /**
- * Default: two info messages, reposters then creators (guide + buttons on the last one).
+ * Default: two info messages, creators then reposters (guide + buttons on the last one).
  * `messagesOnly`: skip the info; send one Arabic template per person who needs a nudge, then the guide.
  */
 export async function sendAttendanceReports(
@@ -298,12 +330,12 @@ export async function sendAttendanceReports(
   const report = await buildWindowReport(opToday, mode)
 
   if (!messagesOnly) {
-    const reposters = await sendTelegramMessage(formatRoleMessage(report, 'reposter'), { chatId })
-    const creators = await sendTelegramMessage(`${formatRoleMessage(report, 'creator')}\n\n${BUTTON_GUIDE}`, {
+    const creators = await sendTelegramMessage(formatRoleMessage(report, 'creator'), { chatId })
+    const reposters = await sendTelegramMessage(`${formatRoleMessage(report, 'reposter')}\n\n${BUTTON_GUIDE}`, {
       chatId,
       replyMarkup: REPORT_BUTTONS,
     })
-    const error = [reposters.error, creators.error].filter(Boolean).join(' · ') || undefined
+    const error = [creators.error, reposters.error].filter(Boolean).join(' · ') || undefined
     return { ok: !error, day: report.reportDay, error }
   }
 
@@ -316,7 +348,7 @@ export async function sendAttendanceReports(
     const reposterCount = report.people.filter((p) => p.role === 'reposter' && needsMessage(p)).length
     const head = await sendTelegramMessage(
       `✉️ MESSAGES · ${dayLabel}\n` +
-        `${templates.length} people (${reposterCount} reposters, ${templates.length - reposterCount} creators). ` +
+        `${templates.length} people (${templates.length - reposterCount} creators, ${reposterCount} reposters). ` +
         'Tap the grey box to copy.',
       { chatId },
     )
