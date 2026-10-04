@@ -128,7 +128,20 @@ function parseContractQuotas(
     viewsThreshold: parseOptionalPositiveInt(formData.get('views_threshold')),
     viewCommissionAmount: parseOptionalAmount(formData.get('view_commission_amount')),
     commissionReels: parseOptionalPositiveInt(formData.get('commission_reels')),
+    projectTargets: JSON.stringify(parseProjectTargets(formData)),
   }
+}
+
+/** `project_target_<projectId>` inputs → `{ "<projectId>": videos }` (blank / 0 dropped). */
+function parseProjectTargets(formData: FormData): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const [key, value] of formData.entries()) {
+    const id = key.match(/^project_target_(\d+)$/)?.[1]
+    if (!id) continue
+    const n = parseGoal(value)
+    if (n > 0) out[id] = n
+  }
+  return out
 }
 
 // --- Auth ---
@@ -449,13 +462,15 @@ export async function createContract(creatorId: number, formData: FormData) {
       creator_id, name, start_date, end_date,
       goal_instagram, goal_tiktok, target_instagram, target_tiktok,
       platforms, base_amount, base_pay_cadence, commission_amount,
-      count_mode, views_threshold, view_commission_amount, commission_reels
+      count_mode, views_threshold, view_commission_amount, commission_reels,
+      project_targets
     )
     VALUES (
       ${creatorId}, ${name}, ${start}, ${end},
       ${q.goalInstagram}, ${q.goalTiktok}, ${q.targetInstagram}, ${q.targetTiktok},
       ${q.platforms}, ${q.baseAmount}, ${q.basePayCadence}, ${q.commissionAmount},
-      ${q.countMode}, ${q.viewsThreshold}, ${q.viewCommissionAmount}, ${q.commissionReels}
+      ${q.countMode}, ${q.viewsThreshold}, ${q.viewCommissionAmount}, ${q.commissionReels},
+      ${q.projectTargets}::jsonb
     )
   `
 
@@ -518,13 +533,15 @@ export async function startNewContract(creatorId: number, formData: FormData) {
       creator_id, name, start_date, end_date,
       goal_instagram, goal_tiktok, target_instagram, target_tiktok,
       platforms, base_amount, base_pay_cadence, commission_amount,
-      count_mode, views_threshold, view_commission_amount, commission_reels
+      count_mode, views_threshold, view_commission_amount, commission_reels,
+      project_targets
     )
     VALUES (
       ${creatorId}, ${name}, ${start}, ${end},
       ${q.goalInstagram}, ${q.goalTiktok}, ${q.targetInstagram}, ${q.targetTiktok},
       ${q.platforms}, ${q.baseAmount}, ${q.basePayCadence}, ${q.commissionAmount},
-      ${q.countMode}, ${q.viewsThreshold}, ${q.viewCommissionAmount}, ${q.commissionReels}
+      ${q.countMode}, ${q.viewsThreshold}, ${q.viewCommissionAmount}, ${q.commissionReels},
+      ${q.projectTargets}::jsonb
     )
   `
   revalidatePath('/admin')
@@ -631,6 +648,7 @@ export async function updateContract(id: number, creatorId: number, formData: Fo
         count_mode = ${q.countMode}, views_threshold = ${q.viewsThreshold},
         view_commission_amount = ${q.viewCommissionAmount},
         commission_reels = ${q.commissionReels},
+        project_targets = ${q.projectTargets}::jsonb,
         max_strikes = COALESCE(${maxStrikes}, max_strikes)
     WHERE id = ${id} AND creator_id = ${creatorId}
   `
@@ -941,10 +959,21 @@ export async function replaceSubmissionUrl(id: number, formData: FormData) {
   `) as { id: number; creator_id: number }[]
   if (!existing[0]) return { ok: false as const, message: 'Video not found.' }
 
+  const { findExistingVideos, resolveVideoKey } = await import('@/lib/video-key')
+  const { key } = await resolveVideoKey(url)
+  const prior = key ? (await findExistingVideos([key], { excludeId: id })).get(key) : undefined
+  if (prior) {
+    return {
+      ok: false as const,
+      message: `This video was already submitted by ${prior.creator_name} on ${prior.video_date}.`,
+    }
+  }
+
   await sql`
     UPDATE submissions
     SET url = ${url},
         platform = ${platform},
+        video_key = ${key},
         views = 0,
         views_error = NULL,
         platform_posted_at = NULL
@@ -1010,6 +1039,16 @@ export async function addCreatorSubmission(creatorId: number, formData: FormData
     return { ok: false as const, message: 'Choose Miqat or Notek for this video.' }
   }
 
+  const { findExistingVideos, resolveVideoKey, videoKeyFromUrl } = await import('@/lib/video-key')
+  const { key } = await resolveVideoKey(url)
+  const prior = key ? (await findExistingVideos([key])).get(key) : undefined
+  if (prior) {
+    return {
+      ok: false as const,
+      message: `This video was already submitted by ${prior.creator_name} on ${prior.video_date}.`,
+    }
+  }
+
   let views = 0
   let viewsError: string | null = null
   let platformPostedAt: string | null = null
@@ -1039,7 +1078,7 @@ export async function addCreatorSubmission(creatorId: number, formData: FormData
   await sql`
     INSERT INTO submissions (
       creator_id, project_id, platform, url, video_date, created_at,
-      views, views_error, platform_posted_at
+      views, views_error, platform_posted_at, video_key
     )
     VALUES (
       ${creatorId},
@@ -1050,7 +1089,8 @@ export async function addCreatorSubmission(creatorId: number, formData: FormData
       NOW(),
       ${views},
       ${viewsError},
-      ${platformPostedAt}::timestamptz
+      ${platformPostedAt}::timestamptz,
+      ${key ?? videoKeyFromUrl(finalUrl)}
     )
   `
 

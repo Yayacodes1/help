@@ -276,6 +276,7 @@ export async function ensureCreatorTrackingColumns() {
     SET base_pay_cadence = 'monthly'
     WHERE base_pay_cadence IS NULL OR base_pay_cadence = ''
   `
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS project_targets jsonb NOT NULL DEFAULT '{}'::jsonb`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS max_strikes integer NOT NULL DEFAULT 3`
   await sql`
     UPDATE contracts
@@ -286,6 +287,8 @@ export async function ensureCreatorTrackingColumns() {
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_id text`
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_index integer`
   await sql`CREATE INDEX IF NOT EXISTS submissions_batch_id_idx ON submissions (batch_id)`
+  const { ensureVideoKeyColumn } = await import('@/lib/video-key')
+  await ensureVideoKeyColumn()
 
   await sql`
     CREATE TABLE IF NOT EXISTS daily_downloads (

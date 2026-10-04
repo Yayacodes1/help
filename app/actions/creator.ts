@@ -14,6 +14,7 @@ import { redirect } from 'next/navigation'
 import { normalizeHandle, parseLoginPlatform } from '@/lib/usernames'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import { OPERATIONAL_TZ, operationalDayFromIso } from '@/lib/operational-day'
+import { findExistingVideos, resolveVideoKey, videoKeyFromUrl } from '@/lib/video-key'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const TIME_RE = /^\d{2}:\d{2}(:\d{2})?$/
@@ -93,7 +94,35 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   const videoDate = videoDateRaw
   const postTime = postTimeRaw.length === 5 ? `${postTimeRaw}:00` : postTimeRaw
 
-  for (const row of pending) {
+  // Same video can't be submitted twice (by anyone), however the link is written.
+  const keyed = await Promise.all(
+    pending.map(async (row) => ({ ...row, ...(await resolveVideoKey(row.url)) })),
+  )
+  const existing = await findExistingVideos(keyed.map((r) => r.key ?? ''))
+  const blocked: string[] = []
+  const seenKeys = new Set<string>()
+  const fresh: typeof keyed = []
+  for (const row of keyed) {
+    const prior = row.key ? existing.get(row.key) : undefined
+    if (prior) {
+      const who = prior.creator_id === creator.id ? 'by you' : 'by another account'
+      blocked.push(`• ${row.url} — already submitted ${who} on ${prior.video_date}`)
+    } else if (row.key && seenKeys.has(row.key)) {
+      blocked.push(`• ${row.url} — same video pasted twice`)
+    } else {
+      if (row.key) seenKeys.add(row.key)
+      fresh.push(row)
+    }
+  }
+  const blockedNote =
+    blocked.length > 0
+      ? `\n\n⛔ هذا الرابط تم إرساله من قبل ولن يُحسب. Already submitted — not added (${blocked.length}):\n${blocked.join('\n')}`
+      : ''
+  if (fresh.length === 0) {
+    return { ok: false, message: `لم تتم إضافة أي فيديو. Nothing was added.${blockedNote}` }
+  }
+
+  for (const row of fresh) {
     let views = 0
     let viewsError: string | null = null
     let platformPostedAt: string | null = null
@@ -119,7 +148,7 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
     await sql`
       INSERT INTO submissions (
         creator_id, project_id, platform, url, video_date, created_at,
-        views, views_error, platform_posted_at
+        views, views_error, platform_posted_at, video_key
       )
       VALUES (
         ${creator.id},
@@ -130,7 +159,8 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
         ((${videoDate}::date + ${postTime}::time) AT TIME ZONE ${OPERATIONAL_TZ}),
         ${views},
         ${viewsError},
-        ${platformPostedAt}::timestamptz
+        ${platformPostedAt}::timestamptz,
+        ${row.key ?? videoKeyFromUrl(finalUrl)}
       )
     `
   }
@@ -139,11 +169,12 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   revalidatePath('/admin')
   const skipped =
     rejected.length > 0 ? ` Skipped ${rejected.length} unrecognized link(s).` : ''
-  const ig = pending.filter((r) => r.platform === 'instagram').length
-  const tt = pending.filter((r) => r.platform === 'tiktok').length
+  const ig = fresh.filter((r) => r.platform === 'instagram').length
+  const tt = fresh.filter((r) => r.platform === 'tiktok').length
   return {
     ok: true,
-    message: `Added ${pending.length} video${pending.length > 1 ? 's' : ''} (IG ${ig} · TT ${tt}).${skipped}`,
+    message: `Added ${fresh.length} video${fresh.length > 1 ? 's' : ''} (IG ${ig} · TT ${tt}).${skipped}${blockedNote}`,
+    blocked: blocked.length,
   }
 }
 

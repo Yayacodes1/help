@@ -2,6 +2,7 @@ import 'server-only'
 import { sql } from '@/lib/db'
 import { calendarDayInTimeZone, OPERATIONAL_TZ } from '@/lib/operational-day'
 import type { FetchViewsOk } from '@/lib/tikhub'
+import { videoKeyFromUrl } from '@/lib/video-key'
 
 /** Calendar day (YYYY-MM-DD) in Riyadh from a platform publish instant. */
 export function videoDateFromPostedAt(postedAtIso: string): string {
@@ -18,12 +19,15 @@ export async function applyFetchViewsResult(
   const resolvedUrl =
     options.updateUrl && result.resolvedUrl ? result.resolvedUrl : null
 
+  const resolvedKey = resolvedUrl ? videoKeyFromUrl(resolvedUrl) : null
+
   if (resolvedUrl && postedAt) {
     await sql`
       UPDATE submissions
       SET views = ${result.views},
           views_error = NULL,
           url = ${resolvedUrl},
+          video_key = COALESCE(${resolvedKey}, video_key),
           platform_posted_at = ${postedAt}::timestamptz
       WHERE id = ${id}
     `
@@ -34,7 +38,8 @@ export async function applyFetchViewsResult(
       UPDATE submissions
       SET views = ${result.views},
           views_error = NULL,
-          url = ${resolvedUrl}
+          url = ${resolvedUrl},
+          video_key = COALESCE(${resolvedKey}, video_key)
       WHERE id = ${id}
     `
     return

@@ -193,19 +193,21 @@ export function SubmitForm({
 
       {state && (
         <p
-          className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-            state.ok
-              ? 'bg-primary/10 text-primary'
-              : 'bg-destructive/10 text-destructive'
+          className={`flex items-start gap-2 whitespace-pre-line break-words rounded-lg px-3 py-2 text-sm [overflow-wrap:anywhere] ${
+            state.ok && 'blocked' in state && state.blocked
+              ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+              : state.ok
+                ? 'bg-primary/10 text-primary'
+                : 'bg-destructive/10 text-destructive'
           }`}
           role="status"
         >
           {state.ok ? (
-            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
           ) : (
-            <AlertCircle className="h-4 w-4 shrink-0" />
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           )}
-          {state.message}
+          <span>{state.message}</span>
         </p>
       )}
 
