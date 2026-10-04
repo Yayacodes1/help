@@ -1,7 +1,14 @@
 import { NextResponse, after } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { answerCallbackQuery, sendTelegramMessage, telegramWebhookSecret } from '@/lib/telegram'
-import { BUTTON_GUIDE, REPORT_BUTTONS, sendAttendanceReports, type ReportMode } from '@/lib/telegram-report'
+import {
+  BUTTON_GUIDE,
+  reportButtons,
+  sendAttendanceReports,
+  type ReportMode,
+  type ReportRole,
+  type ReportView,
+} from '@/lib/telegram-report'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -11,11 +18,12 @@ type Update = {
   callback_query?: { id: string; data?: string; message?: { chat?: { id?: number | string } } }
 }
 
-type Request_ = { mode: ReportMode; withMessages: boolean } | 'help' | null
+type Request_ = { view: ReportView; mode: ReportMode; role?: ReportRole } | 'help' | null
 
 const HELP =
-  `${BUTTON_GUIDE}\n\n` +
-  'Automatic (info only, no messages): 5:00 PM Riyadh (today so far) and 12:00 AM Riyadh (full day).'
+  `${BUTTON_GUIDE}\n` +
+  '📋 Type /report for the last full day.\n\n' +
+  'Automatic summary: 5:00 PM Riyadh (today so far) and 12:00 AM Riyadh (the day that just ended).'
 
 function secretMatches(header: string | null): boolean {
   const secret = telegramWebhookSecret()
@@ -28,22 +36,31 @@ function secretMatches(header: string | null): boolean {
 function parseText(text: string): Request_ {
   const words = text.trim().toLowerCase().split(/\s+/)
   const cmd = words[0]?.split('@')[0]?.replace(/^\//, '') ?? ''
-  const yesterday = words.slice(1).some((w) => w.startsWith('yesterday') || w === 'امس' || w === 'أمس')
-  if (['messages', 'message', 'msgs', 'msg', 'templates', 'رسائل'].includes(cmd)) {
-    return { mode: yesterday ? 'final' : 'live', withMessages: true }
+  const rest = words.slice(1).join(' ')
+  if (['messages_creators', 'msgs_creators'].includes(cmd)) return { view: 'messages', mode: 'live', role: 'creator' }
+  if (['messages_reposters', 'msgs_reposters'].includes(cmd)) return { view: 'messages', mode: 'live', role: 'reposter' }
+  if (['messages', 'message', 'msgs', 'رسائل'].includes(cmd)) {
+    if (/repost|معيد/.test(rest)) return { view: 'messages', mode: 'live', role: 'reposter' }
+    if (/creat|صانع|صناع/.test(rest)) return { view: 'messages', mode: 'live', role: 'creator' }
+    return 'help'
   }
-  if (cmd === 'messages_yesterday' || cmd === 'msgs_yesterday') return { mode: 'final', withMessages: true }
-  if (['update', 'now', 'today'].includes(cmd)) return { mode: 'live', withMessages: false }
-  if (['report', 'yesterday'].includes(cmd)) return { mode: 'final', withMessages: false }
+  if (['list', 'full', 'names'].includes(cmd)) return { view: 'list', mode: 'live' }
+  if (['update', 'now', 'today', 'summary'].includes(cmd)) return { view: 'summary', mode: 'live' }
+  if (['report', 'yesterday'].includes(cmd)) return { view: 'summary', mode: 'final' }
   if (['start', 'help'].includes(cmd)) return 'help'
   return null
 }
 
+function parseMode(value: string | undefined): ReportMode {
+  return value === 'final' ? 'final' : 'live'
+}
+
 function parseButton(data: string | undefined): Request_ {
-  if (data === 'report:live') return { mode: 'live', withMessages: false }
-  if (data === 'report:final') return { mode: 'final', withMessages: false }
-  if (data === 'msgs:live') return { mode: 'live', withMessages: true }
-  if (data === 'msgs:final') return { mode: 'final', withMessages: true }
+  const [kind, a, b] = (data ?? '').split(':')
+  if (kind === 'report') return { view: 'summary', mode: parseMode(a) }
+  if (kind === 'list') return { view: 'list', mode: parseMode(a) }
+  if (kind === 'msgs' && (a === 'creator' || a === 'reposter')) return { view: 'messages', mode: parseMode(b), role: a }
+  if (kind === 'msgs') return 'help'
   return null
 }
 
@@ -65,9 +82,9 @@ export async function POST(req: Request) {
     await answerCallbackQuery(
       update.callback_query.id,
       request && request !== 'help'
-        ? request.withMessages
+        ? request.view === 'messages'
           ? 'Building the messages…'
-          : 'Building the report…'
+          : 'Building…'
         : undefined,
     )
   } else if (update.message?.text) {
@@ -75,19 +92,16 @@ export async function POST(req: Request) {
   }
 
   if (request === 'help') {
-    await sendTelegramMessage(HELP, { chatId, replyMarkup: REPORT_BUTTONS })
+    await sendTelegramMessage(HELP, { chatId, replyMarkup: reportButtons('live') })
   } else if (request) {
-    const { mode, withMessages } = request
+    const { view, mode, role } = request
     // Answer Telegram now; sending many messages can take a minute and it would retry.
     after(async () => {
       try {
         const { ensureCreatorTrackingColumns } = await import('@/lib/schema')
         const { getOperationalToday } = await import('@/lib/queries')
         await ensureCreatorTrackingColumns()
-        const result = await sendAttendanceReports(await getOperationalToday(), mode, {
-          chatId,
-          messagesOnly: withMessages,
-        })
+        const result = await sendAttendanceReports(await getOperationalToday(), mode, { chatId, view, role })
         if (!result.ok && result.error) {
           await sendTelegramMessage(`Could not send everything: ${result.error.slice(0, 500)}`, { chatId })
         }

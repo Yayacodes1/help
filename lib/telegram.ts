@@ -80,9 +80,11 @@ export function telegramWebhookSecret(): string | null {
 }
 
 export const BOT_COMMANDS = [
-  { command: 'update', description: 'Today so far (creators + reposters)' },
-  { command: 'report', description: 'Yesterday, full day' },
-  { command: 'messages', description: 'Only the copy-ready messages (today)' },
+  { command: 'update', description: 'Summary: today so far' },
+  { command: 'list', description: 'Full list of names: who posted, partial, didn\'t (today)' },
+  { command: 'messages_creators', description: 'Copy-ready message for each creator behind today' },
+  { command: 'messages_reposters', description: 'Copy-ready message for each reposter behind today' },
+  { command: 'report', description: 'Summary of the last full day' },
   { command: 'help', description: 'What this bot can do' },
 ]
 
