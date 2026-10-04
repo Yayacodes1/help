@@ -647,6 +647,7 @@ export default async function AdminPage({
     legendPartial: t('attentionPartial'),
     legendMiss: t('attentionMiss'),
     legendBreak: t('attentionBreak'),
+    legendOff: t('attentionOff'),
     missing: t('attentionNoPost'),
     allClear: t('allClear'),
     strikes: t('strikeCount'),

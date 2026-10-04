@@ -9,8 +9,8 @@ export function DateSelect({
   max,
 }: {
   date: string
-  min: string
-  max: string
+  min?: string
+  max?: string
 }) {
   const router = useRouter()
   const params = useSearchParams()

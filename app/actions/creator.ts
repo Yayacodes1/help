@@ -89,12 +89,6 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   if (!TIME_RE.test(postTimeRaw)) {
     return { ok: false, message: 'Pick the time you posted.' }
   }
-  const [calendarToday, serverNow] = await Promise.all([getServerToday(), getServerNowIso()])
-  const opToday = operationalDayFromIso(serverNow)
-  const allowedDays = new Set([calendarToday, opToday, addDays(calendarToday, -1), addDays(opToday, -1)])
-  if (!allowedDays.has(videoDateRaw)) {
-    return { ok: false, message: 'يمكنك إضافة فيديوهات اليوم أو الأمس فقط. You can only add videos for today or yesterday.' }
-  }
   const videoDate = videoDateRaw
   const postTime = postTimeRaw.length === 5 ? `${postTimeRaw}:00` : postTimeRaw
 

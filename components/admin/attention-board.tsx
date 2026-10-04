@@ -10,6 +10,7 @@ const STATUS_CLASS: Record<AttendanceStatus, string> = {
   partial: 'border-amber-500/40 bg-amber-500/10',
   miss: 'border-rose-500/40 bg-rose-500/10',
   break: 'border-sky-500/40 bg-sky-500/10',
+  off: 'border-border bg-muted/40',
 }
 
 const DOT_CLASS: Record<AttendanceStatus, string> = {
@@ -17,6 +18,7 @@ const DOT_CLASS: Record<AttendanceStatus, string> = {
   partial: 'bg-amber-400',
   miss: 'bg-rose-500',
   break: 'bg-sky-400',
+  off: 'bg-muted-foreground/40',
 }
 
 export function AttentionBoard({
@@ -39,6 +41,7 @@ export function AttentionBoard({
     legendPartial: string
     legendMiss: string
     legendBreak: string
+    legendOff?: string
     missing: string
     allClear: string
     strikes: string
@@ -55,6 +58,7 @@ export function AttentionBoard({
             ['partial', labels.legendPartial],
             ['miss', labels.legendMiss],
             ['break', labels.legendBreak],
+            ['off', labels.legendOff ?? 'Off day'],
           ] as const
         ).map(([status, label]) => (
           <span key={status} className="inline-flex items-center gap-1.5">
@@ -118,7 +122,9 @@ export function AttentionBoard({
                     ? missing.map((m) => <span key={m}>{m}</span>)
                     : p.status === 'break'
                       ? labels.legendBreak
-                      : null}
+                      : p.status === 'off'
+                        ? (labels.legendOff ?? 'Off day')
+                        : null}
                 </div>
               </li>
             )

@@ -130,6 +130,9 @@ export async function ensureCreatorTrackingColumns() {
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS views_error text`
   // When TikTok/IG says the video went live (from TikHub). Display + optional video_date source.
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS platform_posted_at timestamptz`
+  // Real moment the row was sent. Added without a default first so old rows stay NULL instead of "now".
+  await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS submitted_at timestamptz`
+  await sql`ALTER TABLE submissions ALTER COLUMN submitted_at SET DEFAULT NOW()`
 
   // Keep posted timing stable after insert (creators choose date/time on submit).
   try {
@@ -141,6 +144,7 @@ export async function ensureCreatorTrackingColumns() {
       BEGIN
         NEW.created_at := OLD.created_at;
         NEW.video_date := OLD.video_date;
+        NEW.submitted_at := OLD.submitted_at;
         RETURN NEW;
       END;
       $fn$
@@ -283,6 +287,11 @@ export async function ensureCreatorTrackingColumns() {
     SET max_strikes = 3
     WHERE max_strikes IS NULL OR max_strikes < 1
   `
+  // Posting schedule: daily | every_n_days | weekdays (0=Sun … 6=Sat, comma list) | per_week.
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS schedule_type text NOT NULL DEFAULT 'daily'`
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS schedule_every_days integer NOT NULL DEFAULT 2`
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS schedule_weekdays text NOT NULL DEFAULT ''`
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS schedule_per_week integer NOT NULL DEFAULT 0`
 
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_id text`
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_index integer`

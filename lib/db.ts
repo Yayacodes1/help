@@ -88,7 +88,10 @@ export type Submission = {
   views: number
   /** Last TikHub/views lookup error; null when last fetch succeeded or never tried. */
   views_error: string | null
+  /** Chosen posting day + time (creators pick this on submit). */
   created_at: string
+  /** When the row was actually sent; null for videos added before this was tracked. */
+  submitted_at: string | null
   /** When TikTok/IG published the video (from TikHub), if known. */
   platform_posted_at: string | null
   /** Same-content IG+TikTok pair. Null = counted as its own unit. */
@@ -133,6 +136,11 @@ export type Contract = {
   max_strikes: number
   /** Videos promised per project over the contract, keyed by project id (e.g. Notek 20, Miqat 10). */
   project_targets?: Record<string, number> | null
+  /** Which days need posts — see lib/posting-schedule.ts. Missing = every day. */
+  schedule_type?: string | null
+  schedule_every_days?: number | null
+  schedule_weekdays?: string | null
+  schedule_per_week?: number | null
 }
 
 export type CommissionSettings = {

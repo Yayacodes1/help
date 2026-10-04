@@ -42,7 +42,7 @@ function countStatuses(people: AttendancePerson[]): Counts {
   for (const p of people) {
     if (p.status === 'hit') c.posted++
     else if (p.status === 'partial') c.partial++
-    else if (p.status === 'break') c.away++
+    else if (p.status === 'break' || p.status === 'off') c.away++
     else c.missed++
   }
   return c
@@ -238,6 +238,7 @@ export function formatFullList(report: DayReport): string {
         lines.push(`❌ ${live ? 'Not yet' : "Didn't post"} (${of('miss').length}): ${nameList(of('miss'))}`)
       }
       if (of('break').length) lines.push(`🏖 Break (${of('break').length}): ${nameList(of('break'))}`)
+      if (of('off').length) lines.push(`💤 Off day (${of('off').length}): ${nameList(of('off'))}`)
       for (const x of g.postedFor ?? []) {
         lines.push(`📌 Posted for ${x.projectName} (${x.names.length}): ${x.names.join(', ') || '—'}`)
       }

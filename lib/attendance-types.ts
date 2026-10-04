@@ -1,4 +1,5 @@
-export type AttendanceStatus = 'hit' | 'partial' | 'miss' | 'break'
+/** off = not a posting day under the contract schedule. */
+export type AttendanceStatus = 'hit' | 'partial' | 'miss' | 'break' | 'off'
 
 export type AttendancePerson = {
   id: number

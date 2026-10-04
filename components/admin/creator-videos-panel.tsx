@@ -17,6 +17,7 @@ type Submission = {
   project_name?: string | null
   video_date: string
   created_at?: string | null
+  submitted_at?: string | null
   platform_posted_at?: string | null
   platform: 'instagram' | 'tiktok'
   url: string

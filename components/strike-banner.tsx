@@ -1,10 +1,12 @@
 export function StrikeBanner({
   count,
   postedToday,
+  offToday = false,
   labels,
 }: {
   count: number
   postedToday: boolean
+  offToday?: boolean
   labels: {
     none: string
     one: string
@@ -12,6 +14,7 @@ export function StrikeBanner({
     three: string
     posted: string
     missed: string
+    off?: string
     hint: string
   }
 }) {
@@ -31,7 +34,7 @@ export function StrikeBanner({
     >
       <p className="text-sm font-semibold">{message}</p>
       <p className="mt-1 text-xs opacity-80">
-        {postedToday ? labels.posted : labels.missed}
+        {postedToday ? labels.posted : offToday && labels.off ? labels.off : labels.missed}
         {' · '}
         {labels.hint}
       </p>

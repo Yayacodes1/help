@@ -3,17 +3,20 @@ import { sql } from '@/lib/db'
 import { addDays } from '@/lib/campaign'
 import { CORRECTIVE_STRIKE_COUNT, OPERATIONAL_TZ, strikeLimit } from '@/lib/operational-day'
 import type { AttendancePerson, AttendanceStatus } from '@/lib/attendance-types'
+import { isPostingDay, scheduleFromContract, type ScheduleColumns } from '@/lib/posting-schedule'
 
 export type { AttendancePerson, AttendanceReport, AttendanceStatus } from '@/lib/attendance-types'
 
 function personStatus(opts: {
   onBreak: boolean
+  offDay: boolean
   goalIg: number
   goalTt: number
   ig: number
   tt: number
 }): AttendanceStatus {
   if (opts.onBreak) return 'break'
+  if (opts.offDay) return opts.ig > 0 || opts.tt > 0 ? 'hit' : 'off'
   const hasGoal = opts.goalIg > 0 || opts.goalTt > 0
   if (!hasGoal) {
     const any = opts.ig > 0 || opts.tt > 0
@@ -48,8 +51,10 @@ export async function getAttendanceForDay(
     sql`
       SELECT DISTINCT ON (creator_id)
         id, creator_id, name,
+        start_date::text AS start_date,
         goal_instagram, goal_tiktok,
-        COALESCE(max_strikes, ${CORRECTIVE_STRIKE_COUNT})::int AS max_strikes
+        COALESCE(max_strikes, ${CORRECTIVE_STRIKE_COUNT})::int AS max_strikes,
+        schedule_type, schedule_every_days, schedule_weekdays, schedule_per_week
       FROM contracts
       WHERE start_date <= ${day}::date
         AND (end_date IS NULL OR end_date >= ${day}::date)
@@ -86,10 +91,11 @@ export async function getAttendanceForDay(
       id: number
       creator_id: number
       name: string
+      start_date: string
       goal_instagram: number
       goal_tiktok: number
       max_strikes: number
-    }>,
+    } & ScheduleColumns>,
     Array<{ creator_id: number; ig: number; tt: number }>,
     Array<{ creator_id: number }>,
     Array<{ creator_id: number; contract_id: number | null; strike_date: string }>,
@@ -143,6 +149,9 @@ export async function getAttendanceForDay(
         : p.goal_tiktok
     const status = personStatus({
       onBreak: onBreak.has(p.id),
+      offDay:
+        contract != null &&
+        !isPostingDay(scheduleFromContract(contract), contract.start_date, day),
       goalIg,
       goalTt,
       ig,

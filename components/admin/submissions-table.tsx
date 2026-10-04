@@ -6,7 +6,8 @@ import { ProjectCell } from '@/components/admin/project-cell'
 import { DeleteSubmission } from '@/components/admin/delete-submission'
 import { ReplaceSubmission } from '@/components/admin/replace-submission'
 import { CopyLink } from '@/components/copy-link'
-import { formatDateTime, formatNumber } from '@/lib/format'
+import { formatDate, formatDateTime, formatNumber } from '@/lib/format'
+import { OPERATIONAL_TZ, calendarDayInTimeZone } from '@/lib/operational-day'
 import { PLATFORM_META } from '@/lib/platforms'
 import { adminPersonHref } from '@/lib/admin-href'
 import { projectToneClass } from '@/lib/project-scope'
@@ -35,6 +36,7 @@ export function SubmissionsTable({
     project_name?: string | null
     video_date: string
     created_at?: string | null
+    submitted_at?: string | null
     platform_posted_at?: string | null
     platform: 'instagram' | 'tiktok'
     url: string
@@ -72,7 +74,8 @@ export function SubmissionsTable({
           <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
             {showCreator && <th className="px-4 py-3 font-medium">Creator</th>}
             {showProject && <th className="px-4 py-3 font-medium">Project</th>}
-            <th className="px-4 py-3 font-medium">Posted</th>
+            <th className="px-4 py-3 font-medium">Posting for</th>
+            <th className="px-4 py-3 font-medium">Submitted</th>
             <th className="px-4 py-3 font-medium">Platform</th>
             <th className="px-4 py-3 font-medium">Link</th>
             <th className="px-4 py-3 text-right font-medium">Views</th>
@@ -85,6 +88,10 @@ export function SubmissionsTable({
               'views_error' in s && typeof s.views_error === 'string' && s.views_error
                 ? s.views_error
                 : null
+            const submittedAt = 'submitted_at' in s && s.submitted_at ? s.submitted_at : null
+            const late =
+              submittedAt != null &&
+              calendarDayInTimeZone(String(submittedAt), OPERATIONAL_TZ) > s.video_date
             return (
               <tr key={s.id} className="border-b border-border last:border-0">
                 {showCreator && (
@@ -126,6 +133,9 @@ export function SubmissionsTable({
                   </td>
                 )}
                 <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                  <div className="font-medium text-foreground tabular-nums">
+                    {formatDate(s.video_date)}
+                  </div>
                   <time
                     dateTime={
                       ('platform_posted_at' in s && s.platform_posted_at
@@ -135,7 +145,7 @@ export function SubmissionsTable({
                         ? String(s.created_at)
                         : s.video_date)
                     }
-                    className="tabular-nums"
+                    className="text-[11px] tabular-nums"
                   >
                     {formatDateTime(
                       ('platform_posted_at' in s && s.platform_posted_at
@@ -146,6 +156,20 @@ export function SubmissionsTable({
                           : s.video_date),
                     )}
                   </time>
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                  {submittedAt ? (
+                    <time
+                      dateTime={String(submittedAt)}
+                      className={`tabular-nums ${late ? 'font-medium text-amber-700 dark:text-amber-300' : ''}`}
+                      title={late ? 'Sent after the day it was posted for' : undefined}
+                    >
+                      {formatDateTime(submittedAt)}
+                      {late ? ' · late' : ''}
+                    </time>
+                  ) : (
+                    '—'
+                  )}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
                   {PLATFORM_META[s.platform].en}

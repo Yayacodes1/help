@@ -54,8 +54,6 @@ export function SubmitForm({
   labels,
   projects,
   videoDate,
-  minDate,
-  maxDate,
   defaultTime,
   brandProjects = [],
 }: {
@@ -64,8 +62,6 @@ export function SubmitForm({
   labels: Labels
   projects: { id: number; name: string }[]
   videoDate: string
-  minDate: string
-  maxDate: string
   defaultTime: string
   brandProjects?: BrandProject[]
 }) {
@@ -223,8 +219,7 @@ export function SubmitForm({
               type="date"
               name="video_date"
               required
-              min={minDate}
-              max={maxDate}
+              autoComplete="off"
               defaultValue={videoDate}
               className="h-11 rounded-xl border border-border bg-card px-3 text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring"
             />

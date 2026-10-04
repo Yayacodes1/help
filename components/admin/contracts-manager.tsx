@@ -19,6 +19,17 @@ import {
   halfPaymentNote,
   type ContractHalfStatus,
 } from '@/lib/contract-halves'
+import {
+  WEEKDAY_SHORT,
+  describeSchedule,
+  normalizeScheduleType,
+  scheduleFromContract,
+  type ScheduleColumns,
+  type ScheduleType,
+} from '@/lib/posting-schedule'
+
+const SCHEDULE_HINT =
+  'Which days count. Off days never give strikes or break streaks.'
 
 const inputClass =
   'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -126,6 +137,80 @@ function QuotaFields({
         TT {totalLabel}
         <input type="number" min={0} name="target_tiktok" defaultValue={targetTt} className={inputClass} />
       </label>
+    </div>
+  )
+}
+
+function ScheduleFields({
+  contract,
+}: {
+  contract?: ScheduleColumns | null
+}) {
+  const initial = scheduleFromContract(contract)
+  const [type, setType] = useState<ScheduleType>(initial.type)
+  return (
+    <div className="grid gap-2">
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Posts on
+        <select
+          name="schedule_type"
+          value={type}
+          onChange={(e) => setType(normalizeScheduleType(e.target.value))}
+          className={inputClass}
+        >
+          <option value="daily">Every day</option>
+          <option value="every_n_days">Every few days (e.g. every other day)</option>
+          <option value="weekdays">Set days of the week</option>
+          <option value="per_week">Number of videos a week (any days)</option>
+        </select>
+      </label>
+      {type === 'every_n_days' ? (
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Post once every … days (2 = post one day, skip one)
+          <input
+            type="number"
+            name="schedule_every_days"
+            min={2}
+            max={30}
+            required
+            defaultValue={initial.type === 'every_n_days' ? initial.everyDays : 2}
+            className={inputClass}
+          />
+        </label>
+      ) : null}
+      {type === 'weekdays' ? (
+        <fieldset className="flex flex-wrap gap-1.5">
+          <legend className="mb-1 text-xs text-muted-foreground">Days they post</legend>
+          {WEEKDAY_SHORT.map((label, day) => (
+            <label
+              key={label}
+              className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+            >
+              <input
+                type="checkbox"
+                name="schedule_weekdays"
+                value={day}
+                defaultChecked={initial.weekdays.includes(day)}
+              />
+              {label}
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
+      {type === 'per_week' ? (
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Videos due each week (weeks count from the first day)
+          <input
+            type="number"
+            name="schedule_per_week"
+            min={1}
+            max={100}
+            required
+            defaultValue={initial.type === 'per_week' ? initial.perWeek : 3}
+            className={inputClass}
+          />
+        </label>
+      ) : null}
     </div>
   )
 }
@@ -642,6 +727,8 @@ export function ContractsManager({
                         : ''}
                     {' · '}
                     daily IG {contract.goal_instagram}/d · TT {contract.goal_tiktok}/d
+                    {' · '}
+                    {describeSchedule(scheduleFromContract(contract))}
                   </p>
                   {row.projects.length > 0 ? (
                     <p className="text-[11px] text-muted-foreground">
@@ -707,6 +794,9 @@ export function ContractsManager({
           <FormSection title="Videos" hint="Daily posting and IG / TikTok goals only.">
             <QuotaFields variant="current" />
           </FormSection>
+          <FormSection title="Posting schedule" hint={SCHEDULE_HINT}>
+            <ScheduleFields />
+          </FormSection>
           <FormSection
             title="Videos per project"
             hint="How many videos this person posts for each project during this contract."
@@ -758,6 +848,9 @@ export function ContractsManager({
             </FormSection>
             <FormSection title="Videos" hint="Daily posting and IG / TikTok goals only.">
               <QuotaFields variant="current" />
+            </FormSection>
+            <FormSection title="Posting schedule" hint={SCHEDULE_HINT}>
+              <ScheduleFields />
             </FormSection>
             <FormSection
               title="Videos per project"
@@ -868,6 +961,9 @@ export function ContractsManager({
                           targetTt={contract.target_tiktok}
                           variant={pastVariant ? 'past' : 'current'}
                         />
+                      </FormSection>
+                      <FormSection title="Posting schedule" hint={SCHEDULE_HINT}>
+                        <ScheduleFields contract={contract} />
                       </FormSection>
                       <FormSection
                         title="Videos per project"

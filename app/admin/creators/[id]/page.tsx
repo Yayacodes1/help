@@ -184,7 +184,9 @@ export default async function CreatorDetailPage({
                 ? t('strikesCorrectiveFlag')
                 : strikeSummary.postedToday
                   ? t('strikePostedToday')
-                  : t('strikeMissedToday')
+                  : strikeSummary.offToday
+                    ? t('strikeOffToday')
+                    : t('strikeMissedToday')
             }
           />
         ) : null}

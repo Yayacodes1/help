@@ -23,6 +23,7 @@ import { redirect } from 'next/navigation'
 import { normalizeHandle, parseLoginPlatform, parseOptionalHandle, resolveLoginPlatform } from '@/lib/usernames'
 import { HOUSE_COMMISSION, normalizeCountMode } from '@/lib/commission'
 import { normalizeBasePayCadence } from '@/lib/contract-halves'
+import { scheduleFromContract } from '@/lib/posting-schedule'
 import type { CountMode } from '@/lib/db'
 
 async function requireAdmin() {
@@ -129,6 +130,23 @@ function parseContractQuotas(
     viewCommissionAmount: parseOptionalAmount(formData.get('view_commission_amount')),
     commissionReels: parseOptionalPositiveInt(formData.get('commission_reels')),
     projectTargets: JSON.stringify(parseProjectTargets(formData)),
+    ...parseSchedule(formData),
+  }
+}
+
+/** Posting schedule inputs; anything incomplete falls back to every day. */
+function parseSchedule(formData: FormData) {
+  const schedule = scheduleFromContract({
+    schedule_type: (formData.get('schedule_type') ?? '').toString(),
+    schedule_every_days: Number(formData.get('schedule_every_days')),
+    schedule_weekdays: formData.getAll('schedule_weekdays').map(String).join(','),
+    schedule_per_week: Number(formData.get('schedule_per_week')),
+  })
+  return {
+    scheduleType: schedule.type,
+    scheduleEveryDays: Math.min(schedule.type === 'every_n_days' ? schedule.everyDays : 2, 30),
+    scheduleWeekdays: schedule.weekdays.join(','),
+    schedulePerWeek: Math.min(schedule.perWeek, 100),
   }
 }
 
@@ -463,14 +481,16 @@ export async function createContract(creatorId: number, formData: FormData) {
       goal_instagram, goal_tiktok, target_instagram, target_tiktok,
       platforms, base_amount, base_pay_cadence, commission_amount,
       count_mode, views_threshold, view_commission_amount, commission_reels,
-      project_targets
+      project_targets,
+      schedule_type, schedule_every_days, schedule_weekdays, schedule_per_week
     )
     VALUES (
       ${creatorId}, ${name}, ${start}, ${end},
       ${q.goalInstagram}, ${q.goalTiktok}, ${q.targetInstagram}, ${q.targetTiktok},
       ${q.platforms}, ${q.baseAmount}, ${q.basePayCadence}, ${q.commissionAmount},
       ${q.countMode}, ${q.viewsThreshold}, ${q.viewCommissionAmount}, ${q.commissionReels},
-      ${q.projectTargets}::jsonb
+      ${q.projectTargets}::jsonb,
+      ${q.scheduleType}, ${q.scheduleEveryDays}, ${q.scheduleWeekdays}, ${q.schedulePerWeek}
     )
   `
 
@@ -534,14 +554,16 @@ export async function startNewContract(creatorId: number, formData: FormData) {
       goal_instagram, goal_tiktok, target_instagram, target_tiktok,
       platforms, base_amount, base_pay_cadence, commission_amount,
       count_mode, views_threshold, view_commission_amount, commission_reels,
-      project_targets
+      project_targets,
+      schedule_type, schedule_every_days, schedule_weekdays, schedule_per_week
     )
     VALUES (
       ${creatorId}, ${name}, ${start}, ${end},
       ${q.goalInstagram}, ${q.goalTiktok}, ${q.targetInstagram}, ${q.targetTiktok},
       ${q.platforms}, ${q.baseAmount}, ${q.basePayCadence}, ${q.commissionAmount},
       ${q.countMode}, ${q.viewsThreshold}, ${q.viewCommissionAmount}, ${q.commissionReels},
-      ${q.projectTargets}::jsonb
+      ${q.projectTargets}::jsonb,
+      ${q.scheduleType}, ${q.scheduleEveryDays}, ${q.scheduleWeekdays}, ${q.schedulePerWeek}
     )
   `
   revalidatePath('/admin')
@@ -649,7 +671,11 @@ export async function updateContract(id: number, creatorId: number, formData: Fo
         view_commission_amount = ${q.viewCommissionAmount},
         commission_reels = ${q.commissionReels},
         project_targets = ${q.projectTargets}::jsonb,
-        max_strikes = COALESCE(${maxStrikes}, max_strikes)
+        max_strikes = COALESCE(${maxStrikes}, max_strikes),
+        schedule_type = ${q.scheduleType},
+        schedule_every_days = ${q.scheduleEveryDays},
+        schedule_weekdays = ${q.scheduleWeekdays},
+        schedule_per_week = ${q.schedulePerWeek}
     WHERE id = ${id} AND creator_id = ${creatorId}
   `
 

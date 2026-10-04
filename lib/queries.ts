@@ -22,6 +22,7 @@ import {
   periodBaseTotal,
   type ContractHalfStatus,
 } from '@/lib/contract-halves'
+import { scheduleFromContract, type PostingSchedule } from '@/lib/posting-schedule'
 
 export async function getServerToday(): Promise<string> {
   const rows = (await sql`SELECT CURRENT_DATE::text AS today`) as { today: string }[]
@@ -160,7 +161,7 @@ export async function getProjectById(id: number): Promise<Project | null> {
 export async function getSubmissionsForCreator(creatorId: number): Promise<Array<Submission & { project_name: string | null }>> {
   return (await sql`
     SELECT s.id, s.creator_id, s.project_id, s.platform, s.url, s.video_date::text AS video_date,
-           s.views, s.views_error, s.created_at, s.platform_posted_at, s.batch_id, s.batch_index,
+           s.views, s.views_error, s.created_at, s.submitted_at, s.platform_posted_at, s.batch_id, s.batch_index,
            p.name AS project_name
     FROM submissions s
     LEFT JOIN projects p ON p.id = s.project_id
@@ -175,7 +176,7 @@ export async function getSubmissionsForCreatorOnDate(
 ): Promise<Array<Submission & { project_name: string | null }>> {
   return (await sql`
     SELECT s.id, s.creator_id, s.project_id, s.platform, s.url, s.video_date::text AS video_date,
-           s.views, s.views_error, s.created_at, s.platform_posted_at, s.batch_id, s.batch_index,
+           s.views, s.views_error, s.created_at, s.submitted_at, s.platform_posted_at, s.batch_id, s.batch_index,
            p.name AS project_name
     FROM submissions s
     LEFT JOIN projects p ON p.id = s.project_id
@@ -238,6 +239,7 @@ export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<A
       s.views,
       s.views_error,
       s.created_at,
+      s.submitted_at,
       s.platform_posted_at,
       s.batch_id,
       s.batch_index,
@@ -443,7 +445,8 @@ export async function getContractsForCreator(creatorId: number): Promise<Contrac
            view_commission_amount::float AS view_commission_amount,
            commission_reels,
            COALESCE(max_strikes, 3)::int AS max_strikes,
-           COALESCE(project_targets, '{}'::jsonb) AS project_targets
+           COALESCE(project_targets, '{}'::jsonb) AS project_targets,
+           schedule_type, schedule_every_days, schedule_weekdays, schedule_per_week
     FROM contracts
     WHERE creator_id = ${creatorId}
     ORDER BY start_date DESC, id DESC
@@ -469,7 +472,8 @@ export async function getActiveContract(
            view_commission_amount::float AS view_commission_amount,
            commission_reels,
            COALESCE(max_strikes, 3)::int AS max_strikes,
-           COALESCE(project_targets, '{}'::jsonb) AS project_targets
+           COALESCE(project_targets, '{}'::jsonb) AS project_targets,
+           schedule_type, schedule_every_days, schedule_weekdays, schedule_per_week
     FROM contracts
     WHERE creator_id = ${creatorId}
       AND start_date <= ${today}::date
@@ -494,7 +498,8 @@ export async function getActiveContract(
            view_commission_amount::float AS view_commission_amount,
            commission_reels,
            COALESCE(max_strikes, 3)::int AS max_strikes,
-           COALESCE(project_targets, '{}'::jsonb) AS project_targets
+           COALESCE(project_targets, '{}'::jsonb) AS project_targets,
+           schedule_type, schedule_every_days, schedule_weekdays, schedule_per_week
     FROM contracts
     WHERE creator_id = ${creatorId}
     ORDER BY start_date DESC, id DESC
@@ -514,6 +519,7 @@ export async function getConsistencyForWindow(
     streakEpochStart?: string | null
     streakEpochEnd?: string | null
   },
+  schedule?: PostingSchedule | null,
 ): Promise<ConsistencySummary> {
   const [countsByDate, breakDates] = await Promise.all([
     getCreatorDailyPlatformCounts(creator.id, start, end),
@@ -530,6 +536,7 @@ export async function getConsistencyForWindow(
     streakFrom: streakOpts?.streakFrom,
     streakEpochStart: streakOpts?.streakEpochStart,
     streakEpochEnd: streakOpts?.streakEpochEnd,
+    schedule,
   })
 }
 
@@ -630,6 +637,7 @@ export async function getCreatorConsistency(
       streakEpochStart: window.start,
       streakEpochEnd: window.end,
     },
+    scheduleFromContract(active),
   )
 }
 
@@ -899,6 +907,8 @@ export async function getContractComparisons(
         windowEnd,
         today,
         goalsForContract(creator, contract),
+        undefined,
+        scheduleFromContract(contract),
       )
       const counts = await getContractVideoCounts(
         creator.id,

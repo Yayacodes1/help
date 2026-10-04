@@ -7,6 +7,7 @@ import {
   lastCompletedOperationalDay,
   strikeLimit,
 } from '@/lib/operational-day'
+import { isPostingDay, scheduleFromContract, type ScheduleColumns } from '@/lib/posting-schedule'
 
 export { CORRECTIVE_STRIKE_COUNT, STRIKE_LOOKBACK_DAYS, strikeLimit }
 
@@ -43,6 +44,8 @@ export type CreatorStrikeSummary = {
   contractStrikes: number
   maxStrikes: number
   postedToday: boolean
+  /** Today isn't a posting day under the contract schedule (or it's a weekly plan). */
+  offToday: boolean
   todayVideos: number
   needsCorrective: boolean
   strikes: CreatorStrike[]
@@ -76,13 +79,17 @@ export async function syncReposterStrikes(opts: {
       days.d,
       'auto',
       'active',
-      'Did not post'
+      CASE WHEN ct.schedule_type = 'per_week' THEN 'Missed weekly videos' ELSE 'Did not post' END
     FROM generate_series(${start}::date, ${lastCompleted}::date, interval '1 day') AS days(d)
     JOIN creators c ON c.role = 'reposter'
       AND (${creatorId}::int IS NULL OR c.id = ${creatorId})
       AND (c.paused_at IS NULL OR days.d < c.paused_at)
     JOIN LATERAL (
-      SELECT id
+      SELECT id, start_date,
+             COALESCE(schedule_type, 'daily') AS schedule_type,
+             GREATEST(COALESCE(schedule_every_days, 2), 1) AS schedule_every_days,
+             COALESCE(schedule_weekdays, '') AS schedule_weekdays,
+             COALESCE(schedule_per_week, 0) AS schedule_per_week
       FROM contracts
       WHERE creator_id = c.id
         AND start_date <= days.d
@@ -90,9 +97,35 @@ export async function syncReposterStrikes(opts: {
       ORDER BY start_date DESC, id DESC
       LIMIT 1
     ) ct ON true
-    WHERE NOT EXISTS (
-      SELECT 1 FROM submissions s
-      WHERE s.creator_id = c.id AND s.video_date = days.d
+    WHERE (
+      (
+        (
+          ct.schedule_type NOT IN ('every_n_days', 'weekdays', 'per_week')
+          OR (ct.schedule_type = 'every_n_days' AND (
+            ct.schedule_every_days <= 1
+            OR (days.d::date - ct.start_date) % ct.schedule_every_days = 0
+          ))
+          OR (ct.schedule_type = 'weekdays' AND (
+            ct.schedule_weekdays = ''
+            OR EXTRACT(DOW FROM days.d)::int = ANY(string_to_array(ct.schedule_weekdays, ',')::int[])
+          ))
+          OR (ct.schedule_type = 'per_week' AND ct.schedule_per_week <= 0)
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM submissions s
+          WHERE s.creator_id = c.id AND s.video_date = days.d
+        )
+      )
+      OR (
+        ct.schedule_type = 'per_week'
+        AND ct.schedule_per_week > 0
+        AND (days.d::date - ct.start_date) % 7 = 6
+        AND (
+          SELECT COUNT(*) FROM submissions s
+          WHERE s.creator_id = c.id
+            AND s.video_date BETWEEN days.d::date - 6 AND days.d::date
+        ) < ct.schedule_per_week
+      )
     )
     AND NOT EXISTS (
       SELECT 1 FROM schedule_breaks b
@@ -137,7 +170,9 @@ export async function getCreatorStrikeSummary(
   const lastCompleted = lastCompletedOperationalDay(today)
   const [contractRows, strikeRows, postRows] = (await Promise.all([
     sql`
-      SELECT id, COALESCE(max_strikes, ${CORRECTIVE_STRIKE_COUNT})::int AS max_strikes
+      SELECT id, start_date::text AS start_date,
+             COALESCE(max_strikes, ${CORRECTIVE_STRIKE_COUNT})::int AS max_strikes,
+             schedule_type, schedule_every_days, schedule_weekdays, schedule_per_week
       FROM contracts
       WHERE creator_id = ${creatorId}
         AND start_date <= ${today}::date
@@ -160,12 +195,15 @@ export async function getCreatorStrikeSummary(
       WHERE creator_id = ${creatorId} AND video_date = ${today}::date
     `,
   ])) as [
-    { id: number; max_strikes: number }[],
+    Array<{ id: number; start_date: string; max_strikes: number } & ScheduleColumns>,
     CreatorStrike[],
     { videos: number }[],
   ]
 
   const contractId = contractRows[0]?.id ?? null
+  const offToday =
+    contractRows[0] != null &&
+    !isPostingDay(scheduleFromContract(contractRows[0]), contractRows[0].start_date, today)
   const maxStrikes = strikeLimit(contractRows[0]?.max_strikes)
   const strikes = strikeRows.map(asStrike)
   const contractStrikes = contractId
@@ -180,6 +218,7 @@ export async function getCreatorStrikeSummary(
     contractStrikes,
     maxStrikes,
     postedToday: todayVideos > 0,
+    offToday,
     todayVideos,
     needsCorrective: contractStrikes >= maxStrikes,
     strikes: contractId ? strikes.filter((s) => s.contract_id === contractId) : strikes,
@@ -200,7 +239,8 @@ export async function getReposterStrikeBoard(today: string): Promise<StrikeBoard
         id, creator_id, name,
         start_date::text AS start_date,
         end_date::text AS end_date,
-        COALESCE(max_strikes, ${CORRECTIVE_STRIKE_COUNT})::int AS max_strikes
+        COALESCE(max_strikes, ${CORRECTIVE_STRIKE_COUNT})::int AS max_strikes,
+        schedule_type, schedule_every_days, schedule_weekdays, schedule_per_week
       FROM contracts
       WHERE start_date <= ${today}::date
         AND (end_date IS NULL OR end_date >= ${today}::date)
@@ -232,7 +272,7 @@ export async function getReposterStrikeBoard(today: string): Promise<StrikeBoard
       start_date: string
       end_date: string | null
       max_strikes: number
-    }>,
+    } & ScheduleColumns>,
     Array<{ creator_id: number; contract_id: number | null; strike_date: string }>,
     Array<{ creator_id: number; videos: number }>,
     Array<{ creator_id: number }>,
@@ -270,7 +310,11 @@ export async function getReposterStrikeBoard(today: string): Promise<StrikeBoard
     const strikeInfo = strikesByCreator.get(p.id) ?? { count: 0, last: null }
     const maxStrikes = strikeLimit(contract?.max_strikes)
     const breaking = onBreak.has(p.id)
-    const missedToday = !breaking && todayVideos === 0 && contract != null
+    const missedToday =
+      !breaking &&
+      todayVideos === 0 &&
+      contract != null &&
+      isPostingDay(scheduleFromContract(contract), contract.start_date, today)
     return {
       creatorId: p.id,
       name: p.name,

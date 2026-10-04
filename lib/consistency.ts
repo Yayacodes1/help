@@ -1,4 +1,5 @@
 import { addDays } from '@/lib/campaign'
+import { DAILY_SCHEDULE, isPostingDay, weekBlock, type PostingSchedule } from '@/lib/posting-schedule'
 
 export type DayStatus = 'hit' | 'partial' | 'miss' | 'none' | 'future' | 'break'
 
@@ -85,8 +86,26 @@ export function buildConsistency(options: {
   streakFrom?: string | null
   streakEpochStart?: string | null
   streakEpochEnd?: string | null
+  /** Which days need posts; omitted = every day. Weekly plans are scored once per 7-day block. */
+  schedule?: PostingSchedule | null
 }): ConsistencySummary {
   const { start, end, today, goalInstagram, goalTiktok, countsByDate } = options
+  const schedule = options.schedule ?? DAILY_SCHEDULE
+  const videosOn = (date: string) => {
+    const c = countsByDate[date]
+    return c ? c.instagram + c.tiktok : 0
+  }
+  const scheduledStatus = (date: string, instagram: number, tiktok: number): DayStatus => {
+    if (schedule.type === 'per_week') {
+      const block = weekBlock(start, date)
+      if (date !== block.end) return 'none'
+      const total = eachDate(block.start, block.end).reduce((sum, d) => sum + videosOn(d), 0)
+      if (total >= schedule.perWeek) return 'hit'
+      return total > 0 ? 'partial' : 'miss'
+    }
+    if (!isPostingDay(schedule, start, date)) return 'none'
+    return dayStatus(instagram, tiktok, goalInstagram, goalTiktok)
+  }
   const breaks = options.breakDates instanceof Set
     ? options.breakDates
     : new Set(options.breakDates ?? [])
@@ -122,7 +141,7 @@ export function buildConsistency(options: {
       tiktok: counts.tiktok,
       goalInstagram,
       goalTiktok,
-      status: dayStatus(counts.instagram, counts.tiktok, goalInstagram, goalTiktok),
+      status: scheduledStatus(date, counts.instagram, counts.tiktok),
     }
   })
 

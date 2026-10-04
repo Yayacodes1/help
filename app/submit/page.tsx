@@ -34,7 +34,7 @@ import { loginHandleFor } from '@/lib/usernames'
 import { PLATFORMS } from '@/lib/db'
 import { goalFor } from '@/lib/platforms'
 import type { BrandProject } from '@/components/submit-form'
-import { addDays } from '@/lib/campaign'
+import { describeSchedule, scheduleFromContract } from '@/lib/posting-schedule'
 import { formatDate, formatMoney } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
@@ -72,12 +72,7 @@ export default async function SubmitPage({
   if (creator.role === 'reposter') {
     await syncReposterStrikes({ today: opToday, creatorId: creator.id })
   }
-  const rangeStart = addDays(today, -1)
-  const rangeEnd = today
-
-  let date = isValidDate(dateParam) ? dateParam : today
-  if (date < rangeStart) date = rangeStart
-  if (date > rangeEnd) date = rangeEnd
+  const date = isValidDate(dateParam) ? dateParam : today
   const isToday = date === today
 
   const projects = await getAllProjects()
@@ -191,6 +186,8 @@ export default async function SubmitPage({
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           {t('platforms')}: {t('platformsBoth')}
+          {' · '}
+          {describeSchedule(scheduleFromContract(contract), locale)}
           {contract.end_date
             ? ` · ${t('contractEnds')} ${formatDate(contract.end_date)}`
             : ''}
@@ -310,6 +307,7 @@ export default async function SubmitPage({
           <StrikeBanner
             count={strikeSummary.contractStrikes}
             postedToday={strikeSummary.postedToday}
+            offToday={strikeSummary.offToday}
             labels={{
               none: t('strikeNone'),
               one: t('strikeYouHaveOne'),
@@ -317,6 +315,7 @@ export default async function SubmitPage({
               three: t('strikeYouHaveThree'),
               posted: t('strikePostedToday'),
               missed: t('strikeMissedToday'),
+              off: t('strikeOffToday'),
               hint: t('strikesHint'),
             }}
           />
@@ -341,8 +340,6 @@ export default async function SubmitPage({
               fields={fields}
               projects={projects}
               videoDate={date}
-              minDate={rangeStart}
-              maxDate={rangeEnd}
               defaultTime={defaultTime}
               brandProjects={brandProjects}
               labels={{
@@ -368,7 +365,7 @@ export default async function SubmitPage({
                 <h2 className="text-sm font-semibold text-foreground">{t('chooseDay')}</h2>
                 <p className="mt-0.5 text-xs text-muted-foreground">{t('chooseDayHint')}</p>
               </div>
-              <DateSelect date={date} min={rangeStart} max={rangeEnd} />
+              <DateSelect date={date} />
             </div>
             {!isToday && (
               <p className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground">
