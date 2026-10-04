@@ -68,6 +68,8 @@ import { getLeagueBoard } from '@/lib/ranking'
 import { RankingBoard } from '@/components/ranking-board'
 import { RankingFilters } from '@/components/admin/ranking-filters'
 import { StrikesPanel } from '@/components/admin/strikes-panel'
+import { ContractReviewsPanel } from '@/components/admin/contract-reviews-panel'
+import { getPendingContractReviews } from '@/lib/contract-reviews'
 import { getReposterStrikeBoard, syncReposterStrikes } from '@/lib/strikes'
 import { getAttendanceForDay } from '@/lib/attendance'
 import { getProjectViewsBoard } from '@/lib/project-views'
@@ -258,12 +260,13 @@ export default async function AdminPage({
   const activeBase = creatorsBase.filter((c) => !c.paused_at)
 
   async function loadToday() {
-    const [submissions, strikeBoard, attendance] = await Promise.all([
+    const [submissions, strikeBoard, attendance, contractReviews] = await Promise.all([
       getAdminSubmissions(filters),
       getReposterStrikeBoard(opToday),
       getAttendanceForDay(selectedDay),
+      getPendingContractReviews(),
     ])
-    return { submissions, strikeBoard, attendance }
+    return { submissions, strikeBoard, attendance, contractReviews }
   }
 
   async function loadAnalytics() {
@@ -409,7 +412,7 @@ export default async function AdminPage({
   const todayData = tab === 'today' ? await loadToday() : null
   const analyticsData = tab === 'analytics' ? await loadAnalytics() : null
   const moneyData = tab === 'money' ? await loadMoney() : null
-  const { submissions, strikeBoard, attendance } =
+  const { submissions, strikeBoard, attendance, contractReviews } =
     todayData ?? ({} as Awaited<ReturnType<typeof loadToday>>)
   const {
     sheetOpen,
@@ -986,6 +989,25 @@ export default async function AdminPage({
                   />
                 )}
               </div>
+            ),
+          },
+          {
+            id: 'reviews',
+            title: t('reviewsTitle'),
+            summary: contractReviews.length === 0 ? t('allClear') : `${contractReviews.length}`,
+            hint: t('reviewsSummaryHint'),
+            children: (
+              <ContractReviewsPanel
+                reviews={contractReviews}
+                projectId={projectId}
+                labels={{
+                  hint: t('reviewsHint'),
+                  empty: t('reviewsEmpty'),
+                  reviewed: t('reviewsDone'),
+                  reviewedAll: t('reviewsDoneAll'),
+                  week: t('reviewsWeek'),
+                }}
+              />
             ),
           },
           {

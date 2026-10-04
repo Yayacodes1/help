@@ -1358,3 +1358,19 @@ export async function createBoardScheduleBreak(formData: FormData) {
   if (!Number.isFinite(creatorId) || creatorId < 1) return
   await createScheduleBreak(creatorId, formData)
 }
+
+// --- Weekly contract reviews ---
+
+export async function markContractReviewDone(id: number) {
+  await requireAdmin()
+  const { markContractReviewed } = await import('@/lib/contract-reviews')
+  await markContractReviewed(id)
+  revalidatePath('/admin')
+}
+
+export async function markAllContractReviewsDone() {
+  await requireAdmin()
+  const { markAllContractReviewsReviewed } = await import('@/lib/contract-reviews')
+  await markAllContractReviewsReviewed()
+  revalidatePath('/admin')
+}

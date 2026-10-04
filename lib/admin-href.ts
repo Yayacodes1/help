@@ -7,6 +7,7 @@ const ADMIN_PANELS = new Set([
   'topvideos',
   'progress',
   'attention',
+  'reviews',
   'videos',
   'paydue',
   'commission',

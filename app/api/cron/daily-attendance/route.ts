@@ -36,6 +36,14 @@ async function run(req: Request) {
   const telegram = await sendAttendanceReports(opToday, 'final')
   const webhook = await ensureTelegramWebhook(new URL(req.url).origin).catch((e) => ({ ok: false, error: String(e) }))
 
+  const { runContractReviews } = await import('@/lib/contract-reviews')
+  const { lastCompletedOperationalDay } = await import('@/lib/operational-day')
+  const prodHost = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim()
+  const contractReviews = await runContractReviews(
+    lastCompletedOperationalDay(opToday),
+    prodHost ? `https://${prodHost}` : new URL(req.url).origin,
+  ).catch((e) => ({ created: 0, telegram: { ok: false, error: String(e) } }))
+
   const { syncRevenueCatDownloads } = await import('@/lib/revenuecat')
   const { addDays } = await import('@/lib/campaign')
   const serverToday = await getServerToday()
@@ -74,6 +82,7 @@ async function run(req: Request) {
     telegramSkipped: telegram.skipped ?? false,
     telegramError: telegram.error ?? null,
     webhook,
+    contractReviews,
     revenueCat,
     views,
     viewsError,
