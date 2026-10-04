@@ -112,11 +112,6 @@ export function ProjectViewsPanel({
     }
     const nextProject = patch.project
     if (nextProject) {
-      const name = board.projects.find((p) => String(p.id) === nextProject)?.name ?? ''
-      if (/miq|miy/i.test(name)) {
-        const role = next.get('role')
-        if (!role || role === 'creator') next.set('role', 'all')
-      }
       next.delete('creator')
       next.delete('aCreator')
       next.delete('pvPerson')

@@ -136,7 +136,7 @@ export default async function CreatorDetailPage({
       : null
   const returnPanel = adminReturnPanel(sp.from)
   const backHref = adminDashboardHref({
-    role: sp.role || creator.role,
+    role: sp.role,
     projectId: sp.project,
     panel: returnPanel,
   })

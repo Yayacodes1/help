@@ -176,7 +176,6 @@ export function StrikesPanel({
                   <td className="px-3 py-2">
                     <Link
                       href={adminPersonHref(row.creatorId, {
-                        role: 'reposter',
                         panel: 'strikes',
                         from: 'strikes',
                       })}

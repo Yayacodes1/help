@@ -161,7 +161,7 @@ export default async function AdminPage({
     sp.project && sp.project !== SPLIT_PROJECT_VALUE && Number.isFinite(projectRaw) ? projectRaw : undefined
   // Default view: Notek | Miqat side by side; picking one project narrows it.
   const splitRequested = projectId == null
-  const roleParam = sp.role ?? 'all'
+  const roleParam = sp.role ?? 'creator'
   const roleFilter = parseRoleFilter(roleParam)
   const roleSql = roleFilterToSql(roleFilter)
 
@@ -231,7 +231,7 @@ export default async function AdminPage({
   const rankRole =
     sp.rankRole === 'creator' || sp.rankRole === 'reposter' || sp.rankRole === 'all'
       ? sp.rankRole
-      : 'all'
+      : roleFilter
   const rankRoleSql = roleFilterToSql(rankRole)
 
   const cmFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.cmFrom ?? '') ? sp.cmFrom! : monthStart
@@ -973,7 +973,7 @@ export default async function AdminPage({
                         <TodayProgress
                           creators={side.creators}
                           linkRole={side.role}
-                          projectId={side.project.id}
+                          projectId={projectId}
                         />
                       ),
                     }))}
@@ -1051,7 +1051,7 @@ export default async function AdminPage({
                       today={today}
                       dayLabel={isToday ? t('today') : formatDate(selectedDay)}
                       linkRole={side.role}
-                      projectId={side.project.id}
+                      projectId={projectId}
                       labels={attentionLabels}
                     />
                   ),
@@ -1120,7 +1120,7 @@ export default async function AdminPage({
                           submissions={side.submissions}
                           emptyLabel={t('noVideosMatch')}
                           linkRole={side.role}
-                          projectId={side.project.id}
+                          projectId={projectId}
                           linkFrom="videos"
                           editableProject
                           projects={projects}
@@ -1310,7 +1310,7 @@ export default async function AdminPage({
                         projects={projects}
                         roleFilter={side.role}
                         today={today}
-                        currentProjectId={side.project.id}
+                        currentProjectId={projectId}
                         isOwner={showBusiness}
                       />
                     ),

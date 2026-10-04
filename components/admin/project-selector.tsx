@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { FolderKanban } from 'lucide-react'
 import type { Project } from '@/lib/db'
-import { SPLIT_PROJECT_VALUE, isMiyqatProjectName, splitProjectPair } from '@/lib/project-scope'
+import { SPLIT_PROJECT_VALUE, splitProjectPair } from '@/lib/project-scope'
 import { sortProjects } from '@/lib/project-order'
 
 export function ProjectSelector({ projects }: { projects: Project[] }) {
@@ -24,18 +24,6 @@ export function ProjectSelector({ projects }: { projects: Project[] }) {
     next.delete('aCreator')
     next.delete('aProject')
     next.delete('pvPerson')
-
-    // Miqat posts are almost all from reposters; staying on the default
-    // "Creators" role makes Videos / Analytics look empty.
-    const picked = ordered.find((p) => String(p.id) === value)
-    const role = params.get('role')
-    const needsEveryone = picked != null && isMiyqatProjectName(picked.name)
-    if (needsEveryone && (!role || role === 'creator')) {
-      next.set('role', 'all')
-    }
-    if (needsEveryone && (!params.get('aRole') || params.get('aRole') === 'creator')) {
-      next.delete('aRole')
-    }
 
     router.push(`/admin?${next.toString()}`, { scroll: false })
   }

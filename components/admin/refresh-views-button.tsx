@@ -75,7 +75,7 @@ function readFilters(
   const projectId =
     projectRaw && Number.isFinite(Number(projectRaw)) ? Number(projectRaw) : undefined
   const role =
-    roleRaw === 'creator' || roleRaw === 'reposter' ? roleRaw : undefined
+    roleRaw === 'all' ? undefined : roleRaw === 'reposter' ? 'reposter' : 'creator'
   const platform =
     platformRaw === 'instagram' || platformRaw === 'tiktok'
       ? (platformRaw as Platform)

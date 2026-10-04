@@ -4,7 +4,7 @@ import { useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { RoleFilter } from '@/lib/participant-role'
 
-/** Both (default) / Creators / Reposters for the whole dashboard. */
+/** Creators (default) / Reposters / Both for the whole dashboard. */
 export function RoleSelector({
   labels,
 }: {
@@ -18,11 +18,11 @@ export function RoleSelector({
   const params = useSearchParams()
   const [isPending, startTransition] = useTransition()
   const raw = params.get('role')
-  const value: RoleFilter = raw === 'creator' || raw === 'reposter' ? raw : 'all'
+  const value: RoleFilter = raw === 'all' || raw === 'reposter' ? raw : 'creator'
 
   function onChange(nextValue: RoleFilter) {
     const next = new URLSearchParams(params.toString())
-    if (nextValue === 'all') next.delete('role')
+    if (nextValue === 'creator') next.delete('role')
     else next.set('role', nextValue)
     // Resets the per-project choices in the side-by-side columns too.
     for (const key of [...next.keys()]) {
@@ -35,9 +35,9 @@ export function RoleSelector({
   }
 
   const options: Array<[RoleFilter, string]> = [
-    ['all', labels.all],
     ['creator', labels.creators],
     ['reposter', labels.reposters],
+    ['all', labels.all],
   ]
 
   return (

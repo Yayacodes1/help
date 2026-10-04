@@ -38,14 +38,6 @@ export function PanelProjectFilter({
     if (nextProject == null) next.delete('project')
     else next.set('project', String(nextProject))
     if (panel) next.set('panel', panel)
-    // Choosing Miqat while stuck on Creators hides every post (all Miqat
-    // activity is currently from reposters). Flip to All people.
-    const name = ordered.find((p) => p.id === nextProject)?.name ?? ''
-    const isMiqat = /miq|miy/i.test(name)
-    const role = params.get('role')
-    if (isMiqat && (!role || role === 'creator')) {
-      next.set('role', 'all')
-    }
     next.delete('creator')
     next.delete('aCreator')
     next.delete('pvPerson')
