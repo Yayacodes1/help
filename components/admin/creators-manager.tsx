@@ -295,7 +295,7 @@ export function CreatorsManager({
         <HandleFields />
         <div className="flex flex-wrap gap-2">
           <select name="project_id" defaultValue="" className={selectClass}>
-            <option value="">Default project (optional)</option>
+            <option value="">Both (Notek + Miqat)</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -350,7 +350,7 @@ export function CreatorsManager({
                   />
                   <div className="flex flex-wrap items-center gap-2">
                     <select name="project_id" defaultValue={c.project_id ?? ''} className={selectClass}>
-                      <option value="">Default project (optional)</option>
+                      <option value="">Both (Notek + Miqat)</option>
                       {projects.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}
@@ -432,7 +432,7 @@ export function CreatorsManager({
                         </div>
                         <PersonHandlesLine person={c} />
                         <div className="text-xs text-muted-foreground">
-                          {c.project_name ?? 'No default project'} · {c.total_videos} total · streak{' '}
+                          {c.project_name ?? 'Both projects'} · {c.total_videos} total · streak{' '}
                           {c.current_streak}
                           {c.pay_due ? ' · pay due' : ''}
                         </div>

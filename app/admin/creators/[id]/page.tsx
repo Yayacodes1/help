@@ -159,7 +159,7 @@ export default async function CreatorDetailPage({
           </h1>
           <PersonHandlesLine person={creator} className="mt-1 text-xs text-muted-foreground" />
           <p className="mt-1 text-sm text-muted-foreground">
-            {project?.name ?? t('noProject')}
+            {project?.name ?? t('bothProjects')}
             {active
               ? ` · ${active.name}: ${formatDate(active.start_date)}${
                   active.end_date ? ` → ${formatDate(active.end_date)}` : ` → ${t('open')}`

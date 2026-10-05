@@ -290,7 +290,7 @@ export default async function SubmitPage({
               </h1>
             </div>
             <div className="flex h-12 min-w-12 shrink-0 items-center justify-center rounded-xl bg-[#c41e2a] px-2 text-lg font-bold text-[#fff7f0]">
-              {isMiqatHome ? 'ميقات' : 'نوتك'}
+              {!homeProject ? 'نوتك · ميقات' : isMiqatHome ? 'ميقات' : 'نوتك'}
             </div>
           </div>
           <p className="mt-3 text-sm font-medium text-[#b01020] dark:text-primary">

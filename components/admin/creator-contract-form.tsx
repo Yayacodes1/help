@@ -73,7 +73,7 @@ export function CreatorContractForm({
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Project (default)
             <select name="project_id" defaultValue={creator.project_id ?? ''} className={inputClass}>
-              <option value="">No default — pick on submit</option>
+              <option value="">Both (Notek + Miqat)</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
