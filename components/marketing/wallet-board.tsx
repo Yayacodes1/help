@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { formatDate, formatMoney } from '@/lib/format'
+import { formatDate, formatMoney, payCurrency } from '@/lib/format'
 import type { MarketingRequest, MarketingRequestItem } from '@/lib/marketing'
 import type { WalletEntry, WalletPerson, WalletTotals } from '@/lib/wallet'
 import type { PaymentDueRow } from '@/lib/queries'
@@ -13,8 +13,10 @@ import {
   createMoneyRequest,
   deleteMarketingExpense,
   deleteMarketingTransfer,
+  deleteWalletAdjustment,
   fulfillMarketingRequest,
   recordWalletPayments,
+  setWalletBalance,
 } from '@/app/actions/marketing'
 import { deletePayment } from '@/app/actions/admin'
 
@@ -25,11 +27,12 @@ const primaryBtn =
 const ghostBtn = 'h-9 rounded-lg border border-border px-3 text-sm hover:bg-muted disabled:opacity-60'
 
 type RequestWithItems = MarketingRequest & { items: MarketingRequestItem[] }
-type Action = 'pay' | 'spend' | 'ask' | 'send' | null
+type Action = 'pay' | 'spend' | 'ask' | 'send' | 'count' | null
 type Who = 'reposter' | 'creator' | 'all'
-type LedgerFilter = 'all' | 'in' | 'pay' | 'spend'
+type LedgerFilter = 'all' | 'in' | 'pay' | 'spend' | 'adjust'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
+const usdMoney = (n: number) => formatMoney(n, 'USD')
 const byName = (id: string | null) =>
   id === 'yahya' ? 'Yahya' : id === 'ahmed' ? 'Ahmed' : id ? id : '—'
 
@@ -59,10 +62,12 @@ export function WalletBoard({
   const usd = totals.find((t) => t.currency === 'USD') ?? {
     currency: 'USD' as const,
     sent: 0,
+    adjusted: 0,
     spentPayments: 0,
     spentOther: 0,
     left: 0,
     waiting: 0,
+    lastCount: null,
   }
   const otherCurrencies = totals.filter((t) => t.currency !== 'USD')
 
@@ -89,27 +94,42 @@ export function WalletBoard({
     { id: 'spend', label: 'Log other spend', show: true },
     { id: 'ask', label: isOwner ? 'New money request' : 'Ask Yahya for money', show: true },
     { id: 'send', label: 'Send money to Ahmed', show: isOwner },
+    { id: 'count', label: isOwner ? 'Set what Ahmed has' : 'How much I have', show: true },
   ]
 
   return (
     <div className="flex flex-col gap-5">
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile label="Sent to Ahmed" value={formatMoney(usd.sent)} hint="All money Yahya sent" />
+        <Tile
+          label="Sent to Ahmed"
+          value={usdMoney(usd.sent)}
+          hint={
+            Math.abs(usd.adjusted) > 0.009
+              ? `All money Yahya sent · ${usd.adjusted > 0 ? '+' : '−'}${usdMoney(Math.abs(usd.adjusted))} from Ahmed’s count`
+              : 'All money Yahya sent'
+          }
+        />
         <Tile
           label="Asked, not sent yet"
-          value={formatMoney(usd.waiting)}
+          value={usdMoney(usd.waiting)}
           hint={`${openRequests.length} open request${openRequests.length === 1 ? '' : 's'}`}
           tone={usd.waiting > 0 ? 'warn' : undefined}
         />
         <Tile
           label="Spent"
-          value={formatMoney(usd.spentPayments + usd.spentOther)}
-          hint={`People ${formatMoney(usd.spentPayments)} · Other ${formatMoney(usd.spentOther)}`}
+          value={usdMoney(usd.spentPayments + usd.spentOther)}
+          hint={`People ${usdMoney(usd.spentPayments)} · Other ${usdMoney(usd.spentOther)}`}
         />
         <Tile
           label="Left with Ahmed"
-          value={formatMoney(usd.left)}
-          hint={usd.left < 0 ? 'Spent more than was sent' : 'Sent − spent'}
+          value={usdMoney(usd.left)}
+          hint={
+            usd.lastCount
+              ? `Ahmed said he had ${usdMoney(usd.lastCount.amount)} on ${formatDate(usd.lastCount.on)}`
+              : usd.left < 0
+                ? 'Spent more than was sent'
+                : 'Sent − spent'
+          }
           tone={usd.left < 0 ? 'bad' : 'good'}
         />
       </section>
@@ -169,7 +189,7 @@ export function WalletBoard({
                 return
               }
               done(
-                `Recorded ${res.count} payment${res.count === 1 ? '' : 's'} · ${formatMoney(res.total)}${
+                `Recorded ${res.count} payment${res.count === 1 ? '' : 's'} · ${usdMoney(res.total)}${
                   res.fromWallet ? ' from Ahmed’s wallet' : ' (paid directly by Yahya)'
                 }`,
               )
@@ -208,6 +228,28 @@ export function WalletBoard({
                 return
               }
               done(`Request sent · ${formatMoney(res.total, input.currency)}`)
+            })
+          }
+        />
+      )}
+      {action === 'count' && (
+        <BalanceForm
+          today={today}
+          isOwner={isOwner}
+          totals={totals}
+          pending={pending}
+          onSubmit={(fd) =>
+            startTransition(async () => {
+              const res = await setWalletBalance(fd)
+              if (!res.ok) {
+                alert(res.error)
+                return
+              }
+              const change =
+                Math.abs(res.diff) < 0.009
+                  ? 'already matched'
+                  : `${res.diff > 0 ? '+' : '−'}${formatMoney(Math.abs(res.diff), res.currency)} fix`
+              done(`Ahmed has ${formatMoney(res.counted, res.currency)} · ${change}`)
             })
           }
         />
@@ -260,26 +302,39 @@ export function WalletBoard({
                 </div>
                 <RequestItems items={r.items} currency={r.currency} />
                 <div className="mt-3 flex flex-wrap items-end gap-2">
-                  {isOwner && (
-                    <form
-                      action={(fd) =>
-                        startTransition(async () => {
-                          await fulfillMarketingRequest(r.id, fd)
-                          done(`Marked ${formatMoney(r.total_amount, r.currency)} as sent to Ahmed`)
-                        })
-                      }
-                      className="flex flex-wrap items-end gap-2"
-                    >
-                      <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-                        Sent on
-                        <input type="date" name="sent_on" defaultValue={today} className={inputClass} />
-                      </label>
-                      <input type="hidden" name="note" value="" />
-                      <button type="submit" disabled={pending} className={primaryBtn}>
-                        I sent it
-                      </button>
-                    </form>
-                  )}
+                  <form
+                    action={(fd) =>
+                      startTransition(async () => {
+                        await fulfillMarketingRequest(r.id, fd)
+                        const amount = Number(fd.get('amount')) || r.total_amount
+                        done(
+                          `Marked ${formatMoney(amount, r.currency)} as ${isOwner ? 'sent to Ahmed' : 'received'}`,
+                        )
+                      })
+                    }
+                    className="flex flex-wrap items-end gap-2"
+                  >
+                    <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                      {isOwner ? 'Amount sent' : 'Amount received'} ({r.currency})
+                      <input
+                        type="number"
+                        name="amount"
+                        min={0}
+                        step="0.01"
+                        required
+                        defaultValue={r.total_amount}
+                        className={`${inputClass} w-32 text-right tabular-nums`}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                      {isOwner ? 'Sent on' : 'Received on'}
+                      <input type="date" name="sent_on" defaultValue={today} className={inputClass} />
+                    </label>
+                    <input type="hidden" name="note" value="" />
+                    <button type="submit" disabled={pending} className={primaryBtn}>
+                      {isOwner ? 'I sent it' : 'I received it'}
+                    </button>
+                  </form>
                   <button
                     type="button"
                     disabled={pending}
@@ -314,9 +369,15 @@ export function WalletBoard({
                         : 'font-medium'
                     }
                   >
-                    {r.status === 'fulfilled' ? 'Sent' : 'Cancelled'}
+                    {r.status === 'fulfilled' ? 'Received' : 'Cancelled'}
                   </span>{' '}
-                  · {formatMoney(r.total_amount, r.currency)} · {r.title || `#${r.id}`}
+                  ·{' '}
+                  {r.status === 'fulfilled' &&
+                  r.received_amount != null &&
+                  Math.abs(r.received_amount - r.total_amount) > 0.009
+                    ? `${formatMoney(r.received_amount, r.currency)} of ${formatMoney(r.total_amount, r.currency)} asked`
+                    : formatMoney(r.total_amount, r.currency)}{' '}
+                  · {r.title || `#${r.id}`}
                   {r.recorded_by ? ` · by ${byName(r.recorded_by)}` : ''}
                 </li>
               ))}
@@ -334,6 +395,7 @@ export function WalletBoard({
           if (!confirm(`Delete “${e.label}” (${formatMoney(e.amount, e.currency)})?`)) return
           startTransition(async () => {
             if (e.kind === 'in') await deleteMarketingTransfer(e.id)
+            else if (e.kind === 'adjust') await deleteWalletAdjustment(e.id)
             else if (e.kind === 'spend') await deleteMarketingExpense(e.id)
             else if (e.creatorId != null) await deletePayment(e.id, e.creatorId)
             router.refresh()
@@ -581,7 +643,7 @@ function PayPeopleForm({
                       )}
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
-                      {owed ? formatMoney(owed) : '—'}
+                      {owed ? formatMoney(owed, payCurrency(p.role)) : '—'}
                     </td>
                     <td className="px-2 py-1.5">
                       <input
@@ -636,12 +698,12 @@ function PayPeopleForm({
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
-          <span className="font-semibold tabular-nums">{formatMoney(total)}</span> to{' '}
+          <span className="font-semibold tabular-nums">{usdMoney(total)}</span> to{' '}
           {selected.length} {selected.length === 1 ? 'person' : 'people'}
           {fromWallet && (
             <span className={overBudget ? 'ml-2 text-destructive' : 'ml-2 text-muted-foreground'}>
-              · Ahmed has {formatMoney(left)} left
-              {overBudget ? ` — ${formatMoney(total - left)} more than he has` : ''}
+              · Ahmed has {usdMoney(left)} left
+              {overBudget ? ` — ${usdMoney(total - left)} more than he has` : ''}
             </span>
           )}
         </div>
@@ -889,7 +951,7 @@ function Ledger({
     for (const e of entries) {
       const cur = running.get(e.currency) ?? 0
       out.set(e.key, cur)
-      running.set(e.currency, e.kind === 'in' ? cur - e.amount : cur + e.amount)
+      running.set(e.currency, e.kind === 'in' || e.kind === 'adjust' ? cur - e.amount : cur + e.amount)
     }
     return out
   }, [entries, totals])
@@ -900,6 +962,7 @@ function Ledger({
     { id: 'in', label: 'Money in' },
     { id: 'pay', label: 'Paid people' },
     { id: 'spend', label: 'Other spend' },
+    { id: 'adjust', label: 'Ahmed’s counts' },
   ]
 
   return (
@@ -951,11 +1014,13 @@ function Ledger({
                     <td className="py-2 pr-2 text-muted-foreground">{byName(e.recordedBy)}</td>
                     <td
                       className={`whitespace-nowrap py-2 pr-2 text-right font-medium tabular-nums ${
-                        e.kind === 'in' ? 'text-emerald-600 dark:text-emerald-400' : ''
+                        e.kind === 'in' || (e.kind === 'adjust' && e.amount > 0)
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : ''
                       }`}
                     >
-                      {e.kind === 'in' ? '+' : '−'}
-                      {formatMoney(e.amount, e.currency)}
+                      {e.kind === 'in' || (e.kind === 'adjust' && e.amount >= 0) ? '+' : '−'}
+                      {formatMoney(Math.abs(e.amount), e.currency)}
                     </td>
                     <td className="whitespace-nowrap py-2 pr-2 text-right tabular-nums text-muted-foreground">
                       {formatMoney(leftAfter.get(e.key) ?? 0, e.currency)}
@@ -980,6 +1045,82 @@ function Ledger({
           </table>
         </div>
       )}
+    </section>
+  )
+}
+
+function BalanceForm({
+  today,
+  isOwner,
+  totals,
+  pending,
+  onSubmit,
+}: {
+  today: string
+  isOwner: boolean
+  totals: WalletTotals[]
+  pending: boolean
+  onSubmit: (fd: FormData) => void
+}) {
+  const [currency, setCurrency] = useState<'USD' | 'SAR'>('USD')
+  const [amount, setAmount] = useState('')
+  const left = totals.find((t) => t.currency === currency)?.left ?? 0
+  const typed = Number(amount)
+  const diff = amount.trim() !== '' && Number.isFinite(typed) ? round2(typed - left) : null
+  return (
+    <section className="rounded-lg border border-border bg-card p-4">
+      <h3 className="text-sm font-semibold">{isOwner ? 'What Ahmed has' : 'How much I have'}</h3>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {isOwner ? 'Type what Ahmed has on his end right now.' : 'Type how much money you have on your end right now.'}{' '}
+        The app adds a fix so “Left with Ahmed” matches it. The app says{' '}
+        <span className="font-medium text-foreground">{formatMoney(left, currency)}</span>.
+      </p>
+      <form action={onSubmit} className="mt-3 grid gap-2 sm:grid-cols-4">
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Amount he has
+          <input
+            type="number"
+            name="amount"
+            step="0.01"
+            required
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className={inputClass}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Currency
+          <select
+            name="currency"
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value === 'SAR' ? 'SAR' : 'USD')}
+            className={inputClass}
+          >
+            <option value="USD">USD ($)</option>
+            <option value="SAR">SAR (﷼)</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Date
+          <input type="date" name="counted_on" required defaultValue={today} className={inputClass} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Note (optional)
+          <input name="note" placeholder="e.g. cash + bank" className={inputClass} />
+        </label>
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:col-span-4">
+          <span className="text-xs text-muted-foreground">
+            {diff == null
+              ? ' '
+              : Math.abs(diff) < 0.009
+                ? 'Matches the app.'
+                : `${diff > 0 ? 'Adds' : 'Takes off'} ${formatMoney(Math.abs(diff), currency)}`}
+          </span>
+          <button type="submit" disabled={pending} className={primaryBtn}>
+            {pending ? 'Saving…' : 'Save amount'}
+          </button>
+        </div>
+      </form>
     </section>
   )
 }

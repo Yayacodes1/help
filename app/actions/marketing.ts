@@ -3,7 +3,7 @@
 import { sql } from '@/lib/db'
 import { getAdminSession } from '@/lib/admin-auth'
 import { normalizeCurrency } from '@/lib/marketing'
-import { paymentSource } from '@/lib/wallet'
+import { getWalletTotals, paymentSource } from '@/lib/wallet'
 import { revalidatePath } from 'next/cache'
 
 /** Returns the admin account id (yahya / ahmed). */
@@ -180,12 +180,16 @@ export async function cancelMarketingRequest(id: number) {
   revalidateMarketing()
 }
 
-/** Fulfill a request by recording a transfer for the total. */
+/**
+ * Close a request as money in. Yahya marks it sent; Ahmed marks it received.
+ * `amount` is what actually arrived (defaults to the full request).
+ */
 export async function fulfillMarketingRequest(id: number, formData: FormData) {
-  const by = await requireOwner()
+  const by = await requireAdmin()
   const sentOn = parseDate(formData.get('sent_on')) ?? new Date().toISOString().slice(0, 10)
   const label = parseText(formData.get('label'), 200)
   const note = parseText(formData.get('note'), 2000)
+  const typedAmount = parseAmount(formData.get('amount'))
 
   const reqRows = (await sql`
     SELECT id, currency, status, title, project_id FROM marketing_requests WHERE id = ${id} LIMIT 1
@@ -204,16 +208,52 @@ export async function fulfillMarketingRequest(id: number, formData: FormData) {
     FROM marketing_request_items WHERE request_id = ${id}
   `) as { total: number }[]
   const total = Number(sumRows[0]?.total) || 0
-  if (total <= 0) return
+  const received = typedAmount > 0 ? typedAmount : total
+  if (received <= 0) return
 
   const currency = normalizeCurrency(req.currency)
   const transferLabel = label || req.title || `Request #${id}`
+  const partial = Math.abs(received - total) > 0.009
+  const fullNote = partial
+    ? [`Received ${received.toFixed(2)} of ${total.toFixed(2)} asked`, note].filter(Boolean).join(' · ')
+    : note
 
   await sql`
     INSERT INTO marketing_transfers (sent_on, amount, currency, label, note, project_id, recorded_by)
-    VALUES (${sentOn}, ${total}, ${currency}, ${transferLabel}, ${note}, ${req.project_id}, ${by})
+    VALUES (${sentOn}, ${received}, ${currency}, ${transferLabel}, ${fullNote}, ${req.project_id}, ${by})
   `
-  await sql`UPDATE marketing_requests SET status = 'fulfilled' WHERE id = ${id}`
+  await sql`
+    UPDATE marketing_requests SET status = 'fulfilled', received_amount = ${received} WHERE id = ${id}
+  `
+  revalidateMarketing()
+}
+
+/**
+ * Ahmed says how much he actually has. Records the difference from the app's
+ * "left" so the wallet matches his real balance.
+ */
+export async function setWalletBalance(formData: FormData) {
+  const by = await requireAdmin()
+  const raw = Number((formData.get('amount') ?? '').toString())
+  if (!Number.isFinite(raw)) return { ok: false as const, error: 'Enter an amount.' }
+  const counted = Math.round(raw * 100) / 100
+  const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
+  const on = parseDate(formData.get('counted_on')) ?? new Date().toISOString().slice(0, 10)
+  const note = parseText(formData.get('note'), 500)
+  const totals = await getWalletTotals()
+  const left = totals.find((t) => t.currency === currency)?.left ?? 0
+  const diff = Math.round((counted - left) * 100) / 100
+  await sql`
+    INSERT INTO wallet_adjustments (adjusted_on, amount, counted, currency, note, recorded_by)
+    VALUES (${on}, ${diff}, ${counted}, ${currency}, ${note}, ${by})
+  `
+  revalidateMarketing()
+  return { ok: true as const, diff, counted, currency }
+}
+
+export async function deleteWalletAdjustment(id: number) {
+  await requireAdmin()
+  await sql`DELETE FROM wallet_adjustments WHERE id = ${id}`
   revalidateMarketing()
 }
 

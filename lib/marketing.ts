@@ -35,6 +35,8 @@ export type MarketingRequest = {
   project_id: number | null
   created_at: string
   total_amount: number
+  /** What actually arrived when the request was marked received/sent. */
+  received_amount: number | null
   recorded_by: string | null
 }
 
@@ -105,6 +107,19 @@ export async function ensureMarketingTables() {
   await sql`ALTER TABLE marketing_transfers ADD COLUMN IF NOT EXISTS recorded_by text`
   await sql`ALTER TABLE marketing_expenses ADD COLUMN IF NOT EXISTS recorded_by text`
   await sql`ALTER TABLE marketing_requests ADD COLUMN IF NOT EXISTS recorded_by text`
+  await sql`ALTER TABLE marketing_requests ADD COLUMN IF NOT EXISTS received_amount NUMERIC(12, 2)`
+  await sql`
+    CREATE TABLE IF NOT EXISTS wallet_adjustments (
+      id SERIAL PRIMARY KEY,
+      adjusted_on DATE NOT NULL,
+      amount NUMERIC(12, 2) NOT NULL,
+      counted NUMERIC(12, 2) NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      note TEXT,
+      recorded_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
 
   // Legacy rows (no project) → Notek so Notek filter keeps historical budget.
   await sql`
@@ -205,6 +220,7 @@ export async function listMarketingRequests(
   const requests = (await sql`
     SELECT r.id, r.needed_by::text AS needed_by, r.currency, r.status, r.title, r.note,
            r.project_id, r.created_at, r.recorded_by,
+           r.received_amount::float AS received_amount,
            COALESCE((SELECT SUM(i.amount) FROM marketing_request_items i WHERE i.request_id = r.id), 0)::float AS total_amount
     FROM marketing_requests r
     WHERE (${statusFilter}::text IS NULL OR r.status = ${statusFilter})

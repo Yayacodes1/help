@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import type { PaymentDueRow } from '@/lib/queries'
-import { formatDate, formatMoney } from '@/lib/format'
+import { formatDate, formatMoney, payCurrency } from '@/lib/format'
 import { adminPersonHref } from '@/lib/admin-href'
 
 function DueTable({
@@ -86,7 +86,7 @@ function DueTable({
                 {row.contractName ?? '—'}
               </td>
               <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
-                {formatMoney(row.baseAmount)}
+                {formatMoney(row.baseAmount, payCurrency(row.creatorRole))}
               </td>
               <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
                 {row.commissionMissing ? (
@@ -94,15 +94,15 @@ function DueTable({
                     {labels.commissionMissing}
                   </span>
                 ) : (
-                  formatMoney(row.commissionAmount ?? 0)
+                  formatMoney(row.commissionAmount ?? 0, payCurrency(row.creatorRole))
                 )}
               </td>
               <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
-                {formatMoney(row.paidAmount)}
+                {formatMoney(row.paidAmount, payCurrency(row.creatorRole))}
               </td>
               {!settled && (
                 <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
-                  {formatMoney(row.balance)}
+                  {formatMoney(row.balance, payCurrency(row.creatorRole))}
                   {row.commissionMissing ? (
                     <div className="text-[10px] font-normal text-muted-foreground">
                       + ?

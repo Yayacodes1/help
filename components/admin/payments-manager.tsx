@@ -16,7 +16,10 @@ export function PaymentsManager({
   payments,
   paidTotal,
   isOwner = false,
+  currency = 'SAR',
 }: {
+  /** Reposters are paid in USD, creators in SAR. */
+  currency?: 'USD' | 'SAR'
   creatorId: number
   today: string
   contracts: Contract[]
@@ -45,8 +48,8 @@ export function PaymentsManager({
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="text-sm font-semibold">Total paid</h2>
-          <p className="mt-2 text-2xl font-semibold tabular-nums">{formatMoney(total)}</p>
-          <p className="text-[11px] text-muted-foreground">Saudi riyals</p>
+          <p className="mt-2 text-2xl font-semibold tabular-nums">{formatMoney(total, currency)}</p>
+          <p className="text-[11px] text-muted-foreground">{currency === 'USD' ? 'US dollars' : 'Saudi riyals'}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {payments.length === 0
               ? 'Empty — money typed on contracts was not recorded yet.'
@@ -57,7 +60,7 @@ export function PaymentsManager({
           <h2 className="text-sm font-semibold">Last payment</h2>
           {latest ? (
             <p className="mt-2 text-sm">
-              <span className="font-semibold tabular-nums">{formatMoney(latest.amount)}</span>
+              <span className="font-semibold tabular-nums">{formatMoney(latest.amount, currency)}</span>
               {' on '}
               {formatDate(latest.paid_on)}
               {latest.note ? ` · ${latest.note}` : ''}
@@ -148,7 +151,7 @@ export function PaymentsManager({
                 <tr key={p.id} className="border-b border-border last:border-0">
                   <td className="whitespace-nowrap px-4 py-3">{formatDate(p.paid_on)}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-medium tabular-nums">
-                    {formatMoney(p.amount)}
+                    {formatMoney(p.amount, currency)}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {p.contract_name ?? '—'}

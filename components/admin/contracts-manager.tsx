@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, type ReactNode } from 'react'
+import { createContext, useContext, useState, useTransition, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 import type { ContractCompareRow } from '@/lib/queries'
 import type { Project } from '@/lib/db'
@@ -14,6 +14,14 @@ import {
   updateContract,
 } from '@/app/actions/admin'
 import { formatDate, formatMoney } from '@/lib/format'
+
+type PayCurrency = 'USD' | 'SAR'
+const CurrencyContext = createContext<PayCurrency>('SAR')
+
+function useMoney() {
+  const currency = useContext(CurrencyContext)
+  return (n: number) => formatMoney(n, currency)
+}
 import { CommissionTermsFields } from '@/components/admin/commission-terms-fields'
 import {
   halfPaymentNote,
@@ -255,17 +263,18 @@ function PayFields({
   requireBase?: boolean
   variant?: 'current' | 'past'
 }) {
+  const currency = useContext(CurrencyContext)
   const isPast = variant === 'past'
   return (
     <div className="grid gap-2">
       <p className="text-[11px] text-muted-foreground">
         {isPast
-          ? 'Past contract: amounts in SAR are what you already gave her. Saving records them as paid.'
+          ? `Past contract: amounts in ${currency} are what you already paid. Saving records them as paid.`
           : 'Type the amount you pay, then choose whether that number is for the whole month or each 2-week wave. Month contracts split at day 14.'}
       </p>
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          {isPast ? 'Base I paid (SAR)' : 'Base pay · SAR'}
+          {isPast ? `Base I paid (${currency})` : `Base pay · ${currency}`}
           <input
             type="number"
             min={0}
@@ -278,7 +287,7 @@ function PayFields({
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          {isPast ? 'Flat bonus I paid (SAR)' : 'Flat bonus · SAR (optional)'}
+          {isPast ? `Flat bonus I paid (${currency})` : `Flat bonus · ${currency} (optional)`}
           <span className="font-normal">{isPast ? '(blank = none)' : '(blank keeps saved value)'}</span>
           <input
             type="number"
@@ -344,7 +353,7 @@ function HitBar({ rate, label }: { rate: number; label: string }) {
   )
 }
 
-function paySummaryLine(row: ContractCompareRow): string {
+function paySummaryLine(row: ContractCompareRow, money: (n: number) => string): string {
   const { contract, paidAmount, expectedTotal, balance } = row
   const base = Number(contract.base_amount) || 0
   const cadence = contract.base_pay_cadence === 'biweekly' ? 'biweekly' : 'monthly'
@@ -352,26 +361,26 @@ function paySummaryLine(row: ContractCompareRow): string {
   if (base > 0) {
     parts.push(
       row.isActive && !row.isPast
-        ? `terms ${formatMoney(base)} ${cadence}`
-        : `base ${formatMoney(base)} ${cadence}`,
+        ? `terms ${money(base)} ${cadence}`
+        : `base ${money(base)} ${cadence}`,
     )
   }
   if (contract.commission_amount != null) {
-    parts.push(`flat bonus ${formatMoney(Number(contract.commission_amount))}`)
+    parts.push(`flat bonus ${money(Number(contract.commission_amount))}`)
   }
   if (contract.view_commission_amount != null) {
     parts.push(
-      `view commission ${formatMoney(Number(contract.view_commission_amount))} every ${(
+      `view commission ${money(Number(contract.view_commission_amount))} every ${(
         contract.views_threshold ?? 5000
       ).toLocaleString()} views`,
     )
   } else if (!row.isPast) {
     parts.push('view commission not set')
   }
-  if (expectedTotal != null) parts.push(`period ${formatMoney(expectedTotal)}`)
-  parts.push(`paid ${formatMoney(paidAmount)}`)
+  if (expectedTotal != null) parts.push(`period ${money(expectedTotal)}`)
+  parts.push(`paid ${money(paidAmount)}`)
   if (balance > 0.009) {
-    parts.push(`still due ${formatMoney(balance)}`)
+    parts.push(`still due ${money(balance)}`)
   } else if (paidAmount > 0.009 && base > 0) {
     parts.push('settled')
   }
@@ -391,6 +400,7 @@ function MarkPaidButton({
   pending: boolean
   startTransition: (fn: () => void) => void
 }) {
+  const money = useMoney()
   const { contract, balance, paidAmount, isActive, isPast, halves } = row
   if (halves.length === 2) {
     return (
@@ -445,7 +455,7 @@ function MarkPaidButton({
         disabled={pending}
         className="h-10 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
       >
-        Mark paid {formatMoney(balance)}
+        Mark paid {money(balance)}
         {paidAmount > 0.009 ? ' (balance)' : ''}
       </button>
     </form>
@@ -522,6 +532,7 @@ function HalfPayCard({
   pending: boolean
   startTransition: (fn: () => void) => void
 }) {
+  const money = useMoney()
   return (
     <div className="rounded-lg border border-border bg-card p-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -550,7 +561,7 @@ function HalfPayCard({
 
       {half.paidAmount > 0.009 ? (
         <p className="mt-2 text-sm font-medium tabular-nums text-foreground">
-          Paid {formatMoney(half.paidAmount)}
+          Paid {money(half.paidAmount)}
           {half.lastPaidOn ? (
             <span className="font-normal text-muted-foreground">
               {' '}
@@ -565,7 +576,7 @@ function HalfPayCard({
         </p>
       ) : (
         <p className="mt-2 text-[11px] text-muted-foreground">
-          Due {formatMoney(half.dueAmount)} · not paid yet
+          Due {money(half.dueAmount)} · not paid yet
         </p>
       )}
 
@@ -588,7 +599,7 @@ function HalfPayCard({
             disabled={pending}
             className="h-11 w-full rounded-lg bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-60"
           >
-            Pay {formatMoney(half.balance)}
+            Pay {money(half.balance)}
           </button>
         </form>
       ) : null}
@@ -601,13 +612,17 @@ export function ContractsManager({
   today,
   comparisons,
   projects,
+  currency = 'SAR',
 }: {
   creatorId: number
   today: string
   comparisons: ContractCompareRow[]
   projects: Project[]
+  /** Reposters are paid in USD, creators in SAR. */
+  currency?: PayCurrency
 }) {
   const [pending, startTransition] = useTransition()
+  const money = (n: number) => formatMoney(n, currency)
   const stickyBase =
     comparisons.find((r) => Number(r.contract.base_amount) > 0)?.contract.base_amount ?? 0
   const current = comparisons.find((r) => r.isActive)
@@ -619,6 +634,7 @@ export function ContractsManager({
   const unpaidPastTotal = needsRecord.reduce((sum, r) => sum + r.balance, 0)
 
   return (
+    <CurrencyContext.Provider value={currency}>
     <div className="flex flex-col gap-4">
       <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
         <p className="font-medium text-foreground">How money works</p>
@@ -635,7 +651,7 @@ export function ContractsManager({
             biweekly (each wave). Month contracts get a midway Pay after 14 days — tap Pay.
           </li>
           <li>
-            <span className="text-foreground">Commission</span>: SAR for every full view-block (e.g.
+            <span className="text-foreground">Commission</span>: {currency} for every full view-block (e.g.
             every 5,000 views). Separate from base pay.
           </li>
           <li>Total paid only moves when you tap Pay (or record in Payments).</li>
@@ -651,7 +667,7 @@ export function ContractsManager({
           <p className="mt-1 text-xs text-muted-foreground">
             Typed amounts on past contracts aren’t in Payments yet. Record{' '}
             <span className="font-semibold tabular-nums text-foreground">
-              {formatMoney(unpaidPastTotal)}
+              {money(unpaidPastTotal)}
             </span>{' '}
             as paid — clears Pay due and fills Total paid.
           </p>
@@ -741,18 +757,18 @@ export function ContractsManager({
                         .join(' · ')}
                     </p>
                   ) : null}
-                  <p className="text-[11px] font-medium text-foreground">{paySummaryLine(row)}</p>
+                  <p className="text-[11px] font-medium text-foreground">{paySummaryLine(row, money)}</p>
                   {halves.length === 2 ? (
                     <p className="text-[11px] text-muted-foreground">
                       1st half: {halves[0].videoCount} videos
                       {halves[0].paidAmount > 0.009
-                        ? ` · paid ${formatMoney(halves[0].paidAmount)}`
-                        : ` · due ${formatMoney(halves[0].dueAmount)}`}
+                        ? ` · paid ${money(halves[0].paidAmount)}`
+                        : ` · due ${money(halves[0].dueAmount)}`}
                       {' · '}
                       2nd half: {halves[1].videoCount} videos
                       {halves[1].paidAmount > 0.009
-                        ? ` · paid ${formatMoney(halves[1].paidAmount)}`
-                        : ` · due ${formatMoney(halves[1].dueAmount)}`}
+                        ? ` · paid ${money(halves[1].paidAmount)}`
+                        : ` · due ${money(halves[1].dueAmount)}`}
                     </p>
                   ) : null}
                 </div>
@@ -910,11 +926,11 @@ export function ContractsManager({
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Terms {expectedTotal != null ? formatMoney(expectedTotal) : '—'}
+                        Terms {expectedTotal != null ? money(expectedTotal) : '—'}
                         {' · '}
-                        Paid {formatMoney(paidAmount)}
+                        Paid {money(paidAmount)}
                         {balance > 0.009
-                          ? ` · still due ${formatMoney(balance)}`
+                          ? ` · still due ${money(balance)}`
                           : paidAmount > 0.009
                             ? ' · settled'
                             : ''}
@@ -1055,5 +1071,6 @@ export function ContractsManager({
         )}
       </TapOpenSection>
     </div>
+    </CurrencyContext.Provider>
   )
 }

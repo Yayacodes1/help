@@ -1028,6 +1028,7 @@ export async function getContractComparisons(
 export type PaymentDueRow = {
   creatorId: number
   creatorName: string
+  creatorRole: ParticipantRole
   contractId: number | null
   contractName: string | null
   dueDate: string
@@ -1072,6 +1073,7 @@ function buildDueRow(input: {
   return {
     creatorId: input.creator.id,
     creatorName: input.creator.name,
+    creatorRole: input.creator.role,
     contractId: contract?.id ?? null,
     contractName: contract?.name ?? null,
     dueDate: input.dueDate,
@@ -1229,6 +1231,7 @@ export async function getPaymentDueList(
 
 export type PaymentRow = Payment & {
   creator_name?: string
+  creator_role?: ParticipantRole
   contract_name?: string | null
 }
 
@@ -1274,6 +1277,7 @@ export async function getPaymentsInRange(
            p.amount::float AS amount,
            p.note, p.created_at,
            c.name AS creator_name,
+           c.role AS creator_role,
            ct.name AS contract_name
     FROM payments p
     JOIN creators c ON c.id = p.creator_id

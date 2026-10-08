@@ -9,6 +9,13 @@ import {
   yearMonthsInRange,
   type ContractPeriod,
 } from '@/lib/biweekly'
+import { SAR_PER_USD } from '@/lib/fx'
+
+/** Reposters are paid in USD and creators in SAR; this panel shows everything in USD. */
+function toUsd(amount: number | null | undefined, role: string): number {
+  const n = Number(amount) || 0
+  return role === 'reposter' ? n : Math.round((n / SAR_PER_USD) * 100) / 100
+}
 
 export type OutflowView = 'creators' | 'reposters' | 'total'
 
@@ -166,14 +173,10 @@ export async function getOutflowSnapshot(opts: {
   includeAllCreators?: boolean
   /** Always include every reposter under a project filter. */
   includeAllReposters?: boolean
-  /** Marketing-by-month panel: only reposter pay (ignore creators). */
-  repostersOnly?: boolean
 }): Promise<OutflowSnapshot> {
   const from = opts.from
   const to = opts.to
-  const view: OutflowView = opts.repostersOnly
-    ? 'reposters'
-    : (opts.view ?? 'total')
+  const view: OutflowView = opts.view ?? 'total'
   const countMode: OutflowCountMode = opts.countMode === 'all' ? 'all' : 'base'
   const roleFilter: ParticipantRole | null =
     view === 'creators' ? 'creator' : view === 'reposters' ? 'reposter' : null
@@ -181,7 +184,7 @@ export async function getOutflowSnapshot(opts: {
   const includeAllCreators = opts.includeAllCreators ?? false
   const includeAllReposters = opts.includeAllReposters ?? projectId != null
 
-  const payments = (await sql`
+  const paymentRows = (await sql`
     SELECT p.id, p.paid_on::text AS paid_on, p.amount::float AS amount, p.note,
            c.id AS creator_id, c.name AS creator_name, c.role,
            p.contract_id,
@@ -205,6 +208,7 @@ export async function getOutflowSnapshot(opts: {
       )
     ORDER BY p.paid_on ASC, c.name ASC, p.id ASC
   `) as OutflowPaymentRow[]
+  const payments = paymentRows.map((p) => ({ ...p, amount: toUsd(p.amount, p.role) }))
 
   const peopleRows = (await sql`
     SELECT c.id AS creator_id, c.name AS creator_name, c.role
@@ -229,7 +233,7 @@ export async function getOutflowSnapshot(opts: {
     'upfront' | 'midterm' | 'full' | 'installment_source'
   > & { pay_every_days: number }
 
-  const allContracts = (await sql`
+  const contractQueryRows = (await sql`
     SELECT c.id AS creator_id, c.name AS creator_name, c.role,
            COALESCE(c.pay_every_days, 14)::int AS pay_every_days,
            ct.id AS contract_id, ct.name AS contract_name,
@@ -253,13 +257,19 @@ export async function getOutflowSnapshot(opts: {
       )
     ORDER BY c.id ASC, ct.start_date DESC, ct.id DESC
   `) as ContractQueryRow[]
+  const allContracts = contractQueryRows.map((row) => ({
+    ...row,
+    base_amount: toUsd(row.base_amount, row.role),
+    commission_amount:
+      row.commission_amount == null ? null : toUsd(row.commission_amount, row.role),
+  }))
 
   const contracts = allContracts.filter(
     (row) => row.start_date <= to && (row.end_date == null || row.end_date >= from),
   )
 
   const historyRows = (await sql`
-    SELECT p.contract_id, p.paid_on::text AS paid_on, p.amount::float AS amount
+    SELECT p.contract_id, p.paid_on::text AS paid_on, p.amount::float AS amount, c.role
     FROM payments p
     JOIN contracts ct ON ct.id = p.contract_id
     JOIN creators c ON c.id = ct.creator_id
@@ -278,13 +288,13 @@ export async function getOutflowSnapshot(opts: {
         )
       )
     ORDER BY p.paid_on ASC, p.id ASC
-  `) as { contract_id: number; paid_on: string; amount: number }[]
+  `) as { contract_id: number; paid_on: string; amount: number; role: string }[]
 
   const historyByContract = new Map<number, number[]>()
   for (const row of historyRows) {
     if (row.contract_id == null) continue
     const list = historyByContract.get(row.contract_id) ?? []
-    list.push(Number(row.amount) || 0)
+    list.push(toUsd(row.amount, row.role))
     historyByContract.set(row.contract_id, list)
   }
 
@@ -581,9 +591,12 @@ export async function getOutflowSnapshot(opts: {
 
   let creatorsTotal = 0
   let repostersTotal = 0
+  const roleShown = (role: string) =>
+    roleFilter == null || (roleFilter === 'reposter') === (role === 'reposter')
   for (const row of roleTotals) {
-    if (row.role === 'reposter') repostersTotal = Number(row.total) || 0
-    else creatorsTotal = Number(row.total) || 0
+    if (!roleShown(row.role)) continue
+    if (row.role === 'reposter') repostersTotal += toUsd(row.total, row.role)
+    else creatorsTotal += toUsd(row.total, row.role)
   }
 
   const monthRows = (await sql`
@@ -599,6 +612,7 @@ export async function getOutflowSnapshot(opts: {
 
   const monthsMap = new Map<string, OutflowMonthBucket>()
   for (const row of monthRows) {
+    if (!roleShown(row.role)) continue
     const bucket =
       monthsMap.get(row.key) ??
       ({
@@ -608,7 +622,7 @@ export async function getOutflowSnapshot(opts: {
         reposters: 0,
         total: 0,
       } satisfies OutflowMonthBucket)
-    const amount = Number(row.total) || 0
+    const amount = toUsd(row.total, row.role)
     if (row.role === 'reposter') bucket.reposters += amount
     else bucket.creators += amount
     bucket.total = bucket.creators + bucket.reposters

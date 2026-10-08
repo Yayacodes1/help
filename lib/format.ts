@@ -59,6 +59,11 @@ export function formatNumber(value: number): string {
 /** Primary display currency for the app (Saudi riyal). */
 export const PRIMARY_CURRENCY = 'SAR' as const
 
+/** Reposters are paid in USD; creators in SAR. */
+export function payCurrency(role?: string | null): 'USD' | 'SAR' {
+  return role === 'reposter' ? 'USD' : 'SAR'
+}
+
 export function formatMoney(value: number, currency: string = PRIMARY_CURRENCY): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',

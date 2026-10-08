@@ -36,7 +36,7 @@ import { StatCard } from '@/components/stat-card'
 import { StandingBadge } from '@/components/standing-badge'
 import { getCommissionBoard, getCommissionBreakdown, getCommissionEstimate } from '@/lib/commission-data'
 import { CreatorCommissionPanel } from '@/components/admin/creator-commission-panel'
-import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { formatDate, formatMoney, formatNumber, payCurrency } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 import { adminDashboardHref, adminReturnPanel } from '@/lib/admin-href'
@@ -124,6 +124,7 @@ export default async function CreatorDetailPage({
     ? `${commissionBreakdown.terms.countMode === 'batch' ? 'Per batch' : 'Per video'} · ${formatMoney(commissionBreakdown.terms.commissionAmount, 'SAR')} every ${formatNumber(commissionBreakdown.terms.viewsThreshold)} views · ${commissionBreakdown.terms.reelCount} expected blocks`
     : null
   const project = creator.project_id ? await getProjectById(creator.project_id) : null
+  const currency = payCurrency(creator.role)
   const pay = await getPaySummary(creator, today)
   const window = contractWindow(creator, today, active)
   const totalViews = submissions.reduce((sum, s) => sum + (s.views ?? 0), 0)
@@ -219,17 +220,17 @@ export default async function CreatorDetailPage({
         />
         <StatCard
           label={t('commissionEarned')}
-          value={formatMoney(perf?.commissionEarned ?? 0)}
+          value={formatMoney(perf?.commissionEarned ?? 0, currency)}
           hint={
-            perf?.costPer1k != null ? `${formatMoney(perf.costPer1k)} / 1k` : undefined
+            perf?.costPer1k != null ? `${formatMoney(perf.costPer1k, currency)} / 1k` : undefined
           }
         />
-        <StatCard label={t('totalPaid')} value={formatMoney(paidTotal)} />
+        <StatCard label={t('totalPaid')} value={formatMoney(paidTotal, currency)} />
         <StatCard
           label={t('lastPaid')}
           value={
             latestPayment
-              ? `${formatMoney(latestPayment.amount)}`
+              ? `${formatMoney(latestPayment.amount, currency)}`
               : pay.lastPaidAt
                 ? formatDate(pay.lastPaidAt)
                 : '—'
@@ -313,6 +314,7 @@ export default async function CreatorDetailPage({
             children: (
               <div className="flex flex-col gap-4">
                 <ContractsManager
+                  currency={currency}
                   creatorId={creator.id}
                   today={today}
                   comparisons={comparisons}
@@ -325,7 +327,7 @@ export default async function CreatorDetailPage({
           {
             id: 'payments',
             title: t('payments'),
-            summary: formatMoney(paidTotal),
+            summary: formatMoney(paidTotal, currency),
             hint: latestPayment
               ? `${t('lastPaid')} ${formatDate(latestPayment.paid_on)}`
               : pay.nextPayAt
@@ -333,6 +335,7 @@ export default async function CreatorDetailPage({
                 : t('recordAPayment'),
             children: (
               <PaymentsManager
+                currency={currency}
                 creatorId={creator.id}
                 today={today}
                 contracts={contracts}

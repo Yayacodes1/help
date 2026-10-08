@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { PaymentRow } from '@/lib/queries'
-import { formatDate, formatMoney } from '@/lib/format'
+import { formatDate, formatMoney, payCurrency } from '@/lib/format'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
 
 export function PaymentsPeriodPanel({
@@ -11,7 +11,9 @@ export function PaymentsPeriodPanel({
   today,
   defaultFrom,
   defaultTo,
+  currency = 'SAR',
 }: {
+  currency?: 'USD' | 'SAR'
   payments: PaymentRow[]
   total: number
   today: string
@@ -56,7 +58,7 @@ export function PaymentsPeriodPanel({
           />
         </label>
         <div className="rounded-lg border border-border bg-secondary px-4 py-2 text-sm font-semibold tabular-nums">
-          Total {formatMoney(total)}
+          Total {formatMoney(total, currency)}
         </div>
       </div>
 
@@ -85,7 +87,7 @@ export function PaymentsPeriodPanel({
                     {p.contract_name ?? '—'}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums">
-                    {formatMoney(p.amount)}
+                    {formatMoney(p.amount, payCurrency(p.creator_role))}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{p.note ?? '—'}</td>
                 </tr>

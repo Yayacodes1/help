@@ -105,10 +105,15 @@ function CollapsibleSection({
 function MonthByMonthLine({
   months,
   mode,
+  view,
 }: {
   months: MarketingMonthBucket[]
   mode: AmountMode
+  view: OutflowView
 }) {
+  const showCreators = view !== 'reposters'
+  const showReposters = view !== 'creators'
+  const showTotal = view === 'total'
   if (months.length === 0) {
     return (
       <p className="px-3 py-6 text-sm text-muted-foreground">No months in this range.</p>
@@ -131,12 +136,24 @@ function MonthByMonthLine({
         <thead className="border-b border-border bg-secondary/30 text-[11px] uppercase tracking-wide text-muted-foreground">
           <tr>
             <th className="px-3 py-2 font-medium">Month</th>
-            <th className="px-3 py-2 font-medium text-right">Creators SAR</th>
-            <th className="px-3 py-2 font-medium text-right">Creators USD</th>
-            <th className="px-3 py-2 font-medium text-right">Reposters SAR</th>
-            <th className="px-3 py-2 font-medium text-right">Reposters USD</th>
-            <th className="px-3 py-2 font-medium text-right">Total SAR</th>
-            <th className="px-3 py-2 font-medium text-right">Total USD</th>
+            {showCreators ? (
+              <>
+                <th className="px-3 py-2 font-medium text-right">Creators SAR</th>
+                <th className="px-3 py-2 font-medium text-right">Creators USD</th>
+              </>
+            ) : null}
+            {showReposters ? (
+              <>
+                <th className="px-3 py-2 font-medium text-right">Reposters SAR</th>
+                <th className="px-3 py-2 font-medium text-right">Reposters USD</th>
+              </>
+            ) : null}
+            {showTotal ? (
+              <>
+                <th className="px-3 py-2 font-medium text-right">Total SAR</th>
+                <th className="px-3 py-2 font-medium text-right">Total USD</th>
+              </>
+            ) : null}
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -147,9 +164,9 @@ function MonthByMonthLine({
             return (
               <tr key={m.key}>
                 <td className="px-3 py-2 font-medium">{m.label}</td>
-                <MoneyCell usd={creators} />
-                <MoneyCell usd={reposters} />
-                <MoneyCell usd={total} emphasize />
+                {showCreators ? <MoneyCell usd={creators} emphasize={!showTotal} /> : null}
+                {showReposters ? <MoneyCell usd={reposters} emphasize={!showTotal} /> : null}
+                {showTotal ? <MoneyCell usd={total} emphasize /> : null}
               </tr>
             )
           })}
@@ -157,9 +174,9 @@ function MonthByMonthLine({
             <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-sky-950 dark:text-sky-100">
               All months
             </td>
-            <MoneyCell usd={creatorsSum} emphasize />
-            <MoneyCell usd={repostersSum} emphasize />
-            <MoneyCell usd={totalSum} emphasize />
+            {showCreators ? <MoneyCell usd={creatorsSum} emphasize /> : null}
+            {showReposters ? <MoneyCell usd={repostersSum} emphasize /> : null}
+            {showTotal ? <MoneyCell usd={totalSum} emphasize /> : null}
           </tr>
         </tbody>
       </table>
@@ -358,7 +375,7 @@ function FragmentMonth({
   )
 }
 
-function MarketingMonths({ months }: { months: MarketingMonthBucket[] }) {
+function MarketingMonths({ months, view }: { months: MarketingMonthBucket[]; view: OutflowView }) {
   if (months.length === 0) {
     return (
       <p className="px-3 py-6 text-sm text-muted-foreground">
@@ -373,10 +390,12 @@ function MarketingMonths({ months }: { months: MarketingMonthBucket[] }) {
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
               <p className="text-sm font-semibold">{m.label}</p>
-              <p className="text-xs text-muted-foreground">
-                Creators <DualMoney usd={m.plannedCreators} /> · Reposters{' '}
-                <DualMoney usd={m.plannedReposters} />
-              </p>
+              {view === 'total' ? (
+                <p className="text-xs text-muted-foreground">
+                  Creators <DualMoney usd={m.plannedCreators} /> · Reposters{' '}
+                  <DualMoney usd={m.plannedReposters} />
+                </p>
+              ) : null}
             </div>
             <div className="text-right text-sm">
               <span className="text-xs text-muted-foreground">Month total </span>
@@ -601,7 +620,7 @@ export function OutflowPanel({
         defaultOpen
       >
         {snapshot.marketingMonths.length > 0 ? (
-          <MonthByMonthLine months={snapshot.marketingMonths} mode={amountMode} />
+          <MonthByMonthLine months={snapshot.marketingMonths} mode={amountMode} view={view} />
         ) : null}
       </CollapsibleSection>
 
@@ -621,7 +640,7 @@ export function OutflowPanel({
         defaultOpen
       >
         {snapshot.marketingMonths.length > 0 ? (
-          <MarketingMonths months={snapshot.marketingMonths} />
+          <MarketingMonths months={snapshot.marketingMonths} view={view} />
         ) : null}
       </CollapsibleSection>
 

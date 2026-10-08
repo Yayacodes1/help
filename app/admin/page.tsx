@@ -58,7 +58,7 @@ import { PayCadences } from '@/components/admin/pay-cadence'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { LanguageToggle } from '@/components/language-toggle'
 import { CreatorJumpSearch } from '@/components/admin/creator-jump-search'
-import { formatDate, formatMoney, formatNumber, formatYearMonth } from '@/lib/format'
+import { formatDate, formatMoney, formatNumber, formatYearMonth, payCurrency } from '@/lib/format'
 import { getOutflowSnapshot, type OutflowView } from '@/lib/outflow'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
@@ -211,7 +211,7 @@ export default async function AdminPage({
   const ofView: OutflowView =
     sp.ofView === 'creators' || sp.ofView === 'reposters' || sp.ofView === 'total'
       ? sp.ofView
-      : 'total'
+      : 'reposters'
 
   const pvFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.pvFrom ?? '')
     ? sp.pvFrom!
@@ -382,7 +382,6 @@ export default async function AdminPage({
         projectId: projectId ?? null,
         includeAllCreators,
         includeAllReposters,
-        repostersOnly: true,
       }),
       getCommissionBoard({ from: cmFrom, to: cmTo, today, projectId: projectId ?? null, role: roleSql }),
       getCommissionEstimate({
@@ -1176,7 +1175,7 @@ export default async function AdminPage({
             summary:
               openMarketingRequests > 0
                 ? `${openMarketingRequests} asked`
-                : `${formatMoney(walletLeft)} left`,
+                : `${formatMoney(walletLeft, 'USD')} left`,
             hint:
               openMarketingRequests > 0
                 ? 'Money requests waiting'
@@ -1273,11 +1272,12 @@ export default async function AdminPage({
           {
             id: 'payments',
             title: t('payments'),
-            summary: formatMoney(periodTotal),
-            hint: `${formatMoney(paidAllTime)} ${t('totalPaid').toLowerCase()}`,
+            summary: formatMoney(periodTotal, payCurrency(roleFilter)),
+            hint: `${formatMoney(paidAllTime, payCurrency(roleFilter))} ${t('totalPaid').toLowerCase()}`,
             children: (
               <Suspense fallback={<p className="text-sm text-muted-foreground">…</p>}>
                 <PaymentsPeriodPanel
+                  currency={payCurrency(roleFilter)}
                   payments={periodPayments}
                   total={periodTotal}
                   today={today}

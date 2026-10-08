@@ -35,7 +35,7 @@ import { PLATFORMS } from '@/lib/db'
 import { goalFor } from '@/lib/platforms'
 import type { BrandProject } from '@/components/submit-form'
 import { describeSchedule, scheduleFromContract } from '@/lib/posting-schedule'
-import { formatDate, formatMoney } from '@/lib/format'
+import { formatDate, formatMoney, payCurrency } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 
@@ -487,7 +487,7 @@ export default async function SubmitPage({
             {
               id: 'payments',
               title: t('panelPayments'),
-              summary: formatMoney(paidTotal),
+              summary: formatMoney(paidTotal, payCurrency(creator.role)),
               hint: myPayments[0]
                 ? `${t('lastPaid')} ${formatDate(myPayments[0].paid_on)}`
                 : t('paymentsNone'),
@@ -506,7 +506,7 @@ export default async function SubmitPage({
                               <span className="text-xs text-muted-foreground"> · {p.contract_name}</span>
                             ) : null}
                           </span>
-                          <span className="font-semibold tabular-nums">{formatMoney(p.amount)}</span>
+                          <span className="font-semibold tabular-nums">{formatMoney(p.amount, payCurrency(creator.role))}</span>
                         </li>
                       ))}
                     </ul>
