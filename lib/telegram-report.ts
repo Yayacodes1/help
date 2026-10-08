@@ -3,6 +3,7 @@ import { addDays } from '@/lib/campaign'
 import { getAttendanceForDay } from '@/lib/attendance'
 import { OPERATIONAL_TZ, lastCompletedOperationalDay } from '@/lib/operational-day'
 import type { AttendancePerson, AttendanceStatus } from '@/lib/attendance-types'
+import { formatPlanCompare, getLeaderBoard, type LeaderBoard, type LeaderScore } from '@/lib/leaders'
 
 /**
  * `final`: the day that just closed at midnight Riyadh (sent at 12:00 AM).
@@ -34,6 +35,7 @@ export type DayReport = {
   groups: Group[]
   /** Everyone, all projects combined (drives the copy-ready messages). */
   everyone: AttendancePerson[]
+  leaders: LeaderBoard
   generatedAt: Date
 }
 
@@ -73,6 +75,7 @@ export async function buildDayReport(opToday: string, mode: ReportMode): Promise
       }),
     ),
   ])
+  const leaders = await getLeaderBoard(day, { today: everyone, yesterday: prevEveryone })
 
   const groups: Group[] = perProject.map(({ project, creatorIds }) => {
     const inGroup = (p: AttendancePerson) => p.role === 'creator' && creatorIds.has(p.id)
@@ -102,7 +105,7 @@ export async function buildDayReport(opToday: string, mode: ReportMode): Promise
     })),
   })
 
-  return { mode, day, groups, everyone, generatedAt: new Date() }
+  return { mode, day, groups, everyone, leaders, generatedAt: new Date() }
 }
 
 function enDay(ymd: string): string {
@@ -208,8 +211,47 @@ export function formatSummary(report: DayReport): string {
       }
     }
   }
+  lines.push('', ...leaderSummaryLines(report))
   lines.push('', BUTTON_GUIDE)
   return lines.join('\n')
+}
+
+function compareLabels(report: DayReport): [string, string] {
+  return report.mode === 'live'
+    ? ['today', 'yesterday']
+    : [weekday(report.day), weekday(addDays(report.day, -1))]
+}
+
+function leaderScoreLine(rank: string, row: LeaderScore, todayLabel: string, yesterdayLabel: string): string {
+  const plan = formatPlanCompare(row.todayPct, row.yesterdayPct, todayLabel, yesterdayLabel)
+  const counts = `✅ ${row.today.posted} · ⚠️ ${row.today.partial} · ❌ ${row.today.missed}`
+  const checked = row.leaderId == null ? '' : ` · checked ${row.checks}/${row.roster}`
+  const reposter =
+    row.reposterName == null
+      ? ''
+      : row.reposterStatus === 'hit'
+        ? ' · reposter posted'
+        : ' · reposter not on plan'
+  return `${rank} ${row.name} — ${plan} · ${counts}${checked}${reposter}`
+}
+
+function leaderSummaryLines(report: DayReport): string[] {
+  const [todayLabel, yesterdayLabel] = compareLabels(report)
+  const lines = [
+    '👑 LEADERS',
+    `All creators — ${formatPlanCompare(report.leaders.all.todayPct, report.leaders.all.yesterdayPct, todayLabel, yesterdayLabel)}`,
+  ]
+  if (report.leaders.leaders.length === 0) {
+    lines.push('No leaders yet')
+  } else {
+    report.leaders.leaders.forEach((row, index) => {
+      lines.push(leaderScoreLine(`${index + 1}.`, row, todayLabel, yesterdayLabel))
+    })
+  }
+  if (report.leaders.unassigned) {
+    lines.push(leaderScoreLine('—', report.leaders.unassigned, todayLabel, yesterdayLabel))
+  }
+  return lines
 }
 
 function nameList(people: AttendancePerson[], withMissing = false): string {
@@ -243,6 +285,14 @@ export function formatFullList(report: DayReport): string {
         lines.push(`📌 Posted for ${x.projectName} (${x.names.length}): ${x.names.join(', ') || '—'}`)
       }
     }
+  }
+  lines.push('', ...leaderSummaryLines(report))
+  for (const row of report.leaders.leaders) {
+    const behind = row.people.filter((p) => p.status === 'miss' || p.status === 'partial')
+    if (behind.length === 0) continue
+    lines.push(
+      `   ${row.name} still open: ${behind.map((p) => `${p.name} (${p.status === 'miss' ? 'no post' : 'partial'})`).join(', ')}`,
+    )
   }
   return lines.join('\n')
 }

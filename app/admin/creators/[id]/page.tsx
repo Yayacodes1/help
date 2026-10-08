@@ -40,6 +40,7 @@ import { formatDate, formatMoney, formatNumber, payCurrency } from '@/lib/format
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 import { adminDashboardHref, adminReturnPanel } from '@/lib/admin-href'
+import { getLeaderForCreator } from '@/lib/leaders'
 
 export const dynamic = 'force-dynamic'
 
@@ -68,6 +69,7 @@ export default async function CreatorDetailPage({
 
   const creator = await getCreatorById(id)
   if (!creator) notFound()
+  const creatorLeader = creator.role === 'creator' ? await getLeaderForCreator(id) : null
 
   const locale = await getLocale()
   const t = createT(locale)
@@ -159,6 +161,9 @@ export default async function CreatorDetailPage({
             {perf ? <StandingBadge standing={perf.standing} /> : null}
           </h1>
           <PersonHandlesLine person={creator} className="mt-1 text-xs text-muted-foreground" />
+          {creatorLeader ? (
+            <p className="mt-1 text-sm text-muted-foreground">Leader: {creatorLeader.name}</p>
+          ) : null}
           <p className="mt-1 text-sm text-muted-foreground">
             {project?.name ?? t('bothProjects')}
             {active

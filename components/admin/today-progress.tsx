@@ -75,6 +75,9 @@ export function TodayProgress({
                     {allMet && (
                       <span className="ml-2 text-xs font-medium text-primary">done</span>
                     )}
+                    {c.leader_name ? (
+                      <div className="text-xs text-muted-foreground">Leader: {c.leader_name}</div>
+                    ) : null}
                     {c.pay_due && (
                       <span className="ml-2 text-xs font-medium text-amber-700 dark:text-amber-300">pay due</span>
                     )}

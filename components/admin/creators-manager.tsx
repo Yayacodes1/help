@@ -48,6 +48,7 @@ export function CreatorsManager({
   today,
   currentProjectId,
   isOwner = false,
+  leaders = [],
 }: {
   creators: CreatorTrackingRow[]
   pausedCreators?: CreatorTrackingRow[]
@@ -56,6 +57,7 @@ export function CreatorsManager({
   today?: string
   currentProjectId?: number | string | null
   isOwner?: boolean
+  leaders?: { id: number; name: string }[]
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -358,6 +360,19 @@ export function CreatorsManager({
                       ))}
                     </select>
                     <RoleSelect defaultValue={c.role === 'reposter' ? 'reposter' : 'creator'} />
+                    <select
+                      name="leader_id"
+                      defaultValue={c.leader_id ?? ''}
+                      className={selectClass}
+                      aria-label="Leader"
+                    >
+                      <option value="">No leader</option>
+                      {leaders.map((leader) => (
+                        <option key={leader.id} value={leader.id}>
+                          Leader: {leader.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <select name="platforms" defaultValue={c.platforms || 'both'} className={selectClass}>
                     <option value="both">Instagram + TikTok</option>
@@ -434,6 +449,7 @@ export function CreatorsManager({
                         <div className="text-xs text-muted-foreground">
                           {c.project_name ?? 'Both projects'} · {c.total_videos} total · streak{' '}
                           {c.current_streak}
+                          {c.leader_name ? ` · Leader: ${c.leader_name}` : ''}
                           {c.pay_due ? ' · pay due' : ''}
                         </div>
                       </div>

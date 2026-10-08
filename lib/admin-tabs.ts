@@ -1,5 +1,5 @@
 export const ADMIN_TABS = {
-  today: ['progress', 'attention', 'reviews', 'strikes', 'videos'],
+  today: ['leaders', 'progress', 'attention', 'reviews', 'strikes', 'videos'],
   analytics: ['analytics', 'ranking', 'projectviews', 'topvideos', 'miqatcontest'],
   money: ['marketing', 'commission', 'paydue', 'payments', 'outflow'],
   people: ['manage'],

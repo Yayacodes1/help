@@ -391,6 +391,13 @@ export async function updateCreator(id: number, formData: FormData) {
         miqat_instagram_username = ${miqatInstagram}
     WHERE id = ${id}
   `
+  if (role !== 'creator') {
+    await sql`UPDATE creators SET leader_id = NULL WHERE id = ${id}`
+  } else if (formData.has('leader_id')) {
+    const leaderRaw = (formData.get('leader_id') ?? '').toString().trim()
+    const leaderId = leaderRaw && Number(leaderRaw) > 0 ? Math.floor(Number(leaderRaw)) : null
+    await sql`UPDATE creators SET leader_id = ${leaderId} WHERE id = ${id}`
+  }
   revalidatePath('/admin')
   revalidatePath(`/admin/creators/${id}`)
   revalidatePath('/submit')
@@ -399,7 +406,11 @@ export async function updateCreator(id: number, formData: FormData) {
 export async function setCreatorRole(id: number, roleRaw: string) {
   await requireAdmin()
   const role = normalizeParticipantRole(roleRaw)
-  await sql`UPDATE creators SET role = ${role} WHERE id = ${id}`
+  if (role === 'creator') {
+    await sql`UPDATE creators SET role = ${role} WHERE id = ${id}`
+  } else {
+    await sql`UPDATE creators SET role = ${role}, leader_id = NULL WHERE id = ${id}`
+  }
   revalidatePath('/admin')
   revalidatePath(`/admin/creators/${id}`)
   revalidatePath('/submit')

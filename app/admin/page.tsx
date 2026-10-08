@@ -72,6 +72,9 @@ import { ContractReviewsPanel } from '@/components/admin/contract-reviews-panel'
 import { getPendingContractReviews } from '@/lib/contract-reviews'
 import { getReposterStrikeBoard, syncReposterStrikes } from '@/lib/strikes'
 import { getAttendanceForDay } from '@/lib/attendance'
+import { formatPlanCompare, getLeaderBoard, getLeaderDirectory, loadLeaderLinks, withLeaderFields } from '@/lib/leaders'
+import { LeadersBoard } from '@/components/admin/leaders-board'
+import { LeadersManager } from '@/components/admin/leaders-manager'
 import { getProjectViewsBoard } from '@/lib/project-views'
 import { ProjectViewsPanel } from '@/components/admin/project-views-panel'
 import { getCommissionBoard, getCommissionEstimate } from '@/lib/commission-data'
@@ -156,6 +159,7 @@ export default async function AdminPage({
   const analyticsDefault = defaultAnalyticsRange(today)
 
   const selectedDay = /^\d{4}-\d{2}-\d{2}$/.test(sp.day ?? '') ? sp.day! : today
+  const leaderDay = /^\d{4}-\d{2}-\d{2}$/.test(sp.day ?? '') ? sp.day! : opToday
   const isToday = selectedDay === today
 
   const projectRaw = Number(sp.project)
@@ -260,13 +264,15 @@ export default async function AdminPage({
   const activeBase = creatorsBase.filter((c) => !c.paused_at)
 
   async function loadToday() {
-    const [submissions, strikeBoard, attendance, contractReviews] = await Promise.all([
+    const [submissions, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory] = await Promise.all([
       getAdminSubmissions(filters),
       getReposterStrikeBoard(opToday),
       getAttendanceForDay(selectedDay),
       getPendingContractReviews(),
+      getLeaderBoard(leaderDay),
+      getLeaderDirectory(),
     ])
-    return { submissions, strikeBoard, attendance, contractReviews }
+    return { submissions, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory }
   }
 
   async function loadAnalytics() {
@@ -411,7 +417,7 @@ export default async function AdminPage({
   const todayData = tab === 'today' ? await loadToday() : null
   const analyticsData = tab === 'analytics' ? await loadAnalytics() : null
   const moneyData = tab === 'money' ? await loadMoney() : null
-  const { submissions, strikeBoard, attendance, contractReviews } =
+  const { submissions, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory } =
     todayData ?? ({} as Awaited<ReturnType<typeof loadToday>>)
   const {
     sheetOpen,
@@ -456,8 +462,12 @@ export default async function AdminPage({
     .map((p) => `${p.name} ${formatNumber(projectViews.totals.viewsByProject[p.id] ?? 0)}`)
     .join(' · ')
 
+  const leaderLinks =
+    tab === 'today' || tab === 'people' ? await loadLeaderLinks() : { leaders: [], assignments: [] }
   const everyone =
-    tab === 'today' || tab === 'people' ? await attachTracking(creatorsBase, today) : []
+    tab === 'today' || tab === 'people'
+      ? await attachTracking(withLeaderFields(creatorsBase, leaderLinks.assignments), today)
+      : []
 
   // Notek | Miqat side by side: same panels, one column per project.
   const splitProjects = splitRequested ? splitProjectPair(projects) : []
@@ -955,6 +965,18 @@ export default async function AdminPage({
           ] : []),
           ...(todayData ? [
           {
+            id: 'leaders',
+            title: 'Leaders',
+            summary: leaderBoard.all.todayPct == null ? '—' : `${leaderBoard.all.todayPct}%`,
+            hint: formatPlanCompare(leaderBoard.all.todayPct, leaderBoard.all.yesterdayPct, 'today', 'yesterday'),
+            children: (
+              <div className="flex flex-col gap-6">
+                <LeadersBoard board={leaderBoard} />
+                <LeadersManager directory={leaderDirectory} />
+              </div>
+            ),
+          },
+          {
             id: 'progress',
             title: isToday ? t('todaysProgress') : t('dailyProgress'),
             summary: splitData
@@ -1334,6 +1356,7 @@ export default async function AdminPage({
                         today={today}
                         currentProjectId={projectId}
                         isOwner={showBusiness}
+                        leaders={leaderLinks.leaders}
                       />
                     ),
                   }))}
@@ -1351,6 +1374,7 @@ export default async function AdminPage({
                   today={today}
                   currentProjectId={projectId}
                   isOwner={showBusiness}
+                  leaders={leaderLinks.leaders}
                 />
                 <ProjectsManager key="projects-manager" projects={projects} />
               </div>

@@ -292,6 +292,8 @@ export type CreatorProgress = CreatorWithProject & {
   today_instagram: number
   today_tiktok: number
   total_videos: number
+  leader_id?: number | null
+  leader_name?: string | null
 }
 
 export async function getCreatorsWithProgressOnDate(
@@ -1388,6 +1390,8 @@ export type CreatorTrackingRow = CreatorProgress & {
   hit_rate: number
   next_pay_at: string | null
   pay_due: boolean
+  leader_id?: number | null
+  leader_name?: string | null
 }
 
 export async function attachTracking(
@@ -1409,6 +1413,8 @@ export async function attachTracking(
         hit_rate: consistency.hitRate,
         next_pay_at: pay.nextPayAt,
         pay_due: pay.isDue,
+        leader_id: c.leader_id ?? null,
+        leader_name: c.leader_name ?? null,
       }
     }),
   )

@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { Send } from 'lucide-react'
 import { SubmitForm } from '@/components/submit-form'
 import { TodayVideos } from '@/components/today-videos'
@@ -38,6 +39,7 @@ import { describeSchedule, scheduleFromContract } from '@/lib/posting-schedule'
 import { formatDate, formatMoney, payCurrency } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
+import { getLeaderSession } from '@/lib/leader-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,7 +54,7 @@ export default async function SubmitPage({
 }) {
   const { u, date: dateParam, panel } = await searchParams
   await ensureCreatorTrackingColumns()
-  const locale = await getLocale()
+  const [locale, leaderSession] = await Promise.all([getLocale(), getLeaderSession()])
   const t = createT(locale)
   const creator = u ? await getCreatorByName(u) : null
 
@@ -269,7 +271,14 @@ export default async function SubmitPage({
   return (
     <div className="min-h-dvh bg-background">
       <main className="mx-auto flex w-full max-w-lg flex-col gap-5 px-5 py-8">
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between gap-3">
+          {leaderSession ? (
+            <Link href="/leader" className="text-xs font-medium text-muted-foreground underline-offset-4 hover:underline">
+              {t('leaderTitle')}
+            </Link>
+          ) : (
+            <span />
+          )}
           <LanguageToggle
             locale={locale}
             labels={{ english: t('english'), arabic: t('arabic') }}

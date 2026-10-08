@@ -316,4 +316,6 @@ export async function ensureCreatorTrackingColumns() {
 
   const { ensureStreakSettingsTable } = await import('@/lib/streak-epoch')
   await ensureStreakSettingsTable()
+  const { ensureLeaderTables } = await import('@/lib/leaders')
+  await ensureLeaderTables()
 }
