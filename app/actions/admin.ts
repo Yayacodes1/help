@@ -850,6 +850,32 @@ export async function deletePayment(id: number, creatorId: number) {
   revalidatePath('/submit')
 }
 
+/**
+ * Save how a person is really paid: currency (USD/SAR) and, optionally, the actual
+ * biweekly amount in that currency. `biweekly` null = work it out from the contract.
+ */
+export async function setPersonPay(input: {
+  creatorId: number
+  currency: 'USD' | 'SAR'
+  biweekly: number | null
+}) {
+  await requireAdmin()
+  const creatorId = Math.floor(Number(input.creatorId))
+  if (!(creatorId > 0)) return { ok: false as const, error: 'Unknown person.' }
+  const currency = input.currency === 'USD' ? 'USD' : 'SAR'
+  const raw = input.biweekly == null ? null : Number(input.biweekly)
+  const biweekly =
+    raw != null && Number.isFinite(raw) && raw >= 0 ? Math.round(raw * 100) / 100 : null
+  await sql`
+    UPDATE creators SET pay_currency = ${currency}, biweekly_amount = ${biweekly}
+    WHERE id = ${creatorId}
+  `
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  revalidatePath('/submit')
+  return { ok: true as const }
+}
+
 /** Record a payment linked to a specific contract (settles that period). */
 export async function recordContractPayment(
   creatorId: number,

@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ChevronDown } from 'lucide-react'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
 import { PayCadences } from '@/components/admin/pay-cadence'
 import { formatDate, formatMoney } from '@/lib/format'
 import { usdToSar } from '@/lib/fx'
+import { setPersonPay } from '@/app/actions/admin'
 import {
   calendarMonthBounds,
   lastCalendarMonthsRange,
@@ -211,10 +212,11 @@ function PersonPayList({
         </span>
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] text-left text-sm">
+        <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="border-y border-border bg-secondary/30 text-[11px] uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-3 py-2 font-medium">Person</th>
+              <th className="px-3 py-2 font-medium">Biweekly · paid in</th>
               <th className="px-3 py-2 font-medium text-right">Biweekly SAR</th>
               <th className="px-3 py-2 font-medium text-right">Biweekly USD</th>
               <th className="px-3 py-2 font-medium text-right">Monthly SAR</th>
@@ -225,12 +227,16 @@ function PersonPayList({
             {people.map((p) => (
               <tr key={p.creator_id}>
                 <td className="px-3 py-2 font-medium">{p.creator_name}</td>
+                <PaidInCell person={p} />
                 <MoneyCell usd={p.biweekly} />
                 <MoneyCell usd={p.monthly} emphasize />
               </tr>
             ))}
             <tr className="bg-sky-50/80 dark:bg-sky-950/40">
-              <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-sky-950 dark:text-sky-100">
+              <td
+                colSpan={2}
+                className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-sky-950 dark:text-sky-100"
+              >
                 {title} total
               </td>
               <MoneyCell usd={biweekly} emphasize />
@@ -240,6 +246,131 @@ function PersonPayList({
         </table>
       </div>
     </div>
+  )
+}
+
+function nativeBiweekly(p: OutflowPersonTotal): number {
+  return p.currency === 'USD' ? Math.round(p.biweekly * 100) / 100 : usdToSar(p.biweekly)
+}
+
+/** Actual biweekly pay in the person's own currency, with a saved SAR ⇄ USD flip. */
+function PaidInCell({ person }: { person: OutflowPersonTotal }) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+  const [editing, setEditing] = useState(false)
+  const [currency, setCurrency] = useState(person.currency)
+  const [amount, setAmount] = useState('')
+  const other = person.currency === 'USD' ? 'SAR' : 'USD'
+
+  function save(next: { currency: 'USD' | 'SAR'; biweekly: number | null }) {
+    startTransition(async () => {
+      const res = await setPersonPay({ creatorId: person.creator_id, ...next })
+      if (!res.ok) {
+        alert(res.error)
+        return
+      }
+      setEditing(false)
+      router.refresh()
+    })
+  }
+
+  if (editing) {
+    return (
+      <td className="px-3 py-2">
+        <form
+          className="flex flex-wrap items-center gap-1.5"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const n = Number(amount)
+            save({ currency, biweekly: amount.trim() === '' || !Number.isFinite(n) ? null : n })
+          }}
+        >
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="From contract"
+            autoFocus
+            className="h-8 w-28 rounded-md border border-input bg-background px-2 text-right text-sm tabular-nums"
+          />
+          <div className="inline-flex rounded-md border border-border p-0.5">
+            {(['SAR', 'USD'] as const).map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setCurrency(c)}
+                className={
+                  (currency === c ? 'bg-foreground text-background ' : 'text-muted-foreground ') +
+                  'rounded px-2 py-0.5 text-[11px] font-semibold'
+                }
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+          <button
+            type="submit"
+            disabled={pending}
+            className="h-8 rounded-md bg-primary px-2.5 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+          >
+            {pending ? '…' : 'Save'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className="h-8 rounded-md px-2 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        </form>
+        <p className="mt-1 text-[10px] text-muted-foreground">Leave blank to use the contract amount.</p>
+      </td>
+    )
+  }
+
+  return (
+    <td className="px-3 py-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="font-semibold tabular-nums">
+          {formatMoney(nativeBiweekly(person), person.currency)}
+        </span>
+        <span
+          className={
+            (person.currency === 'USD'
+              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+              : 'bg-sky-500/15 text-sky-800 dark:text-sky-200') +
+            ' rounded px-1.5 py-0.5 text-[10px] font-semibold'
+          }
+        >
+          {person.currency === 'USD' ? 'USD $' : 'SAR ﷼'}
+        </span>
+        {person.savedBiweekly != null ? (
+          <span className="text-[10px] text-muted-foreground">set by you</span>
+        ) : null}
+        <button
+          type="button"
+          disabled={pending}
+          title={`Same number, but in ${other}`}
+          onClick={() => save({ currency: other, biweekly: person.savedBiweekly })}
+          className="h-7 rounded-md border border-border px-2 text-[11px] hover:bg-muted disabled:opacity-60"
+        >
+          Flip to {other}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCurrency(person.currency)
+            setAmount(person.savedBiweekly != null ? String(person.savedBiweekly) : '')
+            setEditing(true)
+          }}
+          className="h-7 rounded-md border border-border px-2 text-[11px] hover:bg-muted"
+        >
+          Edit
+        </button>
+      </div>
+    </td>
   )
 }
 

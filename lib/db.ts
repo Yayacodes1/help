@@ -29,6 +29,10 @@ export type Creator = {
   created_at: string
   /** creator = content creators; reposter = repost / share accounts */
   role: ParticipantRole
+  /** Saved pay currency; null = role default (reposters USD, creators SAR). */
+  pay_currency?: string | null
+  /** Saved actual biweekly pay, in pay_currency. */
+  biweekly_amount?: number | null
   goal_instagram: number
   goal_tiktok: number
   /** Default platforms when a contract does not override */

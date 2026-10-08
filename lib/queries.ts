@@ -23,6 +23,7 @@ import {
   type ContractHalfStatus,
 } from '@/lib/contract-halves'
 import { scheduleFromContract, type PostingSchedule } from '@/lib/posting-schedule'
+import { payCurrency } from '@/lib/format'
 
 export async function getServerToday(): Promise<string> {
   const rows = (await sql`SELECT CURRENT_DATE::text AS today`) as { today: string }[]
@@ -61,7 +62,7 @@ export async function getServerTimeHm(): Promise<string> {
 
 export async function getCreatorByToken(token: string): Promise<Creator | null> {
   const rows = (await sql`
-    SELECT id, name, token, project_id, created_at, role,
+    SELECT id, name, token, project_id, created_at, role, pay_currency, biweekly_amount::float AS biweekly_amount,
            goal_instagram, goal_tiktok, platforms,
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
@@ -78,7 +79,7 @@ export async function getCreatorByToken(token: string): Promise<Creator | null> 
 
 export async function getCreatorById(id: number): Promise<Creator | null> {
   const rows = (await sql`
-    SELECT id, name, token, project_id, created_at, role,
+    SELECT id, name, token, project_id, created_at, role, pay_currency, biweekly_amount::float AS biweekly_amount,
            goal_instagram, goal_tiktok, platforms,
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
@@ -97,7 +98,7 @@ export async function getCreatorByName(name: string): Promise<Creator | null> {
   const handle = normalizeHandle(name)
   if (!handle) return null
   const rows = (await sql`
-    SELECT id, name, token, project_id, created_at, role,
+    SELECT id, name, token, project_id, created_at, role, pay_currency, biweekly_amount::float AS biweekly_amount,
            goal_instagram, goal_tiktok, platforms,
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
@@ -123,7 +124,7 @@ export async function getCreatorByLoginHandle(
   const rows =
     platform === 'instagram'
       ? ((await sql`
-          SELECT id, name, token, project_id, created_at, role,
+          SELECT id, name, token, project_id, created_at, role, pay_currency, biweekly_amount::float AS biweekly_amount,
                  goal_instagram, goal_tiktok, platforms,
                  contract_start::text AS contract_start,
                  contract_end::text AS contract_end,
@@ -136,7 +137,7 @@ export async function getCreatorByLoginHandle(
           LIMIT 1
         `) as Creator[])
       : ((await sql`
-          SELECT id, name, token, project_id, created_at, role,
+          SELECT id, name, token, project_id, created_at, role, pay_currency, biweekly_amount::float AS biweekly_amount,
                  goal_instagram, goal_tiktok, platforms,
                  contract_start::text AS contract_start,
                  contract_end::text AS contract_end,
@@ -271,7 +272,7 @@ export type CreatorWithProject = Creator & { project_name: string | null }
 
 export async function getAllCreators(): Promise<CreatorWithProject[]> {
   return (await sql`
-    SELECT c.id, c.name, c.token, c.project_id, c.created_at, c.role,
+    SELECT c.id, c.name, c.token, c.project_id, c.created_at, c.role, c.pay_currency, c.biweekly_amount::float AS biweekly_amount,
            c.goal_instagram, c.goal_tiktok, c.platforms,
            c.contract_start::text AS contract_start,
            c.contract_end::text AS contract_end,
@@ -310,7 +311,7 @@ export async function getCreatorsWithProgressOnDate(
   const includeAllCreators = !membersOnly && (opts?.includeAllCreators ?? false)
   return (await sql`
     SELECT
-      c.id, c.name, c.token, c.project_id, c.created_at, c.role,
+      c.id, c.name, c.token, c.project_id, c.created_at, c.role, c.pay_currency, c.biweekly_amount::float AS biweekly_amount,
       c.goal_instagram, c.goal_tiktok, c.platforms,
       c.contract_start::text AS contract_start,
       c.contract_end::text AS contract_end,
@@ -1029,6 +1030,7 @@ export type PaymentDueRow = {
   creatorId: number
   creatorName: string
   creatorRole: ParticipantRole
+  currency: 'USD' | 'SAR'
   contractId: number | null
   contractName: string | null
   dueDate: string
@@ -1074,6 +1076,7 @@ function buildDueRow(input: {
     creatorId: input.creator.id,
     creatorName: input.creator.name,
     creatorRole: input.creator.role,
+    currency: payCurrency(input.creator.role, input.creator.pay_currency),
     contractId: contract?.id ?? null,
     contractName: contract?.name ?? null,
     dueDate: input.dueDate,
@@ -1103,7 +1106,7 @@ export async function getPaymentDueList(
   const pid = projectId ?? null
   const roleFilter = role ?? null
   const creators = (await sql`
-    SELECT id, name, token, project_id, created_at, role,
+    SELECT id, name, token, project_id, created_at, role, pay_currency, biweekly_amount::float AS biweekly_amount,
            goal_instagram, goal_tiktok, platforms,
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
@@ -1232,6 +1235,7 @@ export async function getPaymentDueList(
 export type PaymentRow = Payment & {
   creator_name?: string
   creator_role?: ParticipantRole
+  creator_pay_currency?: string | null
   contract_name?: string | null
 }
 
@@ -1278,6 +1282,7 @@ export async function getPaymentsInRange(
            p.note, p.created_at,
            c.name AS creator_name,
            c.role AS creator_role,
+           c.pay_currency AS creator_pay_currency,
            ct.name AS contract_name
     FROM payments p
     JOIN creators c ON c.id = p.creator_id

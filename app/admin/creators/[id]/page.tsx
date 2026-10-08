@@ -124,7 +124,7 @@ export default async function CreatorDetailPage({
     ? `${commissionBreakdown.terms.countMode === 'batch' ? 'Per batch' : 'Per video'} · ${formatMoney(commissionBreakdown.terms.commissionAmount, 'SAR')} every ${formatNumber(commissionBreakdown.terms.viewsThreshold)} views · ${commissionBreakdown.terms.reelCount} expected blocks`
     : null
   const project = creator.project_id ? await getProjectById(creator.project_id) : null
-  const currency = payCurrency(creator.role)
+  const currency = payCurrency(creator.role, creator.pay_currency)
   const pay = await getPaySummary(creator, today)
   const window = contractWindow(creator, today, active)
   const totalViews = submissions.reduce((sum, s) => sum + (s.views ?? 0), 0)

@@ -643,7 +643,7 @@ function PayPeopleForm({
                       )}
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
-                      {owed ? formatMoney(owed, payCurrency(p.role)) : '—'}
+                      {owed ? formatMoney(owed, payCurrency(p.role, p.pay_currency)) : '—'}
                     </td>
                     <td className="px-2 py-1.5">
                       <input

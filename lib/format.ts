@@ -59,8 +59,9 @@ export function formatNumber(value: number): string {
 /** Primary display currency for the app (Saudi riyal). */
 export const PRIMARY_CURRENCY = 'SAR' as const
 
-/** Reposters are paid in USD; creators in SAR. */
-export function payCurrency(role?: string | null): 'USD' | 'SAR' {
+/** A saved per-person currency wins; otherwise reposters are paid in USD, creators in SAR. */
+export function payCurrency(role?: string | null, saved?: string | null): 'USD' | 'SAR' {
+  if (saved === 'USD' || saved === 'SAR') return saved
   return role === 'reposter' ? 'USD' : 'SAR'
 }
 

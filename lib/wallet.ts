@@ -35,7 +35,12 @@ export type WalletEntry = {
   creatorId: number | null
 }
 
-export type WalletPerson = { id: number; name: string; role: 'creator' | 'reposter' }
+export type WalletPerson = {
+  id: number
+  name: string
+  role: 'creator' | 'reposter'
+  pay_currency: string | null
+}
 
 export async function getWalletTotals(): Promise<WalletTotals[]> {
   const rows = (await sql`
@@ -155,7 +160,7 @@ export async function getWalletEntries(limit = 400): Promise<WalletEntry[]> {
 /** Everyone who can be paid (not paused), reposters first. */
 export async function getPayablePeople(): Promise<WalletPerson[]> {
   return (await sql`
-    SELECT id, name, CASE WHEN role = 'reposter' THEN 'reposter' ELSE 'creator' END AS role
+    SELECT id, name, CASE WHEN role = 'reposter' THEN 'reposter' ELSE 'creator' END AS role, pay_currency
     FROM creators
     WHERE paused_at IS NULL
     ORDER BY (role = 'reposter') DESC, name ASC

@@ -487,7 +487,7 @@ export default async function SubmitPage({
             {
               id: 'payments',
               title: t('panelPayments'),
-              summary: formatMoney(paidTotal, payCurrency(creator.role)),
+              summary: formatMoney(paidTotal, payCurrency(creator.role, creator.pay_currency)),
               hint: myPayments[0]
                 ? `${t('lastPaid')} ${formatDate(myPayments[0].paid_on)}`
                 : t('paymentsNone'),
@@ -506,7 +506,7 @@ export default async function SubmitPage({
                               <span className="text-xs text-muted-foreground"> · {p.contract_name}</span>
                             ) : null}
                           </span>
-                          <span className="font-semibold tabular-nums">{formatMoney(p.amount, payCurrency(creator.role))}</span>
+                          <span className="font-semibold tabular-nums">{formatMoney(p.amount, payCurrency(creator.role, creator.pay_currency))}</span>
                         </li>
                       ))}
                     </ul>

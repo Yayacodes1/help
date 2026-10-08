@@ -87,7 +87,7 @@ export function PaymentsPeriodPanel({
                     {p.contract_name ?? '—'}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums">
-                    {formatMoney(p.amount, payCurrency(p.creator_role))}
+                    {formatMoney(p.amount, payCurrency(p.creator_role, p.creator_pay_currency))}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{p.note ?? '—'}</td>
                 </tr>
