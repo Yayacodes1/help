@@ -68,7 +68,7 @@ export default async function SubmitPage({
     getServerTimeHm(),
   ])
   const opToday = operationalDayFromIso(serverNow)
-  const today = creator.role === 'reposter' ? opToday : calendarToday
+  const today = opToday
   if (creator.role === 'reposter') {
     await syncReposterStrikes({ today: opToday, creatorId: creator.id })
   }
@@ -335,7 +335,6 @@ export default async function SubmitPage({
               {t('tiktok')} {dailyGoals.goalTiktok}
             </p>
             <SubmitForm
-              key={`${date}-${defaultTime}`}
               username={username}
               fields={fields}
               projects={projects}

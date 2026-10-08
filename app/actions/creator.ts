@@ -112,9 +112,21 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
       fresh.push(row)
     }
   }
+  const ownPriorDays = [
+    ...new Set(
+      keyed
+        .map((r) => (r.key ? existing.get(r.key) : undefined))
+        .filter((p) => p && p.creator_id === creator.id)
+        .map((p) => p!.video_date),
+    ),
+  ]
+  const ownHint =
+    ownPriorDays.length > 0
+      ? `\n\n💡 فيديوهاتك محفوظة ليوم ${ownPriorDays.join('، ')} — اختره من «اختر اليوم» لتراها. Your videos are saved for ${ownPriorDays.join(', ')} — pick that day below to see them.`
+      : ''
   const blockedNote =
     blocked.length > 0
-      ? `\n\n⛔ هذا الرابط تم إرساله من قبل ولن يُحسب. Already submitted — not added (${blocked.length}):\n${blocked.join('\n')}`
+      ? `\n\n⛔ هذا الرابط تم إرساله من قبل ولن يُحسب. Already submitted — not added (${blocked.length}):\n${blocked.join('\n')}${ownHint}`
       : ''
   if (fresh.length === 0) {
     return { ok: false, message: `لم تتم إضافة أي فيديو. Nothing was added.${blockedNote}` }
@@ -169,10 +181,12 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
     rejected.length > 0 ? ` Skipped ${rejected.length} unrecognized link(s).` : ''
   const ig = fresh.filter((r) => r.platform === 'instagram').length
   const tt = fresh.filter((r) => r.platform === 'tiktok').length
+  const when = `${videoDate} ${postTime.slice(0, 5)}`
   return {
     ok: true,
-    message: `Added ${fresh.length} video${fresh.length > 1 ? 's' : ''} to ${projectName} (IG ${ig} · TT ${tt}).${skipped}${blockedNote}`,
+    message: `✅ تم حفظ ${fresh.length} فيديو ليوم ${when}. Added ${fresh.length} video${fresh.length > 1 ? 's' : ''} to ${projectName} for ${when} (IG ${ig} · TT ${tt}).${skipped}${blockedNote}`,
     blocked: blocked.length,
+    videoDate,
   }
 }
 

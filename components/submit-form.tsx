@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Camera, Clock, Music2, Send, CheckCircle2, AlertCircle, Link2 } from 'lucide-react'
 import { submitVideos } from '@/app/actions/creator'
 import { PLATFORM_META } from '@/lib/platforms'
@@ -18,7 +18,34 @@ type PlatformField = {
   todayCount: number
 }
 
-type State = { ok: boolean; message: string } | null
+type State = { ok: boolean; message: string; blocked?: number; videoDate?: string } | null
+
+const RIYADH_TZ = 'Asia/Riyadh'
+
+/** Riyadh wall clock as YYYY-MM-DD and HH:MM. */
+function riyadhNow(d = new Date()): { date: string; time: string } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: RIYADH_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d)
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ''
+  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` }
+}
+
+function useNow(everyMs = 15_000): Date | null {
+  const [now, setNow] = useState<Date | null>(null)
+  useEffect(() => {
+    setNow(new Date())
+    const id = setInterval(() => setNow(new Date()), everyMs)
+    return () => clearInterval(id)
+  }, [everyMs])
+  return now
+}
 
 /** Social handles that belong to a project's brand accounts (lowercase, no @). */
 export type BrandProject = { projectId: number; handles: string[] }
@@ -66,7 +93,13 @@ export function SubmitForm({
   brandProjects?: BrandProject[]
 }) {
   const router = useRouter()
+  const params = useSearchParams()
   const formRef = useRef<HTMLFormElement>(null)
+  const now = useNow()
+  const riyadh = now ? riyadhNow(now) : null
+  const [postDate, setPostDate] = useState(videoDate)
+  const [postTime, setPostTime] = useState(defaultTime)
+  useEffect(() => setPostDate(videoDate), [videoDate])
   const action = submitVideos.bind(null, username)
   const [state, formAction, pending] = useActionState<State, FormData>(action, null)
   const [projectId, setProjectId] = useState<string>('')
@@ -84,18 +117,19 @@ export function SubmitForm({
 
   useEffect(() => {
     if (state?.ok) {
-      const dateInput = formRef.current?.querySelector<HTMLInputElement>('input[name="video_date"]')
-      const keepDate = dateInput?.value
-      const timeInput = formRef.current?.querySelector<HTMLInputElement>('input[name="post_time"]')
-      const keepTime = timeInput?.value
       formRef.current?.reset()
-      if (dateInput && keepDate) dateInput.value = keepDate
-      if (timeInput && keepTime) timeInput.value = keepTime
       setProjectId('')
       setAutoPicked(null)
-      router.refresh()
+      if (state.videoDate && state.videoDate !== params.get('date')) {
+        const next = new URLSearchParams(params.toString())
+        next.set('date', state.videoDate)
+        router.push(`?${next.toString()}`, { scroll: false })
+      } else {
+        router.refresh()
+      }
     }
-  }, [state, router])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state])
 
   return (
     <form ref={formRef} action={formAction} className="flex flex-col gap-5">
@@ -208,10 +242,39 @@ export function SubmitForm({
       )}
 
       <div className="rounded-xl border border-border bg-secondary/40 px-4 py-3">
-        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-          <Clock className="h-3.5 w-3.5" />
-          <span>{labels.postWhenHint}</span>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <Clock className="h-3.5 w-3.5" />
+            <span>{labels.postWhenHint}</span>
+          </div>
+          {now && riyadh ? (
+            <button
+              type="button"
+              onClick={() => {
+                setPostDate(riyadh.date)
+                setPostTime(riyadh.time)
+              }}
+              className="h-7 rounded-full border border-border bg-card px-3 text-[11px] font-semibold text-foreground hover:bg-secondary"
+            >
+              الآن · Now
+            </button>
+          ) : null}
         </div>
+        {now ? (
+          <p dir="rtl" className="mt-2 rounded-lg bg-card px-3 py-2 text-right text-sm">
+            <span className="text-muted-foreground">الوقت الآن في السعودية: </span>
+            <span className="font-semibold tabular-nums">
+              {new Intl.DateTimeFormat('ar-u-nu-latn', {
+                timeZone: RIYADH_TZ,
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+                hour: 'numeric',
+                minute: '2-digit',
+              }).format(now)}
+            </span>
+          </p>
+        ) : null}
         <div className="mt-2 grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-foreground">{labels.postDate}</span>
@@ -220,7 +283,8 @@ export function SubmitForm({
               name="video_date"
               required
               autoComplete="off"
-              defaultValue={videoDate}
+              value={postDate}
+              onChange={(e) => setPostDate(e.target.value)}
               className="h-11 rounded-xl border border-border bg-card px-3 text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring"
             />
           </label>
@@ -231,11 +295,17 @@ export function SubmitForm({
               name="post_time"
               required
               step={60}
-              defaultValue={defaultTime}
+              value={postTime}
+              onChange={(e) => setPostTime(e.target.value)}
               className="h-11 rounded-xl border border-border bg-card px-3 text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring"
             />
           </label>
         </div>
+        {riyadh && postDate && postDate !== riyadh.date ? (
+          <p dir="rtl" className="mt-2 rounded-lg bg-amber-500/15 px-3 py-2 text-right text-xs font-medium text-amber-800 dark:text-amber-300">
+            ⚠️ أنت تنشر ليوم {postDate} وليس اليوم ({riyadh.date}). You are posting for {postDate}, not today.
+          </p>
+        ) : null}
       </div>
 
       <button

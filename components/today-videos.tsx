@@ -5,11 +5,22 @@ import { useRouter } from 'next/navigation'
 import { Trash2 } from 'lucide-react'
 import { deleteOwnSubmission, updateOwnSubmissionProject } from '@/app/actions/creator'
 import { CopyLink } from '@/components/copy-link'
-import { formatDateTime } from '@/lib/format'
 import { PLATFORM_META } from '@/lib/platforms'
 import { projectToneClass } from '@/lib/project-scope'
 import type { Submission } from '@/lib/db'
 import type { Locale } from '@/lib/i18n'
+
+function riyadhTime(value: string | null | undefined, withDay = false): string | null {
+  if (!value) return null
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  return new Intl.DateTimeFormat('ar-u-nu-latn', {
+    timeZone: 'Asia/Riyadh',
+    ...(withDay ? { day: 'numeric', month: 'short' } : {}),
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(d)
+}
 
 export function TodayVideos({
   username,
@@ -83,11 +94,18 @@ export function TodayVideos({
             ) : null}
             <div className="min-w-0 flex-1">
               <CopyLink url={s.url} copyLabel="نسخ" copiedLabel="تم" />
-              {s.platform_posted_at || s.created_at ? (
-                <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">
-                  {formatDateTime(s.platform_posted_at ?? s.created_at, locale)}
-                </p>
-              ) : null}
+              <p dir="rtl" className="mt-1 text-right text-[11px] tabular-nums text-muted-foreground">
+                {riyadhTime(s.created_at) ? (
+                  <span>
+                    وقت النشر: <span className="font-medium text-foreground">{riyadhTime(s.created_at)}</span>
+                  </span>
+                ) : null}
+                {riyadhTime(s.submitted_at, true) ? (
+                  <span>
+                    {' · '}أُرسل: {riyadhTime(s.submitted_at, true)}
+                  </span>
+                ) : null}
+              </p>
             </div>
             <button
               type="button"
