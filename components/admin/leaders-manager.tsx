@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from 'react'
 import { createLeader, deleteLeader, updateLeader } from '@/app/actions/leaders-admin'
-import type { LeaderDirectory } from '@/lib/leaders'
+import type { LeaderDirectory } from '@/lib/leader-score'
 
 const initial = { ok: false, message: '' }
 

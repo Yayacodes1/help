@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { formatPlanCompare, planDelta, type LeaderBoard, type LeaderScore } from '@/lib/leaders'
+import { formatPlanCompare, planDelta, type LeaderBoard, type LeaderScore } from '@/lib/leader-score'
 import type { AttendanceStatus } from '@/lib/attendance-types'
 
 function Delta({ today, yesterday }: { today: number | null; yesterday: number | null }) {

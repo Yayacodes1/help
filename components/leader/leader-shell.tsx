@@ -7,7 +7,7 @@ import { LogOut } from 'lucide-react'
 import { logoutLeader } from '@/app/actions/leader'
 import { CheckForm } from '@/components/leader/check-form'
 import { LanguageToggle } from '@/components/language-toggle'
-import { formatPlanCompare, type LeaderScore } from '@/lib/leaders'
+import { formatPlanCompare, type LeaderScore } from '@/lib/leader-score'
 import { createT, type Locale } from '@/lib/i18n'
 import type { AttendanceStatus } from '@/lib/attendance-types'
 
