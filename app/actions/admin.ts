@@ -298,9 +298,15 @@ export async function createCreator(formData: FormData) {
   } = parsePersonHandles(formData, '')
   const projectIdRaw = (formData.get('project_id') ?? '').toString()
   const projectId = projectIdRaw ? Number(projectIdRaw) : null
-  if (!name || (!tiktok && !instagram)) return
-  if (await handleIsTaken(tiktok, 'tiktok_username')) return
-  if (await handleIsTaken(instagram, 'instagram_username')) return
+  if (!name || (!tiktok && !instagram)) {
+    return { ok: false as const, message: 'Add a TikTok or Instagram username.' }
+  }
+  if (await handleIsTaken(tiktok, 'tiktok_username')) {
+    return { ok: false as const, message: 'That TikTok username is already used.' }
+  }
+  if (await handleIsTaken(instagram, 'instagram_username')) {
+    return { ok: false as const, message: 'That Instagram username is already used.' }
+  }
   const role = normalizeParticipantRole((formData.get('role') ?? '').toString())
   const platforms = parsePlatforms(formData.get('platforms'))
   const goals = applyPlatformsToQuotas(platforms, {
@@ -313,20 +319,29 @@ export async function createCreator(formData: FormData) {
   const payEveryDays = parsePayEveryDays(formData.get('pay_every_days'))
   const notes = parseNotes(formData.get('notes'))
   const token = randomBytes(12).toString('hex')
-  const rows = (await sql`
-    INSERT INTO creators (
-      name, token, project_id, role, goal_instagram, goal_tiktok, platforms,
-      last_paid_at, pay_every_days, notes, tiktok_username, instagram_username, login_platform,
-      notek_tiktok_username, notek_instagram_username,
-      miqat_tiktok_username, miqat_instagram_username
-    )
-    VALUES (
-      ${name}, ${token}, ${projectId}, ${role}, ${goals.goalInstagram}, ${goals.goalTiktok}, ${platforms},
-      ${lastPaidAt}, ${payEveryDays}, ${notes}, ${tiktok}, ${instagram}, ${login_platform},
-      ${notekTiktok}, ${notekInstagram}, ${miqatTiktok}, ${miqatInstagram}
-    )
-    RETURNING id
-  `) as { id: number }[]
+  let rows: { id: number }[]
+  try {
+    rows = (await sql`
+      INSERT INTO creators (
+        name, token, project_id, role, goal_instagram, goal_tiktok, platforms,
+        last_paid_at, pay_every_days, notes, tiktok_username, instagram_username, login_platform,
+        notek_tiktok_username, notek_instagram_username,
+        miqat_tiktok_username, miqat_instagram_username
+      )
+      VALUES (
+        ${name}, ${token}, ${projectId}, ${role}, ${goals.goalInstagram}, ${goals.goalTiktok}, ${platforms},
+        ${lastPaidAt}, ${payEveryDays}, ${notes}, ${tiktok}, ${instagram}, ${login_platform},
+        ${notekTiktok}, ${notekInstagram}, ${miqatTiktok}, ${miqatInstagram}
+      )
+      RETURNING id
+    `) as { id: number }[]
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('username') || msg.includes('unique') || msg.includes('duplicate')) {
+      return { ok: false as const, message: 'That username is already on another account.' }
+    }
+    throw error
+  }
 
   const creatorId = rows[0]?.id
   const contractName = (formData.get('contract_name') ?? '').toString().trim() || 'Initial contract'
@@ -345,6 +360,7 @@ export async function createCreator(formData: FormData) {
   }
 
   revalidatePath('/admin')
+  return { ok: true as const, message: '' }
 }
 
 export async function updateCreator(id: number, formData: FormData) {

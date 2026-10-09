@@ -20,6 +20,7 @@ import type {
   OutflowScheduleGroup,
   OutflowSnapshot,
   OutflowView,
+  PayNowPerson,
 } from '@/lib/outflow'
 
 type AmountMode = 'planned' | 'paid'
@@ -506,6 +507,53 @@ function FragmentMonth({
   )
 }
 
+function PayNowList({ people }: { people: PayNowPerson[] }) {
+  if (people.length === 0) {
+    return (
+      <p className="px-3 py-6 text-sm text-muted-foreground">
+        Nobody has finished their pay window.
+      </p>
+    )
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[520px] text-left text-sm">
+        <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2 font-medium">Person</th>
+            <th className="px-3 py-2 text-right font-medium">Days</th>
+            <th className="px-3 py-2 text-right font-medium">Extra</th>
+            <th className="px-3 py-2 text-right font-medium">To send</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/60">
+          {people.map((person) => (
+            <tr key={person.creatorId}>
+              <td className="px-3 py-2">
+                <span className="font-medium">{person.name}</span>
+                <span className="ml-1 text-[11px] capitalize text-muted-foreground">{person.role}</span>
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                {person.daysElapsed} / {person.periodDays}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                {person.extraDays > 0 ? (
+                  <span className="font-semibold text-destructive">+{person.extraDays}</span>
+                ) : (
+                  <span className="text-muted-foreground">due today</span>
+                )}
+              </td>
+              <td className="px-3 py-2 text-right">
+                <DualMoney usd={person.biweeklyUsd} emphasize />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function MarketingMonths({ months, view }: { months: MarketingMonthBucket[]; view: OutflowView }) {
   if (months.length === 0) {
     return (
@@ -763,6 +811,14 @@ export function OutflowPanel({
         {snapshot.peopleTotals.length > 0 ? (
           <PeopleTotals people={snapshot.peopleTotals} />
         ) : null}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="We have to pay" defaultOpen>
+        <p className="px-3 pt-3 text-xs text-muted-foreground">
+          Finished their pay window. Days is how far they are into it. Extra is how many days past the
+          window — check them, then send.
+        </p>
+        <PayNowList people={snapshot.payNow} />
       </CollapsibleSection>
 
       <CollapsibleSection

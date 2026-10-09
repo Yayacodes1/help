@@ -64,6 +64,7 @@ export function CreatorsManager({
   const [pending, startTransition] = useTransition()
   const [selected, setSelected] = useState<number[]>([])
   const [addOpen, setAddOpen] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<'name' | 'videos' | 'streak' | 'today'>('name')
 
@@ -287,7 +288,12 @@ export function CreatorsManager({
         ref={formRef}
         action={(fd) =>
           startTransition(async () => {
-            await createCreator(fd)
+            const result = await createCreator(fd)
+            if (result && !result.ok) {
+              setAddError(result.message)
+              return
+            }
+            setAddError(null)
             formRef.current?.reset()
             setAddOpen(false)
           })
@@ -312,12 +318,13 @@ export function CreatorsManager({
           <option value="instagram">Instagram only</option>
         </select>
         <GoalInputs />
+        {addError ? <p className="text-sm text-destructive">{addError}</p> : null}
         <button
           type="submit"
           disabled={pending}
           className="h-10 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
         >
-          {addLabel}
+          {pending ? 'Saving…' : addLabel}
         </button>
       </form>
       ) : null}

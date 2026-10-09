@@ -306,8 +306,8 @@ export async function getCreatorsWithProgressOnDate(
   const roleFilter = role ?? null
   // Miyqat: show every reposter + every creator (homes not assigned yet).
   // Other projects: all reposters still, creators by home / unassigned / posts.
-  // projectMembersOnly: creators by home project (no home = both projects),
-  // reposters by home project or where they posted.
+  // projectMembersOnly: home project, or no home (Both) so a new person still shows.
+  // Reposters with a home project also show where they have posted.
   const membersOnly = opts?.projectMembersOnly ?? false
   const includeAllReposters = !membersOnly && (opts?.includeAllReposters ?? pid != null)
   const includeAllCreators = !membersOnly && (opts?.includeAllCreators ?? false)
@@ -335,7 +335,7 @@ export async function getCreatorsWithProgressOnDate(
         OR (c.role = 'reposter' AND ${includeAllReposters}::boolean)
         OR (c.role <> 'reposter' AND ${includeAllCreators}::boolean)
         OR c.project_id = ${pid}
-        OR (c.role <> 'reposter' AND c.project_id IS NULL)
+        OR c.project_id IS NULL
         OR (
           (c.role = 'reposter' OR c.project_id IS NULL OR NOT ${membersOnly}::boolean)
           AND EXISTS (

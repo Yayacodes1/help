@@ -388,6 +388,7 @@ export default async function AdminPage({
         projectId: projectId ?? null,
         includeAllCreators,
         includeAllReposters,
+        today,
       }),
       getCommissionBoard({ from: cmFrom, to: cmTo, today, projectId: projectId ?? null, role: roleSql }),
       getCommissionEstimate({

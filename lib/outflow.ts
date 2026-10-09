@@ -117,6 +117,19 @@ export type OutflowPersonTotal = {
   savedBiweekly: number | null
 }
 
+export type PayNowPerson = {
+  creatorId: number
+  name: string
+  role: string
+  /** Their pay window, in days (biweekly setting). */
+  periodDays: number
+  /** Days since the last payment, or since the contract started. */
+  daysElapsed: number
+  /** Days past the window. 0 means the window just closed. */
+  extraDays: number
+  biweeklyUsd: number
+}
+
 export type OutflowSnapshot = {
   from: string
   to: string
@@ -140,6 +153,8 @@ export type OutflowSnapshot = {
   months: OutflowMonthBucket[]
   marketingMonths: MarketingMonthBucket[]
   peopleTotals: OutflowPersonTotal[]
+  /** People whose biweekly window has closed, most overdue first. */
+  payNow: PayNowPerson[]
 }
 
 function monthLabel(key: string): string {
@@ -175,6 +190,8 @@ export async function getOutflowSnapshot(opts: {
   countMode?: OutflowCountMode
   /** Header project filter — scopes people to that project. */
   projectId?: number | null
+  /** Calendar day the "we have to pay" list is measured against. */
+  today?: string
   /** Miyqat: include every creator in the people set. */
   includeAllCreators?: boolean
   /** Always include every reposter under a project filter. */
@@ -182,6 +199,7 @@ export async function getOutflowSnapshot(opts: {
 }): Promise<OutflowSnapshot> {
   const from = opts.from
   const to = opts.to
+  const today = opts.today && /^\d{4}-\d{2}-\d{2}$/.test(opts.today) ? opts.today : to
   const view: OutflowView = opts.view ?? 'total'
   const countMode: OutflowCountMode = opts.countMode === 'all' ? 'all' : 'base'
   const roleFilter: ParticipantRole | null =
@@ -218,7 +236,10 @@ export async function getOutflowSnapshot(opts: {
 
   const peopleRows = (await sql`
     SELECT c.id AS creator_id, c.name AS creator_name, c.role, c.pay_currency,
-           c.biweekly_amount::float AS biweekly_amount
+           c.biweekly_amount::float AS biweekly_amount,
+           c.last_paid_at::text AS last_paid_at,
+           COALESCE(c.pay_every_days, 14)::int AS pay_every_days,
+           c.paused_at::text AS paused_at
     FROM creators c
     WHERE (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
       AND (
@@ -239,6 +260,9 @@ export async function getOutflowSnapshot(opts: {
     role: string
     pay_currency: string | null
     biweekly_amount: number | null
+    last_paid_at: string | null
+    pay_every_days: number
+    paused_at: string | null
   }[]
 
   type ContractQueryRow = Omit<
@@ -489,6 +513,29 @@ export async function getOutflowSnapshot(opts: {
   const peopleTotals = [...peopleMap.values()].sort((a, b) =>
     a.creator_name.localeCompare(b.creator_name),
   )
+  const biweeklyById = new Map(peopleTotals.map((p) => [p.creator_id, p.biweekly]))
+  const payNow: PayNowPerson[] = []
+  for (const person of peopleRows) {
+    if (person.paused_at) continue
+    const contractStart = contractsByCreator.get(person.creator_id)?.[0]?.start_date ?? null
+    const anchor = person.last_paid_at ?? contractStart
+    if (!anchor || anchor > today) continue
+    const periodDays = person.pay_every_days > 0 ? person.pay_every_days : 14
+    const elapsed = Math.round(
+      (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${anchor}T00:00:00Z`)) / 86_400_000,
+    )
+    if (elapsed < periodDays) continue
+    payNow.push({
+      creatorId: person.creator_id,
+      name: person.creator_name,
+      role: person.role,
+      periodDays,
+      daysElapsed: elapsed,
+      extraDays: elapsed - periodDays,
+      biweeklyUsd: biweeklyById.get(person.creator_id) ?? 0,
+    })
+  }
+  payNow.sort((a, b) => b.extraDays - a.extraDays || a.name.localeCompare(b.name))
   const plannedBiweekly =
     Math.round(peopleTotals.reduce((s, p) => s + p.biweekly, 0) * 100) / 100
   const plannedMonthly =
@@ -693,5 +740,6 @@ export async function getOutflowSnapshot(opts: {
     months: [...monthsMap.values()],
     marketingMonths,
     peopleTotals,
+    payNow,
   }
 }
