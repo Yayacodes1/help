@@ -452,6 +452,45 @@ export async function markCreatorPaid(id: number, formData: FormData) {
   revalidatePath('/submit')
 }
 
+/** SAR paid each time one video clears another view block. Counted per video. */
+export async function saveContractCommission(contractId: number, formData: FormData) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const threshold = parseGoal(formData.get('views_threshold'))
+  const amount = parseOptionalAmount(formData.get('view_commission_amount'))
+  if (threshold < 1 || amount == null) return
+  const rows = (await sql`
+    UPDATE contracts
+    SET views_threshold = ${threshold},
+        view_commission_amount = ${amount},
+        count_mode = 'video'
+    WHERE id = ${contractId}
+    RETURNING creator_id
+  `) as { creator_id: number }[]
+  const creatorId = rows[0]?.creator_id
+  revalidatePath('/admin')
+  if (creatorId) revalidatePath(`/admin/creators/${creatorId}`)
+}
+
+/** Remember that this contract's commission was sent. Uncheck clears it. */
+export async function setContractCommissionPaid(contractId: number, formData: FormData) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const paid = (formData.get('paid') ?? '').toString() === '1'
+  const today = await getServerToday()
+  const amount = parseOptionalAmount(formData.get('amount'))
+  const rows = (await sql`
+    UPDATE contracts
+    SET commission_paid_on = ${paid ? today : null},
+        commission_paid_amount = ${paid ? amount : null}
+    WHERE id = ${contractId}
+    RETURNING creator_id
+  `) as { creator_id: number }[]
+  const creatorId = rows[0]?.creator_id
+  revalidatePath('/admin')
+  if (creatorId) revalidatePath(`/admin/creators/${creatorId}`)
+}
+
 export async function deleteCreator(id: number) {
   await requireAdmin()
   await sql`DELETE FROM payments WHERE creator_id = ${id}`

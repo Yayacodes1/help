@@ -275,6 +275,8 @@ export async function ensureCreatorTrackingColumns() {
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS count_mode text`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS views_threshold integer`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS view_commission_amount numeric(12, 2)`
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS commission_paid_on date`
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS commission_paid_amount numeric(12, 2)`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS commission_reels integer`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS base_pay_cadence text NOT NULL DEFAULT 'monthly'`
   await sql`

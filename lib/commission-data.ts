@@ -9,6 +9,7 @@ import {
   normalizeCountMode,
   resolveTerms,
   sumEstimates,
+  viewChunks,
   type CommissionBoard,
   type CommissionEstimate,
   type CommissionEstimateOption,
@@ -450,5 +451,174 @@ export async function getCommissionBreakdown(opts: {
     terms: termsOut,
     lines,
     totalSar,
+  }
+}
+
+export type CommissionVideoLine = {
+  id: number
+  videoDate: string | null
+  platform: Platform
+  url: string | null
+  views: number
+  /** Full blocks on this video alone. 10,000 views at 5,000 = 2. */
+  chunks: number
+  /** Views toward the next unpaid block. */
+  remainder: number
+  sar: number
+}
+
+export type CommissionContractSheet = {
+  id: number
+  name: string
+  startDate: string
+  endDate: string | null
+  isActive: boolean
+  viewsThreshold: number | null
+  commissionAmount: number | null
+  paidOn: string | null
+  paidAmount: number | null
+  videos: CommissionVideoLine[]
+  approvedCount: number
+  blockCount: number
+  earnedSar: number
+}
+
+export type CommissionOutsideSheet = {
+  viewsThreshold: number
+  commissionAmount: number | null
+  videos: CommissionVideoLine[]
+  approvedCount: number
+  blockCount: number
+  earnedSar: number
+}
+
+function toVideoLine(
+  row: {
+    id: number
+    platform: Platform
+    views: number
+    url: string | null
+    video_date: string | null
+  },
+  threshold: number,
+  amount: number | null,
+): CommissionVideoLine {
+  const views = Math.max(0, Number(row.views) || 0)
+  const chunks = viewChunks(views, threshold)
+  return {
+    id: row.id,
+    videoDate: row.video_date,
+    platform: row.platform,
+    url: row.url,
+    views,
+    chunks,
+    remainder: threshold > 0 ? views % threshold : 0,
+    sar: amount == null ? 0 : Math.round(chunks * amount * 100) / 100,
+  }
+}
+
+/** Every contract for one person, side by side. Each video is counted on its own. */
+export async function getCreatorCommissionSheets(
+  creatorId: number,
+  today: string,
+): Promise<{ sheets: CommissionContractSheet[]; outside: CommissionOutsideSheet }> {
+  await import('@/lib/schema').then((m) => m.ensureCreatorTrackingColumns())
+  const contracts = (await sql`
+    SELECT id, name,
+           start_date::text AS start_date,
+           end_date::text AS end_date,
+           views_threshold,
+           view_commission_amount::float AS view_commission_amount,
+           commission_paid_on::text AS commission_paid_on,
+           commission_paid_amount::float AS commission_paid_amount
+    FROM contracts
+    WHERE creator_id = ${creatorId}
+    ORDER BY start_date ASC, id ASC
+  `) as {
+    id: number
+    name: string
+    start_date: string
+    end_date: string | null
+    views_threshold: number | null
+    view_commission_amount: number | null
+    commission_paid_on: string | null
+    commission_paid_amount: number | null
+  }[]
+
+  const subs = (await sql`
+    SELECT DISTINCT ON (s.id)
+           s.id, s.platform, s.views, s.url,
+           s.video_date::text AS video_date,
+           c.id AS contract_id
+    FROM submissions s
+    LEFT JOIN contracts c ON c.creator_id = s.creator_id
+      AND s.video_date >= c.start_date
+      AND (c.end_date IS NULL OR s.video_date <= c.end_date)
+    WHERE s.creator_id = ${creatorId}
+    ORDER BY s.id, c.start_date DESC NULLS LAST, c.id DESC
+  `) as {
+    id: number
+    platform: Platform
+    views: number
+    url: string | null
+    video_date: string | null
+    contract_id: number | null
+  }[]
+
+  const sheets = contracts.map((contract) => {
+    const threshold =
+      contract.views_threshold != null && contract.views_threshold > 0
+        ? Math.floor(contract.views_threshold)
+        : HOUSE_COMMISSION.viewsThreshold
+    const amount =
+      contract.view_commission_amount != null
+        ? Math.max(0, Number(contract.view_commission_amount))
+        : null
+    const videos = subs
+      .filter((s) => s.contract_id === contract.id)
+      .map((s) => toVideoLine(s, threshold, amount))
+      .sort((a, b) => b.chunks - a.chunks || b.views - a.views || (b.videoDate ?? '').localeCompare(a.videoDate ?? ''))
+    const approved = videos.filter((v) => v.chunks > 0)
+    return {
+      id: contract.id,
+      name: contract.name,
+      startDate: contract.start_date,
+      endDate: contract.end_date,
+      isActive:
+        contract.start_date <= today &&
+        (contract.end_date == null || contract.end_date >= today),
+      viewsThreshold: contract.views_threshold,
+      commissionAmount: contract.view_commission_amount,
+      paidOn: contract.commission_paid_on,
+      paidAmount: contract.commission_paid_amount,
+      videos,
+      approvedCount: approved.length,
+      blockCount: videos.reduce((sum, v) => sum + v.chunks, 0),
+      earnedSar: Math.round(videos.reduce((sum, v) => sum + v.sar, 0) * 100) / 100,
+    }
+  })
+
+  const latest = sheets[sheets.length - 1]
+  const outsideThreshold =
+    latest?.viewsThreshold && latest.viewsThreshold > 0
+      ? latest.viewsThreshold
+      : HOUSE_COMMISSION.viewsThreshold
+  const outsideAmount = latest?.commissionAmount ?? null
+  const outsideVideos = subs
+    .filter((s) => s.contract_id == null)
+    .map((s) => toVideoLine(s, outsideThreshold, outsideAmount))
+    .sort((a, b) => b.chunks - a.chunks || b.views - a.views || (b.videoDate ?? '').localeCompare(a.videoDate ?? ''))
+  const outsideApproved = outsideVideos.filter((v) => v.chunks > 0)
+
+  return {
+    sheets,
+    outside: {
+      viewsThreshold: outsideThreshold,
+      commissionAmount: outsideAmount,
+      videos: outsideVideos,
+      approvedCount: outsideApproved.length,
+      blockCount: outsideVideos.reduce((sum, v) => sum + v.chunks, 0),
+      earnedSar: Math.round(outsideVideos.reduce((sum, v) => sum + v.sar, 0) * 100) / 100,
+    },
   }
 }
