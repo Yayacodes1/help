@@ -351,7 +351,7 @@ export default async function CreatorDetailPage({
             id: 'commission',
             title: t('commissionBoard'),
             summary: formatMoney(commissionEarned, 'SAR'),
-            hint: `${t('commissionPayNow')} ${formatMoney(commissionUnpaid, 'SAR')}`,
+            hint: `${formatMoney(commissionUnpaid, 'SAR')} not marked paid`,
             children: (
               <CreatorCommissionPanel
                 creatorId={creator.id}
