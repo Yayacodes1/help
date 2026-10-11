@@ -4,6 +4,9 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { RefreshCw } from 'lucide-react'
 import type { Platform } from '@/lib/db'
+import type { RoleFilter } from '@/lib/participant-role'
+
+const ADMIN_ENDPOINT = '/api/admin/refresh-views'
 
 type ChunkResult = {
   checked: number
@@ -28,7 +31,7 @@ function mergeFailures(
 function explainHttpError(status: number, apiError?: string): string {
   if (apiError?.trim()) return apiError.trim()
   if (status === 401) {
-    return 'Not logged in as admin (401). Refresh the page and sign in again.'
+    return 'Not logged in (401). Refresh the page and sign in again.'
   }
   if (status === 502 || status === 503 || status === 504) {
     return `Server timed out (${status}). Progress is kept — click Refresh again to continue.`
@@ -57,6 +60,7 @@ function readFilters(
     allDates?: boolean
     submissionId?: number
   } = {},
+  defaultRole: RoleFilter = 'creator',
 ): RefreshFilterInput {
   if (overrides.allDates || overrides.submissionId) {
     return {
@@ -69,7 +73,7 @@ function readFilters(
   const to = params.get('to') || defaults.to || undefined
   const creatorRaw = params.get('creator')
   const projectRaw = params.get('project')
-  const roleRaw = params.get('role')
+  const roleRaw = params.get('role') ?? defaultRole
   const platformRaw = params.get('platform')
   const creatorFromUrl = creatorRaw ? Number(creatorRaw) : undefined
   const projectId =
@@ -95,8 +99,9 @@ async function fetchChunk(
   offset: number,
   limit: number,
   filters: ReturnType<typeof readFilters>,
+  endpoint: string = ADMIN_ENDPOINT,
 ): Promise<ChunkResult> {
-  const res = await fetch('/api/admin/refresh-views', {
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -132,12 +137,18 @@ export function RefreshViewsButton({
   defaultTo,
   creatorId,
   allDates = false,
+  endpoint = ADMIN_ENDPOINT,
+  defaultRole = 'creator',
 }: {
   label: string
   defaultFrom?: string
   defaultTo?: string
   creatorId?: number
   allDates?: boolean
+  /** Leaders post to their own route, which only refreshes their team's videos. */
+  endpoint?: string
+  /** Role used when the URL has no `?role=` (admin: creators, leader: everyone). */
+  defaultRole?: RoleFilter
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -161,6 +172,7 @@ export function RefreshViewsButton({
         to: defaultTo,
       },
       { creatorId, allDates },
+      defaultRole,
     )
 
     let checked = 0
@@ -190,7 +202,7 @@ export function RefreshViewsButton({
 
         let data: ChunkResult
         try {
-          data = await fetchChunk(offset, limit, filters)
+          data = await fetchChunk(offset, limit, filters, endpoint)
         } catch (chunkErr) {
           const why =
             chunkErr instanceof Error ? chunkErr.message : 'chunk failed'
@@ -203,7 +215,7 @@ export function RefreshViewsButton({
             )
             await new Promise((r) => setTimeout(r, 700))
             try {
-              data = await fetchChunk(offset, 2, filters)
+              data = await fetchChunk(offset, 2, filters, endpoint)
             } catch (retryErr) {
               offset += limit
               setMessage(
@@ -328,9 +340,11 @@ export function RefreshViewsButton({
 export function RefreshVideoButton({
   submissionId,
   label,
+  endpoint = ADMIN_ENDPOINT,
 }: {
   submissionId: number
   label: string
+  endpoint?: string
 }) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
@@ -340,7 +354,7 @@ export function RefreshVideoButton({
     setPending(true)
     setError(null)
     try {
-      const data = await fetchChunk(0, 1, { submissionId })
+      const data = await fetchChunk(0, 1, { submissionId }, endpoint)
       if (data.failed > 0) {
         setError(data.failureSamples?.[0]?.reason || 'Refresh failed')
       }

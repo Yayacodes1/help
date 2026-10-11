@@ -1,12 +1,12 @@
 'use client'
 
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import type { TopVideoRow } from '@/lib/analytics'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
 import { PanelProjectFilter } from '@/components/admin/panel-project-filter'
 import { formatDate, formatNumber } from '@/lib/format'
-import { adminPersonHref } from '@/lib/admin-href'
+import { scopedPersonHref, type LinkScope } from '@/lib/admin-href'
 
 export function TopVideosPanel({
   videos,
@@ -16,6 +16,7 @@ export function TopVideosPanel({
   defaultFrom,
   defaultTo,
   labels,
+  linkScope = 'admin',
 }: {
   videos: TopVideoRow[]
   projects: Array<{ id: number; name: string }>
@@ -27,8 +28,10 @@ export function TopVideosPanel({
     allProjects: string
     chooseProject: string
   }
+  linkScope?: LinkScope
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const params = useSearchParams()
   const from = params.get('tvFrom') || defaultFrom
   const to = params.get('tvTo') || defaultTo
@@ -41,7 +44,7 @@ export function TopVideosPanel({
       if (v == null || v === '') next.delete(k)
       else next.set(k, v)
     }
-    router.push(`/admin?${next.toString()}`)
+    router.push(`${pathname}?${next.toString()}`)
   }
 
   return (
@@ -114,7 +117,7 @@ export function TopVideosPanel({
                   <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
                   <td className="px-3 py-2">
                     <Link
-                      href={adminPersonHref(v.creator_id, {
+                      href={scopedPersonHref(linkScope, v.creator_id, {
                         role: params.get('role'),
                         projectId: params.get('project'),
                         from: 'topvideos',

@@ -68,6 +68,21 @@ export function adminPersonHref(
   return qs ? `/admin/creators/${id}?${qs}` : `/admin/creators/${id}`
 }
 
+/** Which dashboard a shared table lives in, so its name links stay inside it. */
+export type LinkScope = 'admin' | 'leader'
+
+export function leaderPersonHref(id: number, opts?: { panel?: string | null }): string {
+  return opts?.panel ? `/leader/creators/${id}?panel=${opts.panel}` : `/leader/creators/${id}`
+}
+
+export function scopedPersonHref(
+  scope: LinkScope,
+  id: number,
+  opts?: Parameters<typeof adminPersonHref>[1],
+): string {
+  return scope === 'leader' ? leaderPersonHref(id, { panel: opts?.panel }) : adminPersonHref(id, opts)
+}
+
 export function roleQueryFromPerson(role: ParticipantRole | string | null | undefined): ParticipantRole {
   return normalizeParticipantRole(role)
 }

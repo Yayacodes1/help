@@ -60,12 +60,15 @@ export async function getDailyAnalytics(opts: {
   creatorId?: number | null
   projectId?: number | null
   role?: string | null
+  /** Only these people (a leader's team); null = everyone. */
+  creatorIds?: number[] | null
 } = {}): Promise<DailyAnalyticsRow[]> {
   const today = await getServerToday()
   const { from, to } = normalizeRange(opts.from, opts.to, today)
   const creatorId = opts.creatorId ?? null
   const projectId = opts.projectId ?? null
   const role = opts.role ?? null
+  const ids = opts.creatorIds ?? null
 
   const rows = (await sql`
     SELECT
@@ -80,6 +83,7 @@ export async function getDailyAnalytics(opts: {
       AND s.video_date <= ${to}::date
       AND (${creatorId}::int IS NULL OR s.creator_id = ${creatorId})
       AND (${role}::text IS NULL OR c.role = ${role})
+      AND (${ids}::int[] IS NULL OR c.id = ANY(${ids}::int[]))
       AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
     GROUP BY s.video_date
     ORDER BY s.video_date ASC
@@ -94,12 +98,15 @@ export async function getViewsSummary(opts: {
   creatorId?: number | null
   projectId?: number | null
   role?: string | null
+  /** Only these people (a leader's team); null = everyone. */
+  creatorIds?: number[] | null
 } = {}): Promise<ViewsSummary> {
   const today = await getServerToday()
   const { from, to } = normalizeRange(opts.from, opts.to, today)
   const creatorId = opts.creatorId ?? null
   const projectId = opts.projectId ?? null
   const role = opts.role ?? null
+  const ids = opts.creatorIds ?? null
 
   const rows = (await sql`
     SELECT
@@ -116,6 +123,7 @@ export async function getViewsSummary(opts: {
       AND s.video_date <= ${to}::date
       AND (${creatorId}::int IS NULL OR s.creator_id = ${creatorId})
       AND (${role}::text IS NULL OR c.role = ${role})
+      AND (${ids}::int[] IS NULL OR c.id = ANY(${ids}::int[]))
       AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
   `) as Omit<ViewsSummary, 'from' | 'to' | 'creatorId' | 'projectId' | 'role'>[]
 
@@ -142,11 +150,14 @@ export async function getDailyViewsByCreator(opts: {
   to?: string | null
   projectId?: number | null
   role?: string | null
+  /** Only these people (a leader's team); null = everyone. */
+  creatorIds?: number[] | null
 } = {}): Promise<CreatorDailyViewsRow[]> {
   const today = await getServerToday()
   const { from, to } = normalizeRange(opts.from, opts.to, today)
   const projectId = opts.projectId ?? null
   const role = opts.role ?? null
+  const ids = opts.creatorIds ?? null
 
   return (await sql`
     SELECT
@@ -160,6 +171,7 @@ export async function getDailyViewsByCreator(opts: {
     WHERE s.video_date >= ${from}::date
       AND s.video_date <= ${to}::date
       AND (${role}::text IS NULL OR c.role = ${role})
+      AND (${ids}::int[] IS NULL OR c.id = ANY(${ids}::int[]))
       AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
     GROUP BY s.video_date, c.id, c.name
     ORDER BY s.video_date ASC, c.name ASC
@@ -172,12 +184,15 @@ export async function getViewsLeaderboard(opts: {
   to?: string | null
   projectId?: number | null
   role?: string | null
+  /** Only these people (a leader's team); null = everyone. */
+  creatorIds?: number[] | null
   limit?: number
 } = {}): Promise<CreatorViewsRow[]> {
   const today = await getServerToday()
   const { from, to } = normalizeRange(opts.from, opts.to, today)
   const projectId = opts.projectId ?? null
   const role = opts.role ?? null
+  const ids = opts.creatorIds ?? null
   const limit = Math.min(1000, Math.max(1, opts.limit ?? 10))
 
   return (await sql`
@@ -197,6 +212,7 @@ export async function getViewsLeaderboard(opts: {
       AND s.video_date <= ${to}::date
       AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
     WHERE (${role}::text IS NULL OR c.role = ${role})
+      AND (${ids}::int[] IS NULL OR c.id = ANY(${ids}::int[]))
       AND (
         ${projectId}::int IS NULL
         OR c.project_id = ${projectId}
@@ -229,6 +245,8 @@ export async function getTopVideos(opts: {
   to?: string | null
   projectId?: number | null
   role?: string | null
+  /** Only these people (a leader's team); null = everyone. */
+  creatorIds?: number[] | null
   platform?: string | null
   limit?: number
 } = {}): Promise<TopVideoRow[]> {
@@ -236,6 +254,7 @@ export async function getTopVideos(opts: {
   const { from, to } = normalizeRange(opts.from, opts.to, today)
   const projectId = opts.projectId ?? null
   const role = opts.role ?? null
+  const ids = opts.creatorIds ?? null
   const platform = opts.platform === 'instagram' || opts.platform === 'tiktok' ? opts.platform : null
   const limit = Math.min(200, Math.max(1, opts.limit ?? 25))
 
@@ -255,6 +274,7 @@ export async function getTopVideos(opts: {
     WHERE s.video_date >= ${from}::date
       AND s.video_date <= ${to}::date
       AND (${role}::text IS NULL OR c.role = ${role})
+      AND (${ids}::int[] IS NULL OR c.id = ANY(${ids}::int[]))
       AND (${platform}::text IS NULL OR s.platform = ${platform})
       AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
     ORDER BY s.views DESC, s.video_date DESC, s.id DESC

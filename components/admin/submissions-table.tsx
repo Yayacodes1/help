@@ -9,7 +9,7 @@ import { CopyLink } from '@/components/copy-link'
 import { formatDate, formatDateTime, formatNumber } from '@/lib/format'
 import { OPERATIONAL_TZ, calendarDayInTimeZone } from '@/lib/operational-day'
 import { PLATFORM_META } from '@/lib/platforms'
-import { adminPersonHref } from '@/lib/admin-href'
+import { scopedPersonHref, type LinkScope } from '@/lib/admin-href'
 import { projectToneClass } from '@/lib/project-scope'
 import type { Project } from '@/lib/db'
 
@@ -27,6 +27,8 @@ export function SubmissionsTable({
   projectId,
   linkFrom,
   refreshLabel = 'Refresh this video',
+  linkScope = 'admin',
+  refreshEndpoint,
 }: {
   submissions: AdminSubmissionRow[] | Array<{
     id: number
@@ -57,6 +59,8 @@ export function SubmissionsTable({
   projectId?: number | string | null
   linkFrom?: string | null
   refreshLabel?: string
+  linkScope?: LinkScope
+  refreshEndpoint?: string
 }) {
   const manageVideos = allowManageVideos || editableViews
   if (submissions.length === 0) {
@@ -98,7 +102,7 @@ export function SubmissionsTable({
                   <td className="whitespace-nowrap px-4 py-3 font-medium">
                     {'creator_id' in s && s.creator_id != null ? (
                       <Link
-                        href={adminPersonHref(s.creator_id, {
+                        href={scopedPersonHref(linkScope, s.creator_id, {
                           role: linkRole,
                           projectId,
                           from: linkFrom,
@@ -201,7 +205,7 @@ export function SubmissionsTable({
                         </span>
                       )}
                     </div>
-                    <RefreshVideoButton submissionId={s.id} label={refreshLabel} />
+                    <RefreshVideoButton submissionId={s.id} label={refreshLabel} endpoint={refreshEndpoint} />
                   </div>
                 </td>
                 {manageVideos && (

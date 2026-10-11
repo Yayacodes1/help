@@ -124,7 +124,7 @@ async function loadContext(day: string): Promise<{
     sql`
       SELECT id, leader_id
       FROM creators
-      WHERE role = 'creator' AND leader_id IS NOT NULL
+      WHERE role IN ('creator', 'reposter') AND leader_id IS NOT NULL
     `,
     sql`
       SELECT leader_id, creator_id, note
@@ -147,6 +147,7 @@ function personRow(
   return {
     id: p.id,
     name: p.name,
+    role: p.role,
     status: p.status,
     yesterdayStatus: yesterday.get(p.id)?.status ?? null,
     todayInstagram: p.todayInstagram,
@@ -262,8 +263,8 @@ export function scoreLeaderBoard(
     return scoreGroup(
       leader.id,
       leader.name,
-      creatorsToday.filter(mine),
-      creatorsYesterday.filter(mine),
+      todayPeople.filter(mine),
+      yesterdayPeople.filter(mine),
       yesterdayById,
       checksByLeader.get(leader.id) ?? new Map(),
       {
@@ -406,10 +407,10 @@ export async function getLeaderDirectory(): Promise<LeaderDirectory> {
       ORDER BY l.name ASC
     `,
     sql`
-      SELECT id, name, leader_id
+      SELECT id, name, role, leader_id, tiktok_username, instagram_username, login_platform
       FROM creators
-      WHERE role = 'creator' AND paused_at IS NULL
-      ORDER BY name ASC
+      WHERE role IN ('creator', 'reposter') AND paused_at IS NULL
+      ORDER BY role ASC, name ASC
     `,
     sql`
       SELECT id, name
@@ -418,7 +419,8 @@ export async function getLeaderDirectory(): Promise<LeaderDirectory> {
       ORDER BY name ASC
     `,
     sql`
-      SELECT id, leader_id FROM creators WHERE role = 'creator' AND leader_id IS NOT NULL
+      SELECT id, leader_id FROM creators
+      WHERE role IN ('creator', 'reposter') AND leader_id IS NOT NULL
     `,
   ])
   const leaders = leaderRows as {
@@ -427,7 +429,15 @@ export async function getLeaderDirectory(): Promise<LeaderDirectory> {
     reposter_id: number | null
     reposter_name: string | null
   }[]
-  const creators = creatorRows as { id: number; name: string; leader_id: number | null }[]
+  const creators = creatorRows as {
+    id: number
+    name: string
+    role: string
+    leader_id: number | null
+    tiktok_username: string | null
+    instagram_username: string | null
+    login_platform: string | null
+  }[]
   const reposters = reposterRows as { id: number; name: string }[]
   const links = linkRows as { id: number; leader_id: number }[]
   const idsByLeader = new Map<number, number[]>()
@@ -444,17 +454,50 @@ export async function getLeaderDirectory(): Promise<LeaderDirectory> {
       reposterName: l.reposter_name,
       creatorIds: idsByLeader.get(l.id) ?? [],
     })),
-    creators: creators.map((c) => ({ id: c.id, name: c.name, leaderId: c.leader_id })),
+    creators: creators.map((c) => {
+      const login = loginHandleFor(c)
+      return {
+        id: c.id,
+        name: c.name,
+        role: c.role === 'reposter' ? ('reposter' as const) : ('creator' as const),
+        leaderId: c.leader_id,
+        loginHandle: login.handle,
+        loginPlatform: login.platform,
+      }
+    }),
     reposters,
   }
 }
 
+/** True when the person (creator or reposter) is on this leader's team. */
 export async function creatorBelongsToLeader(creatorId: number, leaderId: number): Promise<boolean> {
   await ensureLeaderTables()
   const rows = (await sql`
     SELECT id FROM creators
-    WHERE id = ${creatorId} AND leader_id = ${leaderId} AND role = 'creator'
+    WHERE id = ${creatorId} AND leader_id = ${leaderId}
     LIMIT 1
   `) as { id: number }[]
   return rows[0] != null
+}
+
+export type LeaderScope = {
+  leaderId: number
+  /** Everyone the admin assigned to this leader, paused people included. */
+  teamIds: number[]
+  /** The leader's own reposter account, if linked. */
+  ownId: number | null
+  /** Team plus the leader's own account: whose videos the leader can see and refresh. */
+  videoIds: number[]
+}
+
+export async function getLeaderScope(leaderId: number): Promise<LeaderScope> {
+  await ensureLeaderTables()
+  const [teamRows, ownRows] = await Promise.all([
+    sql`SELECT id FROM creators WHERE leader_id = ${leaderId} ORDER BY name ASC`,
+    sql`SELECT reposter_id FROM leaders WHERE id = ${leaderId} LIMIT 1`,
+  ])
+  const teamIds = (teamRows as { id: number }[]).map((row) => row.id)
+  const ownId = (ownRows as { reposter_id: number | null }[])[0]?.reposter_id ?? null
+  const videoIds = ownId != null && !teamIds.includes(ownId) ? [...teamIds, ownId] : teamIds
+  return { leaderId, teamIds, ownId, videoIds }
 }

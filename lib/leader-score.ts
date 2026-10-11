@@ -5,6 +5,7 @@ export type PlanCounts = { posted: number; partial: number; missed: number; away
 export type LeaderRosterPerson = {
   id: number
   name: string
+  role: 'creator' | 'reposter'
   status: AttendanceStatus
   yesterdayStatus: AttendanceStatus | null
   todayInstagram: number
@@ -51,7 +52,15 @@ export type LeaderDirectory = {
     reposterName: string | null
     creatorIds: number[]
   }>
-  creators: Array<{ id: number; name: string; leaderId: number | null }>
+  /** Creators and reposters that can be put on a leader's team. */
+  creators: Array<{
+    id: number
+    name: string
+    role: 'creator' | 'reposter'
+    leaderId: number | null
+    loginHandle: string
+    loginPlatform: 'tiktok' | 'instagram'
+  }>
   reposters: Array<{ id: number; name: string }>
 }
 

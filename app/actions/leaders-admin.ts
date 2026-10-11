@@ -38,13 +38,13 @@ async function assignCreators(leaderId: number, creatorIds: number[]) {
   await sql`
     UPDATE creators
     SET leader_id = NULL
-    WHERE leader_id = ${leaderId} AND role = 'creator'
+    WHERE leader_id = ${leaderId} AND paused_at IS NULL
   `
   if (creatorIds.length === 0) return
   await sql`
     UPDATE creators
     SET leader_id = ${leaderId}
-    WHERE role = 'creator' AND id = ANY(${creatorIds}::int[])
+    WHERE role IN ('creator', 'reposter') AND id = ANY(${creatorIds}::int[])
   `
 }
 

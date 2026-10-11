@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import type { Creator, Project } from '@/lib/db'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
 import { PanelProjectFilter } from '@/components/admin/panel-project-filter'
@@ -26,6 +26,7 @@ export function FiltersBar({
   }
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const params = useSearchParams()
 
   const from = params.get('from') || defaultFrom
@@ -36,7 +37,7 @@ export function FiltersBar({
     if (value) next.set(key, value)
     else next.delete(key)
     next.set('panel', 'videos')
-    router.push(`/admin?${next.toString()}`, { scroll: false })
+    router.push(`${pathname}?${next.toString()}`, { scroll: false })
   }
 
   function setRange(nextFrom: string, nextTo: string) {
@@ -46,7 +47,7 @@ export function FiltersBar({
     if (nextTo) next.set('to', nextTo)
     else next.delete('to')
     next.set('panel', 'videos')
-    router.push(`/admin?${next.toString()}`, { scroll: false })
+    router.push(`${pathname}?${next.toString()}`, { scroll: false })
   }
 
   // Clearing keeps the selected project and role (owned by the top-level selectors).
@@ -57,7 +58,7 @@ export function FiltersBar({
     if (project) next.set('project', project)
     if (role) next.set('role', role)
     next.set('panel', 'videos')
-    router.push(`/admin?${next.toString()}`, { scroll: false })
+    router.push(`${pathname}?${next.toString()}`, { scroll: false })
   }
 
   const inputClass =

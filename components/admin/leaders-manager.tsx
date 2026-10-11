@@ -19,23 +19,49 @@ function CreatorPicker({
   leaderId: number | null
 }) {
   const chosen = new Set(selected)
+  const groups = [
+    { title: 'Creators', people: creators.filter((c) => c.role === 'creator') },
+    { title: 'Reposters', people: creators.filter((c) => c.role === 'reposter') },
+  ]
   return (
-    <div className="max-h-48 overflow-auto rounded-lg border border-border p-2">
+    <div className="max-h-64 overflow-auto rounded-lg border border-border p-2">
       {creators.length === 0 ? (
-        <p className="px-1 py-2 text-xs text-muted-foreground">No creators yet.</p>
+        <p className="px-1 py-2 text-xs text-muted-foreground">No creators or reposters yet.</p>
       ) : (
-        creators.map((creator) => {
-          const taken = creator.leaderId != null && creator.leaderId !== leaderId
-          return (
-            <label key={creator.id} className="flex items-center gap-2 px-1 py-1 text-sm">
-              <input type="checkbox" name="creator_ids" value={creator.id} defaultChecked={chosen.has(creator.id)} />
-              <span>
-                {creator.name}
-                {taken ? <span className="text-xs text-muted-foreground"> · moves off their current leader</span> : null}
-              </span>
-            </label>
-          )
-        })
+        groups.map((group) =>
+          group.people.length === 0 ? null : (
+            <div key={group.title} className="mb-2 last:mb-0">
+              <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {group.title}
+              </p>
+              {group.people.map((creator) => {
+                const taken = creator.leaderId != null && creator.leaderId !== leaderId
+                return (
+                  <label key={creator.id} className="flex items-center gap-2 px-1 py-1 text-sm">
+                    <input
+                      type="checkbox"
+                      name="creator_ids"
+                      value={creator.id}
+                      defaultChecked={chosen.has(creator.id)}
+                    />
+                    <span>
+                      {creator.name}
+                      {creator.loginHandle ? (
+                        <span className="text-xs text-muted-foreground" dir="ltr">
+                          {' '}
+                          @{creator.loginHandle} · {creator.loginPlatform === 'instagram' ? 'Instagram' : 'TikTok'}
+                        </span>
+                      ) : null}
+                      {taken ? (
+                        <span className="text-xs text-muted-foreground"> · moves off their current leader</span>
+                      ) : null}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          ),
+        )
       )}
     </div>
   )
@@ -80,8 +106,9 @@ export function LeadersManager({ directory }: { directory: LeaderDirectory }) {
         </button>
       </div>
       <p className="text-xs text-muted-foreground">
-        Each leader has their own password. Assign the creators they are responsible for, and optionally the reposter
-        account they post with.
+        Each leader has their own password. Tick the creators and reposters on their team — they show up in that
+        leader&apos;s page right away. The leader sees only their team, and can&apos;t change contracts or amounts.
+        Optionally link the reposter account they post with.
       </p>
       {adding ? (
         <form action={createAction} className="flex flex-col gap-3 rounded-xl border border-border p-3">

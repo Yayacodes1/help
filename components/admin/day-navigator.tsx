@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { addDays } from '@/lib/campaign'
@@ -13,6 +13,7 @@ export function DayNavigator({
   today: string
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const params = useSearchParams()
   const [pending, startTransition] = useTransition()
 
@@ -26,7 +27,7 @@ export function DayNavigator({
     if (day === today) next.delete('day')
     else next.set('day', day)
     startTransition(() => {
-      router.push(`/admin?${next.toString()}`, { scroll: false })
+      router.push(`${pathname}?${next.toString()}`, { scroll: false })
     })
   }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { sortProjects } from '@/lib/project-order'
 
 type ProjectOption = { id: number; name: string }
@@ -28,6 +28,7 @@ export function PanelProjectFilter({
   promptWhenAll?: boolean
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const params = useSearchParams()
   const ordered = sortProjects(projects)
   const selected =
@@ -41,7 +42,7 @@ export function PanelProjectFilter({
     next.delete('creator')
     next.delete('aCreator')
     next.delete('pvPerson')
-    router.push(`/admin?${next.toString()}`, { scroll: false })
+    router.push(`${pathname}?${next.toString()}`, { scroll: false })
   }
 
   const toggleClass = (active: boolean) =>

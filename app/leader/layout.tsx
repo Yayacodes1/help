@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { Suspense, type ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { getLeaderSession } from '@/lib/leader-auth'
 import { EMPTY_COUNTS, getLeaderBoard } from '@/lib/leaders'
@@ -34,8 +34,10 @@ export default async function LeaderLayout({ children }: { children: ReactNode }
     }
 
   return (
-    <LeaderShell locale={locale} leaderName={session.name} day={day} score={score}>
-      {children}
-    </LeaderShell>
+    <Suspense fallback={null}>
+      <LeaderShell locale={locale} leaderName={session.name} score={score}>
+        {children}
+      </LeaderShell>
+    </Suspense>
   )
 }

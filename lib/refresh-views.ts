@@ -17,6 +17,8 @@ export type RefreshFilters = {
   role?: string | null
   platform?: Platform | null
   submissionId?: number | null
+  /** Only these people's videos (a leader's team); null = everyone. */
+  creatorIds?: number[] | null
 }
 
 export type RefreshFailureSample = {
@@ -99,6 +101,7 @@ export async function refreshViews(
     const role = f.role === 'creator' || f.role === 'reposter' ? f.role : null
     const platform =
       f.platform === 'instagram' || f.platform === 'tiktok' ? f.platform : null
+    const ids = Array.isArray(f.creatorIds) ? f.creatorIds : null
 
     rows = (await sql`
       SELECT s.id, s.platform, s.url, s.views, s.platform_posted_at
@@ -111,6 +114,7 @@ export async function refreshViews(
         AND (${submissionId}::int IS NULL OR s.id = ${submissionId})
         AND (${role}::text IS NULL OR c.role = ${role})
         AND (${platform}::text IS NULL OR s.platform = ${platform})
+        AND (${ids}::int[] IS NULL OR s.creator_id = ANY(${ids}::int[]))
       ORDER BY s.video_date ASC, s.id ASC
       LIMIT ${limit} OFFSET ${offset}
     `) as Row[]

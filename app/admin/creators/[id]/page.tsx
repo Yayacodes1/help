@@ -69,7 +69,7 @@ export default async function CreatorDetailPage({
 
   const creator = await getCreatorById(id)
   if (!creator) notFound()
-  const creatorLeader = creator.role === 'creator' ? await getLeaderForCreator(id) : null
+  const creatorLeader = await getLeaderForCreator(id)
 
   const locale = await getLocale()
   const t = createT(locale)

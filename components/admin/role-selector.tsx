@@ -1,28 +1,32 @@
 'use client'
 
 import { useTransition } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import type { RoleFilter } from '@/lib/participant-role'
 
 /** Creators (default) / Reposters / Both for the whole dashboard. */
 export function RoleSelector({
   labels,
+  defaultRole = 'creator',
 }: {
   labels: {
     creators: string
     reposters: string
     all: string
   }
+  /** What a missing `?role=` means on this page. */
+  defaultRole?: RoleFilter
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const params = useSearchParams()
   const [isPending, startTransition] = useTransition()
   const raw = params.get('role')
-  const value: RoleFilter = raw === 'all' || raw === 'reposter' ? raw : 'creator'
+  const value: RoleFilter = raw === 'all' || raw === 'reposter' || raw === 'creator' ? raw : defaultRole
 
   function onChange(nextValue: RoleFilter) {
     const next = new URLSearchParams(params.toString())
-    if (nextValue === 'creator') next.delete('role')
+    if (nextValue === defaultRole) next.delete('role')
     else next.set('role', nextValue)
     // Resets the per-project choices in the side-by-side columns too.
     for (const key of [...next.keys()]) {
@@ -31,7 +35,7 @@ export function RoleSelector({
     next.delete('aRole')
     next.delete('creator')
     next.delete('aCreator')
-    startTransition(() => router.push(`/admin?${next.toString()}`, { scroll: false }))
+    startTransition(() => router.push(`${pathname}?${next.toString()}`, { scroll: false }))
   }
 
   const options: Array<[RoleFilter, string]> = [

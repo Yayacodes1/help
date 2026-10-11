@@ -177,6 +177,7 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
 
   revalidatePath('/submit')
   revalidatePath('/admin')
+  revalidatePath('/leader', 'layout')
   const skipped =
     rejected.length > 0 ? ` Skipped ${rejected.length} unrecognized link(s).` : ''
   const ig = fresh.filter((r) => r.platform === 'instagram').length
@@ -198,6 +199,7 @@ export async function deleteOwnSubmission(username: string, submissionId: number
     WHERE id = ${submissionId} AND creator_id = ${creator.id}
   `
   revalidatePath('/submit')
+  revalidatePath('/leader', 'layout')
 }
 
 /** Creators can only move their own videos from today or yesterday. */
@@ -221,4 +223,5 @@ export async function updateOwnSubmissionProject(
   `
   revalidatePath('/submit')
   revalidatePath('/admin')
+  revalidatePath('/leader', 'layout')
 }

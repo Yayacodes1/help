@@ -140,6 +140,7 @@ export function AnalyticsPanel({
   labels,
   sideBySide = false,
   urlKeys = { from: 'aFrom', to: 'aTo', role: 'aRole' },
+  allowSheet = true,
 }: {
   daily: DailyAnalyticsRow[]
   byCreatorDaily: CreatorDailyViewsRow[]
@@ -156,6 +157,8 @@ export function AnalyticsPanel({
   sideBySide?: boolean
   /** Query keys for dates/role, so each side-by-side column keeps its own. */
   urlKeys?: { from: string; to: string; role: string }
+  /** The daily sheet is admin-only. */
+  allowSheet?: boolean
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -404,14 +407,16 @@ export function AnalyticsPanel({
             {label}
           </button>
         ))}
-        <button
-          type="button"
-          onClick={openSheet}
-          className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary bg-primary/10 px-3 text-sm font-semibold text-primary hover:bg-primary/20"
-        >
-          <Sheet className="size-4" />
-          {labels.openSheet}
-        </button>
+        {allowSheet ? (
+          <button
+            type="button"
+            onClick={openSheet}
+            className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary bg-primary/10 px-3 text-sm font-semibold text-primary hover:bg-primary/20"
+          >
+            <Sheet className="size-4" />
+            {labels.openSheet}
+          </button>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

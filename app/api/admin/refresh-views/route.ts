@@ -75,6 +75,7 @@ export async function POST(req: Request) {
 
     revalidatePath('/admin')
     revalidatePath('/admin/creators', 'layout')
+    revalidatePath('/leader', 'layout')
     revalidatePath('/submit')
     return NextResponse.json(result)
   } catch (e) {

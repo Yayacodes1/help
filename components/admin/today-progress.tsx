@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import type { CreatorTrackingRow } from '@/lib/queries'
-import { adminPersonHref } from '@/lib/admin-href'
+import { scopedPersonHref, type LinkScope } from '@/lib/admin-href'
 import { PersonHandlesLine } from '@/components/person-handles'
 
 function Cell({ today, goal }: { today: number; goal: number }) {
@@ -23,15 +23,19 @@ export function TodayProgress({
   creators,
   linkRole,
   projectId,
+  linkScope = 'admin',
+  emptyLabel = 'No creators yet. Add one below to start tracking daily goals.',
 }: {
   creators: CreatorTrackingRow[]
   linkRole?: string | null
   projectId?: number | string | null
+  linkScope?: LinkScope
+  emptyLabel?: string
 }) {
   if (creators.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-        No creators yet. Add one below to start tracking daily goals.
+        {emptyLabel}
       </p>
     )
   }
@@ -62,7 +66,7 @@ export function TodayProgress({
                 <td className="px-4 py-3">
                   <div>
                     <Link
-                      href={adminPersonHref(c.id, {
+                      href={scopedPersonHref(linkScope, c.id, {
                         role: linkRole ?? c.role,
                         projectId,
                         panel: 'consistency',

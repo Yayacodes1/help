@@ -219,12 +219,15 @@ export type AdminFilters = {
   platform?: Platform
   from?: string
   to?: string
+  /** Only these people (a leader's team); omitted = everyone. */
+  creatorIds?: number[] | null
 }
 
 export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<AdminSubmissionRow[]> {
   const projectId = filters.projectId ?? null
   const role = filters.role ?? null
   const creatorId = filters.creatorId ?? null
+  const ids = filters.creatorIds ?? null
   const platform = filters.platform ?? null
   const from = filters.from ?? null
   const to = filters.to ?? null
@@ -253,6 +256,7 @@ export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<A
     WHERE (${projectId}::int IS NULL OR s.project_id = ${projectId})
       AND (${role}::text IS NULL OR c.role = ${role})
       AND (${creatorId}::int IS NULL OR s.creator_id = ${creatorId})
+      AND (${ids}::int[] IS NULL OR s.creator_id = ANY(${ids}::int[]))
       AND (${platform}::text IS NULL OR s.platform = ${platform})
       AND (${from}::date IS NULL OR s.video_date >= ${from})
       AND (${to}::date IS NULL OR s.video_date <= ${to})
@@ -300,10 +304,17 @@ export async function getCreatorsWithProgressOnDate(
   date: string,
   projectId?: number,
   role?: ParticipantRole | null,
-  opts?: { includeAllReposters?: boolean; includeAllCreators?: boolean; projectMembersOnly?: boolean },
+  opts?: {
+    includeAllReposters?: boolean
+    includeAllCreators?: boolean
+    projectMembersOnly?: boolean
+    /** Only these people (a leader's team). */
+    creatorIds?: number[] | null
+  },
 ): Promise<CreatorProgress[]> {
   const pid = projectId ?? null
   const roleFilter = role ?? null
+  const ids = opts?.creatorIds ?? null
   // Miyqat: show every reposter + every creator (homes not assigned yet).
   // Other projects: all reposters still, creators by home / unassigned / posts.
   // projectMembersOnly: home project, or no home (Both) so a new person still shows.
@@ -330,6 +341,7 @@ export async function getCreatorsWithProgressOnDate(
     LEFT JOIN projects p ON p.id = c.project_id
     LEFT JOIN submissions s ON s.creator_id = c.id
     WHERE (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
+      AND (${ids}::int[] IS NULL OR c.id = ANY(${ids}::int[]))
       AND (
         ${pid}::int IS NULL
         OR (c.role = 'reposter' AND ${includeAllReposters}::boolean)

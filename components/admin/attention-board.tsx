@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { DayNavigator } from '@/components/admin/day-navigator'
-import { adminPersonHref } from '@/lib/admin-href'
+import { scopedPersonHref, type LinkScope } from '@/lib/admin-href'
 import type { AttendancePerson, AttendanceStatus } from '@/lib/attendance-types'
 
 const STATUS_CLASS: Record<AttendanceStatus, string> = {
@@ -29,6 +29,7 @@ export function AttentionBoard({
   linkRole,
   projectId,
   labels,
+  linkScope = 'admin',
 }: {
   people: AttendancePerson[]
   selectedDay: string
@@ -46,6 +47,7 @@ export function AttentionBoard({
     allClear: string
     strikes: string
   }
+  linkScope?: LinkScope
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -99,7 +101,7 @@ export function AttentionBoard({
               >
                 <div className="min-w-0">
                   <Link
-                    href={adminPersonHref(p.id, {
+                    href={scopedPersonHref(linkScope, p.id, {
                       role: linkRole ?? p.role,
                       projectId,
                       panel: 'consistency',
