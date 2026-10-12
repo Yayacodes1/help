@@ -2,6 +2,8 @@ import Link from 'next/link'
 import type { CreatorTrackingRow } from '@/lib/queries'
 import { scopedPersonHref, type LinkScope } from '@/lib/admin-href'
 import { PersonHandlesLine } from '@/components/person-handles'
+import { ActivityToggles } from '@/components/activity-toggles'
+import type { ActivityKind } from '@/lib/activity-kinds'
 
 function Cell({ today, goal }: { today: number; goal: number }) {
   if (goal <= 0) {
@@ -25,12 +27,15 @@ export function TodayProgress({
   projectId,
   linkScope = 'admin',
   emptyLabel = 'No creators yet. Add one below to start tracking daily goals.',
+  activity,
 }: {
   creators: CreatorTrackingRow[]
   linkRole?: string | null
   projectId?: number | string | null
   linkScope?: LinkScope
   emptyLabel?: string
+  /** When set, each row gets tickable Live / Story / Repost / Comments for that day. */
+  activity?: { day: string; marks: Record<number, ActivityKind[]> }
 }) {
   if (creators.length === 0) {
     return (
@@ -48,6 +53,7 @@ export function TodayProgress({
             <th className="px-4 py-3 font-medium">Creator</th>
             <th className="px-4 py-3 text-center font-medium">Instagram</th>
             <th className="px-4 py-3 text-center font-medium">TikTok</th>
+            {activity ? <th className="px-4 py-3 font-medium">Also did</th> : null}
             <th className="px-4 py-3 text-center font-medium">Streak</th>
             <th className="px-4 py-3 text-right font-medium">Hit rate</th>
             <th className="px-4 py-3 text-right font-medium">Videos</th>
@@ -94,6 +100,11 @@ export function TodayProgress({
                 <td className="px-4 py-3 text-center">
                   <Cell today={c.today_tiktok} goal={c.goal_tiktok} />
                 </td>
+                {activity ? (
+                  <td className="px-4 py-3">
+                    <ActivityToggles creatorId={c.id} day={activity.day} marked={activity.marks[c.id] ?? []} />
+                  </td>
+                ) : null}
                 <td className="px-4 py-3 text-center tabular-nums font-medium">
                   {c.current_streak}
                 </td>

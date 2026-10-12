@@ -33,6 +33,8 @@ export type LeaderScore = {
   reposterName: string | null
   reposterHandle: string | null
   reposterStatus: AttendanceStatus | null
+  /** Null for the "No leader" group. */
+  pay: LeaderPay | null
   people: LeaderRosterPerson[]
 }
 
@@ -44,14 +46,33 @@ export type LeaderBoard = {
   unassigned: LeaderScore | null
 }
 
+export const LEADER_LEVELS = ['lead', 'senior'] as const
+export type LeaderLevel = (typeof LEADER_LEVELS)[number]
+export const LEADER_LEVEL_LABELS: Record<LeaderLevel, string> = { lead: 'Leader', senior: 'Senior leader' }
+
+export function parseLeaderLevel(value: unknown): LeaderLevel {
+  return value === 'senior' ? 'senior' : 'lead'
+}
+
+export type LeaderPay = {
+  level: LeaderLevel
+  /** Agreed monthly pay; null = not set yet. */
+  monthlyPay: number | null
+  payCurrency: 'SAR' | 'USD'
+  /** When they moved to their current level. */
+  levelSince: string | null
+}
+
 export type LeaderDirectory = {
-  leaders: Array<{
-    id: number
-    name: string
-    reposterId: number | null
-    reposterName: string | null
-    creatorIds: number[]
-  }>
+  leaders: Array<
+    {
+      id: number
+      name: string
+      reposterId: number | null
+      reposterName: string | null
+      creatorIds: number[]
+    } & LeaderPay
+  >
   /** Creators and reposters that can be put on a leader's team. */
   creators: Array<{
     id: number

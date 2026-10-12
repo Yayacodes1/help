@@ -75,6 +75,7 @@ import { getAttendanceForDay } from '@/lib/attendance'
 import { formatPlanCompare, getLeaderBoard, getLeaderDirectory, loadLeaderLinks, withLeaderFields } from '@/lib/leaders'
 import { LeadersBoard } from '@/components/admin/leaders-board'
 import { LeadersManager } from '@/components/admin/leaders-manager'
+import { getActivityForDay } from '@/lib/activity'
 import { getProjectViewsBoard } from '@/lib/project-views'
 import { ProjectViewsPanel } from '@/components/admin/project-views-panel'
 import { getCommissionBoard, getCommissionEstimate } from '@/lib/commission-data'
@@ -264,15 +265,17 @@ export default async function AdminPage({
   const activeBase = creatorsBase.filter((c) => !c.paused_at)
 
   async function loadToday() {
-    const [submissions, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory] = await Promise.all([
-      getAdminSubmissions(filters),
-      getReposterStrikeBoard(opToday),
-      getAttendanceForDay(selectedDay),
-      getPendingContractReviews(),
-      getLeaderBoard(leaderDay),
-      getLeaderDirectory(),
-    ])
-    return { submissions, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory }
+    const [submissions, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory, activityMarks] =
+      await Promise.all([
+        getAdminSubmissions(filters),
+        getReposterStrikeBoard(opToday),
+        getAttendanceForDay(selectedDay),
+        getPendingContractReviews(),
+        getLeaderBoard(leaderDay),
+        getLeaderDirectory(),
+        getActivityForDay(selectedDay),
+      ])
+    return { submissions, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory, activityMarks }
   }
 
   async function loadAnalytics() {
@@ -418,8 +421,9 @@ export default async function AdminPage({
   const todayData = tab === 'today' ? await loadToday() : null
   const analyticsData = tab === 'analytics' ? await loadAnalytics() : null
   const moneyData = tab === 'money' ? await loadMoney() : null
-  const { submissions, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory } =
+  const { submissions, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory, activityMarks } =
     todayData ?? ({} as Awaited<ReturnType<typeof loadToday>>)
+  const activity = activityMarks ? { day: selectedDay, marks: activityMarks } : undefined
   const {
     sheetOpen,
     dailyAnalytics,
@@ -478,7 +482,8 @@ export default async function AdminPage({
     const pid = project.id
     const wantsPeople = tab === 'today' || tab === 'people'
     // Each column keeps its own filters; picking one on Miqat leaves Notek alone.
-    const role = parseRoleFilter(sp[sideRoleKey(pid)] ?? roleParam)
+    // People › Manage splits creators only; reposters work for both and get one shared list.
+    const role = tab === 'people' ? 'creator' : parseRoleFilter(sp[sideRoleKey(pid)] ?? roleParam)
     const sideRoleSql = roleFilterToSql(role)
     const sideFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp[`aFrom${pid}`] ?? '') ? sp[`aFrom${pid}`]! : aFrom
     const sideTo = /^\d{4}-\d{2}-\d{2}$/.test(sp[`aTo${pid}`] ?? '') ? sp[`aTo${pid}`]! : aTo
@@ -546,6 +551,17 @@ export default async function AdminPage({
 
   const splitData =
     splitProjects.length === 2 ? await Promise.all(splitProjects.map(loadSplitSide)) : null
+  const sharedReposters =
+    tab === 'people' && splitData
+      ? await attachTracking(
+          withLeaderFields(
+            await getCreatorsWithProgressOnDate(selectedDay, undefined, 'reposter'),
+            leaderLinks.assignments,
+          ),
+          today,
+        )
+      : []
+  const sharedReposterActive = sharedReposters.filter((c) => !c.paused_at)
   const teamProjects = selectedProject ? [selectedProject] : splitProjects.length === 2 ? splitProjects : projects
   const [teamCounts, teamGoals] =
     tab === 'people'
@@ -999,6 +1015,7 @@ export default async function AdminPage({
                           creators={side.creators}
                           linkRole={side.role}
                           projectId={projectId}
+                          activity={activity}
                         />
                       ),
                     }))}
@@ -1008,6 +1025,7 @@ export default async function AdminPage({
                     creators={creators}
                     linkRole={roleFilter}
                     projectId={projectId}
+                    activity={activity}
                   />
                 )}
               </div>
@@ -1337,7 +1355,7 @@ export default async function AdminPage({
             id: 'manage',
             title: t('manage'),
             summary: splitData
-              ? splitSummary((side) => `${side.creators.length}`)
+              ? `${splitSummary((side) => `${side.creators.length}`)} · ${t('roleFilterReposters')} ${sharedReposterActive.length}`
               : `${creators.length} ${peopleNoun}`,
             hint: `${projects.length} ${t('projects')}`,
             children: splitData ? (
@@ -1346,14 +1364,13 @@ export default async function AdminPage({
                   sides={splitData.map((side) => ({
                     key: side.project.id,
                     title: side.project.name,
-                    summary: `${side.creators.length} ${peopleNoun}`,
-                    controls: sideControls(side),
+                    summary: `${side.creators.length} ${t('roleFilterCreators').toLowerCase()}`,
                     children: (
                       <CreatorsManager
                         creators={side.creators}
                         pausedCreators={side.paused}
                         projects={projects}
-                        roleFilter={side.role}
+                        roleFilter="creator"
                         today={today}
                         currentProjectId={projectId}
                         isOwner={showBusiness}
@@ -1362,6 +1379,25 @@ export default async function AdminPage({
                     ),
                   }))}
                 />
+                <section className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-background/40 p-3">
+                  <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border pb-2">
+                    <h3 className="text-base font-semibold tracking-tight">
+                      {t('roleFilterReposters')} · {t('bothProjects')}
+                    </h3>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {sharedReposterActive.length} {t('roleFilterReposters').toLowerCase()}
+                    </span>
+                  </header>
+                  <CreatorsManager
+                    creators={sharedReposterActive}
+                    pausedCreators={sharedReposters.filter((c) => c.paused_at)}
+                    projects={projects}
+                    roleFilter="reposter"
+                    today={today}
+                    isOwner={showBusiness}
+                    leaders={leaderLinks.leaders}
+                  />
+                </section>
                 <ProjectsManager projects={projects} />
               </div>
             ) : (

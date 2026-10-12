@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from 'react'
 import { createLeader, deleteLeader, updateLeader } from '@/app/actions/leaders-admin'
-import type { LeaderDirectory } from '@/lib/leader-score'
+import { LEADER_LEVEL_LABELS, LEADER_LEVELS, type LeaderDirectory, type LeaderPay } from '@/lib/leader-score'
 
 const initial = { ok: false, message: '' }
 
@@ -89,6 +89,43 @@ function ReposterSelect({
   )
 }
 
+function PayFields({ pay }: { pay: LeaderPay | null }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Level
+        <select name="level" defaultValue={pay?.level ?? 'lead'} className={fieldClass}>
+          {LEADER_LEVELS.map((level) => (
+            <option key={level} value={level}>
+              {LEADER_LEVEL_LABELS[level]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Monthly pay
+        <input
+          name="monthly_pay"
+          type="number"
+          min={0}
+          step="0.01"
+          inputMode="decimal"
+          placeholder="Not set"
+          defaultValue={pay?.monthlyPay ?? ''}
+          className={fieldClass}
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Currency
+        <select name="pay_currency" defaultValue={pay?.payCurrency ?? 'SAR'} className={fieldClass}>
+          <option value="SAR">SAR</option>
+          <option value="USD">USD</option>
+        </select>
+      </label>
+    </div>
+  )
+}
+
 export function LeadersManager({ directory }: { directory: LeaderDirectory }) {
   const [createState, createAction, createPending] = useActionState(createLeader, initial)
   const [adding, setAdding] = useState(false)
@@ -122,6 +159,7 @@ export function LeadersManager({ directory }: { directory: LeaderDirectory }) {
               <input name="password" type="text" required autoComplete="off" className={fieldClass} />
             </label>
           </div>
+          <PayFields pay={null} />
           <ReposterSelect reposters={directory.reposters} value={null} />
           <CreatorPicker creators={directory.creators} selected={[]} leaderId={null} />
           {createState.message ? <p className="text-sm text-destructive">{createState.message}</p> : null}
@@ -166,6 +204,7 @@ function LeaderEditor({
           <input name="password" type="text" autoComplete="off" placeholder="Leave blank to keep" className={fieldClass} />
         </label>
       </div>
+      <PayFields pay={leader} />
       <ReposterSelect reposters={directory.reposters} value={leader.reposterId} />
       <CreatorPicker creators={directory.creators} selected={leader.creatorIds} leaderId={leader.id} />
       {state.message ? <p className="text-sm text-destructive">{state.message}</p> : null}

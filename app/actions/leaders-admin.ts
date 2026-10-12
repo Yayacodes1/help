@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { sql } from '@/lib/db'
 import { isAdmin } from '@/lib/admin-auth'
 import { ensureLeaderTables } from '@/lib/leaders'
+import { parseLeaderLevel } from '@/lib/leader-score'
 import { hashPassword } from '@/lib/passwords'
 
 async function requireAdmin() {
@@ -25,6 +26,16 @@ function parseIds(formData: FormData): number[] {
         .map((n) => Math.floor(n)),
     ),
   ]
+}
+
+function parsePay(formData: FormData) {
+  const raw = (formData.get('monthly_pay') ?? '').toString().trim()
+  const amount = raw === '' ? null : Number(raw)
+  return {
+    level: parseLeaderLevel(formData.get('level')),
+    monthlyPay: amount != null && Number.isFinite(amount) && amount >= 0 ? Math.round(amount * 100) / 100 : null,
+    payCurrency: formData.get('pay_currency') === 'USD' ? 'USD' : 'SAR',
+  }
 }
 
 function friendly(error: unknown): string | null {
@@ -50,6 +61,7 @@ async function assignCreators(leaderId: number, creatorIds: number[]) {
 
 function refresh() {
   revalidatePath('/admin')
+  revalidatePath('/admin/leaders/[id]', 'page')
   revalidatePath('/leader')
 }
 
@@ -61,10 +73,14 @@ export async function createLeader(_prev: unknown, formData: FormData) {
   if (!name) return { ok: false as const, message: 'Enter a name.' }
   if (password.length < 4) return { ok: false as const, message: 'Password needs at least 4 characters.' }
   const reposterId = parseId(formData.get('reposter_id'))
+  const pay = parsePay(formData)
   try {
     const rows = (await sql`
-      INSERT INTO leaders (name, password_hash, reposter_id)
-      VALUES (${name}, ${hashPassword(password)}, ${reposterId})
+      INSERT INTO leaders (name, password_hash, reposter_id, level, monthly_pay, pay_currency, level_since)
+      VALUES (
+        ${name}, ${hashPassword(password)}, ${reposterId},
+        ${pay.level}, ${pay.monthlyPay}, ${pay.payCurrency}, CURRENT_DATE
+      )
       RETURNING id
     `) as { id: number }[]
     const id = rows[0]?.id
@@ -87,7 +103,16 @@ export async function updateLeader(_prev: unknown, formData: FormData) {
   if (!name) return { ok: false as const, message: 'Enter a name.' }
   const password = (formData.get('password') ?? '').toString()
   const reposterId = parseId(formData.get('reposter_id'))
+  const pay = parsePay(formData)
   try {
+    await sql`
+      UPDATE leaders
+      SET level_since = CASE WHEN level IS DISTINCT FROM ${pay.level} THEN CURRENT_DATE ELSE level_since END,
+          level = ${pay.level},
+          monthly_pay = ${pay.monthlyPay},
+          pay_currency = ${pay.payCurrency}
+      WHERE id = ${id}
+    `
     if (password) {
       if (password.length < 4) return { ok: false as const, message: 'Password needs at least 4 characters.' }
       await sql`

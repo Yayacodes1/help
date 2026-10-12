@@ -1,7 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { formatPlanCompare, planDelta, type LeaderBoard, type LeaderScore } from '@/lib/leader-score'
+import Link from 'next/link'
+import { formatMoney } from '@/lib/format'
+import {
+  formatPlanCompare,
+  LEADER_LEVEL_LABELS,
+  planDelta,
+  type LeaderBoard,
+  type LeaderScore,
+} from '@/lib/leader-score'
 import type { AttendanceStatus } from '@/lib/attendance-types'
 
 function Delta({ today, yesterday }: { today: number | null; yesterday: number | null }) {
@@ -45,6 +53,24 @@ function Row({
           <button type="button" onClick={onToggle} className="font-medium underline-offset-4 hover:underline">
             {row.name}
           </button>
+          {row.leaderId != null ? (
+            <Link
+              href={`/admin/leaders/${row.leaderId}`}
+              className="ms-2 text-xs text-muted-foreground underline-offset-4 hover:underline"
+            >
+              Open
+            </Link>
+          ) : null}
+        </td>
+        <td className="px-3 py-2 text-muted-foreground">
+          {row.pay ? (
+            <>
+              {LEADER_LEVEL_LABELS[row.pay.level]}
+              {row.pay.monthlyPay != null ? ` · ${formatMoney(row.pay.monthlyPay, row.pay.payCurrency)}/mo` : ''}
+            </>
+          ) : (
+            '—'
+          )}
         </td>
         <td className="px-3 py-2 text-right tabular-nums">{row.todayPct ?? '–'}%</td>
         <td className="px-3 py-2 text-right tabular-nums">{row.yesterdayPct ?? '–'}%</td>
@@ -62,7 +88,7 @@ function Row({
       </tr>
       {open ? (
         <tr className="border-b border-border bg-muted/40">
-          <td colSpan={9} className="px-3 py-3">
+          <td colSpan={10} className="px-3 py-3">
             {row.people.length === 0 ? (
               <p className="text-sm text-muted-foreground">No creators assigned.</p>
             ) : (
@@ -109,6 +135,7 @@ export function LeadersBoard({ board }: { board: LeaderBoard }) {
             <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
               <th className="px-3 py-2 font-medium">#</th>
               <th className="px-3 py-2 font-medium">Leader</th>
+              <th className="px-3 py-2 font-medium">Level · pay</th>
               <th className="px-3 py-2 text-right font-medium">Today</th>
               <th className="px-3 py-2 text-right font-medium">Yesterday</th>
               <th className="px-3 py-2 text-right font-medium">Change</th>
@@ -121,7 +148,7 @@ export function LeadersBoard({ board }: { board: LeaderBoard }) {
           <tbody>
             {board.leaders.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-3 py-6 text-sm text-muted-foreground">
+                <td colSpan={10} className="px-3 py-6 text-sm text-muted-foreground">
                   No leaders yet. Add one below and assign their creators.
                 </td>
               </tr>

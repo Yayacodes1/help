@@ -21,6 +21,7 @@ import {
   getViewsSummary,
 } from '@/lib/analytics'
 import { getAttendanceForDay } from '@/lib/attendance'
+import { getActivityForDay } from '@/lib/activity'
 import { monthRange } from '@/lib/campaign'
 import { formatDate, formatNumber } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
@@ -89,7 +90,7 @@ export default async function LeaderHomePage({
 
   async function loadToday() {
     const creatorRaw = Number(sp.creator)
-    const [board, progress, attendance, submissions, members] = await Promise.all([
+    const [board, progress, attendance, submissions, members, activityMarks] = await Promise.all([
       getLeaderBoard(opToday),
       getCreatorsWithProgressOnDate(selectedDay, projectId, roleSql, {
         creatorIds: teamIds,
@@ -107,6 +108,7 @@ export default async function LeaderHomePage({
         creatorIds: scope.videoIds,
       }),
       getTeamMembers(teamIds, today),
+      getActivityForDay(selectedDay, teamIds),
     ])
     const tracked = await attachTracking(progress, today)
     const ids = new Set(teamIds)
@@ -117,6 +119,7 @@ export default async function LeaderHomePage({
       attention: attendance.filter((p) => ids.has(p.id) && inRole(p.role)),
       submissions,
       members: members.filter((m) => inRole(m.person.role)),
+      activityMarks,
     }
   }
 
@@ -186,7 +189,7 @@ export default async function LeaderHomePage({
   const panels: PanelItem[] = []
 
   if (todayData) {
-    const { score, people, everyone, attention, submissions, members } = todayData
+    const { score, people, everyone, attention, submissions, members, activityMarks } = todayData
     const roster = (score?.people ?? []).filter((p) => inRole(p.role))
     const goalTotal = people.reduce((sum, c) => sum + c.goal_instagram + c.goal_tiktok, 0)
     const postedTotal = people.reduce((sum, c) => sum + c.today_instagram + c.today_tiktok, 0)
@@ -278,6 +281,7 @@ export default async function LeaderHomePage({
               linkScope="leader"
               projectId={projectId}
               emptyLabel={t('leaderNoPeople')}
+              activity={{ day: selectedDay, marks: activityMarks }}
             />
           </div>
         ),

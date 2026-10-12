@@ -9,9 +9,11 @@ import {
   EMPTY_COUNTS,
   formatPlanCompare,
   onPlanPct,
+  parseLeaderLevel,
   planDelta,
   type LeaderBoard,
   type LeaderDirectory,
+  type LeaderPay,
   type LeaderRosterPerson,
   type LeaderScore,
   type PlanCounts,
@@ -24,12 +26,29 @@ export {
   planDelta,
   type LeaderBoard,
   type LeaderDirectory,
+  type LeaderPay,
   type LeaderRosterPerson,
   type LeaderScore,
   type PlanCounts,
 }
 
 export type LeaderLink = { creatorId: number; leaderId: number; leaderName: string }
+
+type LeaderPayRow = {
+  level: string | null
+  monthly_pay: number | null
+  pay_currency: string | null
+  level_since: string | null
+}
+
+function leaderPay(row: LeaderPayRow): LeaderPay {
+  return {
+    level: parseLeaderLevel(row.level),
+    monthlyPay: row.monthly_pay == null ? null : Number(row.monthly_pay),
+    payCurrency: row.pay_currency === 'USD' ? 'USD' : 'SAR',
+    levelSince: row.level_since,
+  }
+}
 
 export async function ensureLeaderTables() {
   await sql`
@@ -41,6 +60,10 @@ export async function ensureLeaderTables() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
+  await sql`ALTER TABLE leaders ADD COLUMN IF NOT EXISTS level text NOT NULL DEFAULT 'lead'`
+  await sql`ALTER TABLE leaders ADD COLUMN IF NOT EXISTS monthly_pay numeric(10,2)`
+  await sql`ALTER TABLE leaders ADD COLUMN IF NOT EXISTS pay_currency text NOT NULL DEFAULT 'SAR'`
+  await sql`ALTER TABLE leaders ADD COLUMN IF NOT EXISTS level_since date`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS leader_id integer`
   try {
     await sql`
@@ -100,7 +123,7 @@ type LeaderRow = {
   reposter_tiktok: string | null
   reposter_instagram: string | null
   reposter_login: string | null
-}
+} & LeaderPayRow
 
 type CheckRow = { leader_id: number; creator_id: number; note: string | null }
 
@@ -116,7 +139,8 @@ async function loadContext(day: string): Promise<{
              r.name AS reposter_name,
              r.tiktok_username AS reposter_tiktok,
              r.instagram_username AS reposter_instagram,
-             r.login_platform AS reposter_login
+             r.login_platform AS reposter_login,
+             l.level, l.monthly_pay::float AS monthly_pay, l.pay_currency, l.level_since::text AS level_since
       FROM leaders l
       LEFT JOIN creators r ON r.id = l.reposter_id
       ORDER BY l.name ASC
@@ -194,6 +218,7 @@ function scoreGroup(
     handle: string | null
     status: AttendanceStatus | null
   },
+  pay: LeaderPay | null = null,
 ): LeaderScore {
   const today = countStatuses(peopleToday)
   const yesterday = countStatuses(peopleYesterday)
@@ -212,6 +237,7 @@ function scoreGroup(
     reposterName: reposter.name,
     reposterHandle: reposter.handle,
     reposterStatus: reposter.status,
+    pay,
     people,
   }
 }
@@ -273,6 +299,7 @@ export function scoreLeaderBoard(
         handle,
         status: reposter?.status ?? null,
       },
+      leaderPay(leader),
     )
   })
   leaders.sort(compareScores)
@@ -401,7 +428,8 @@ export async function getLeaderDirectory(): Promise<LeaderDirectory> {
   await ensureLeaderTables()
   const [leaderRows, creatorRows, reposterRows, linkRows] = await Promise.all([
     sql`
-      SELECT l.id, l.name, l.reposter_id, r.name AS reposter_name
+      SELECT l.id, l.name, l.reposter_id, r.name AS reposter_name,
+             l.level, l.monthly_pay::float AS monthly_pay, l.pay_currency, l.level_since::text AS level_since
       FROM leaders l
       LEFT JOIN creators r ON r.id = l.reposter_id
       ORDER BY l.name ASC
@@ -423,12 +451,12 @@ export async function getLeaderDirectory(): Promise<LeaderDirectory> {
       WHERE role IN ('creator', 'reposter') AND leader_id IS NOT NULL
     `,
   ])
-  const leaders = leaderRows as {
+  const leaders = leaderRows as ({
     id: number
     name: string
     reposter_id: number | null
     reposter_name: string | null
-  }[]
+  } & LeaderPayRow)[]
   const creators = creatorRows as {
     id: number
     name: string
@@ -453,6 +481,7 @@ export async function getLeaderDirectory(): Promise<LeaderDirectory> {
       reposterId: l.reposter_id,
       reposterName: l.reposter_name,
       creatorIds: idsByLeader.get(l.id) ?? [],
+      ...leaderPay(l),
     })),
     creators: creators.map((c) => {
       const login = loginHandleFor(c)
@@ -466,6 +495,66 @@ export async function getLeaderDirectory(): Promise<LeaderDirectory> {
       }
     }),
     reposters,
+  }
+}
+
+export type LeaderProfile = {
+  id: number
+  name: string
+  pay: LeaderPay
+  reposterId: number | null
+  reposterName: string | null
+  teamIds: number[]
+  /** Day → how many teammates the leader checked that day. */
+  checksByDay: Record<string, number>
+  notes: Array<{ day: string; creatorId: number; creatorName: string; note: string }>
+}
+
+export async function getLeaderProfile(id: number, from: string, to: string): Promise<LeaderProfile | null> {
+  await ensureLeaderTables()
+  const [leaderRows, teamRows, checkRows] = await Promise.all([
+    sql`
+      SELECT l.id, l.name, l.reposter_id, r.name AS reposter_name,
+             l.level, l.monthly_pay::float AS monthly_pay, l.pay_currency, l.level_since::text AS level_since
+      FROM leaders l
+      LEFT JOIN creators r ON r.id = l.reposter_id
+      WHERE l.id = ${id}
+      LIMIT 1
+    `,
+    sql`
+      SELECT id FROM creators
+      WHERE leader_id = ${id} AND role IN ('creator', 'reposter') AND paused_at IS NULL
+      ORDER BY role ASC, name ASC
+    `,
+    sql`
+      SELECT k.day::text AS day, k.creator_id, c.name AS creator_name, k.note
+      FROM leader_checks k
+      JOIN creators c ON c.id = k.creator_id
+      WHERE k.leader_id = ${id} AND k.day BETWEEN ${from}::date AND ${to}::date
+      ORDER BY k.day DESC, c.name ASC
+    `,
+  ])
+  const row = (leaderRows as ({
+    id: number
+    name: string
+    reposter_id: number | null
+    reposter_name: string | null
+  } & LeaderPayRow)[])[0]
+  if (!row) return null
+  const checks = checkRows as { day: string; creator_id: number; creator_name: string; note: string | null }[]
+  const checksByDay: Record<string, number> = {}
+  for (const check of checks) checksByDay[check.day] = (checksByDay[check.day] ?? 0) + 1
+  return {
+    id: row.id,
+    name: row.name,
+    pay: leaderPay(row),
+    reposterId: row.reposter_id,
+    reposterName: row.reposter_name,
+    teamIds: (teamRows as { id: number }[]).map((r) => r.id),
+    checksByDay,
+    notes: checks
+      .filter((c) => c.note)
+      .map((c) => ({ day: c.day, creatorId: c.creator_id, creatorName: c.creator_name, note: c.note! })),
   }
 }
 

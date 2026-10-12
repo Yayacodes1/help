@@ -30,6 +30,7 @@ export default async function LeaderLayout({ children }: { children: ReactNode }
       reposterName: null,
       reposterHandle: null,
       reposterStatus: null,
+      pay: null,
       people: [],
     }
 

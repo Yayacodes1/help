@@ -41,6 +41,10 @@ import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 import { adminDashboardHref, adminReturnPanel } from '@/lib/admin-href'
 import { getLeaderForCreator } from '@/lib/leaders'
+import { getActivityRange } from '@/lib/activity'
+import { emptyActivityCounts } from '@/lib/activity-kinds'
+import { addDays } from '@/lib/campaign'
+import { ActivityCountsLine } from '@/components/activity-toggles'
 
 export const dynamic = 'force-dynamic'
 
@@ -107,6 +111,7 @@ export default async function CreatorDetailPage({
       }),
       getCreatorCommissionSheets(creator.id, today),
     ])
+  const activity30 = (await getActivityRange([creator.id], addDays(today, -29), today)).get(creator.id) ?? null
   const perf = personPerf.rows[0] ?? null
   const commissionEarned =
     commissionSheets.sheets.reduce((sum, s) => sum + s.earnedSar, 0) +
@@ -265,6 +270,10 @@ export default async function CreatorDetailPage({
                 <p className="mt-3 text-xs text-muted-foreground">
                   {consistency.missDays} · {consistency.partialDays} · {consistency.currentStreak} /{' '}
                   {consistency.bestStreak}
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Last 30 days also did:{' '}
+                  <ActivityCountsLine counts={activity30?.counts ?? emptyActivityCounts()} className="" />
                 </p>
               </div>
             ),
