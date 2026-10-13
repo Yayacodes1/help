@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 
 const COOKIE_NAME = 'admin_session'
 
-/** owner = sees everything; manager = everything except revenue, downloads, subscriptions. */
+/** owner = sees everything; manager = everything except downloads. */
 export type AdminRole = 'owner' | 'manager'
 
 type Account = { id: string; name: string; role: AdminRole; password: string }
@@ -83,7 +83,7 @@ export async function isAdmin(): Promise<boolean> {
   return (await getAdminSession()) != null
 }
 
-/** Revenue, downloads and subscriptions are owner-only. */
+/** Downloads are owner-only. */
 export async function canSeeBusiness(): Promise<boolean> {
   return (await getAdminSession())?.role === 'owner'
 }

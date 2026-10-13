@@ -319,15 +319,11 @@ export async function getDailySheet(opts: {
   `) as SheetRow[]
 }
 
-/** `source`: manual | import | revenuecat (mixed when summed across projects). */
+/** `source`: manual | import (mixed when summed across projects). */
 export type DailyDownloadsRow = {
   date: string
   downloads: number
   source: string
-  /** New paid subscriptions (RevenueCat); null when never synced. */
-  subscriptions: number | null
-  /** Gross revenue USD (RevenueCat); null when never synced. */
-  revenue: number | null
 }
 
 /** App downloads per day; summed across projects when projectId is null. */
@@ -341,9 +337,7 @@ export async function getDailyDownloads(opts: {
     SELECT
       day::text AS date,
       SUM(downloads)::int AS downloads,
-      CASE WHEN COUNT(DISTINCT source) = 1 THEN MIN(source) ELSE 'mixed' END AS source,
-      SUM(new_subscriptions)::int AS subscriptions,
-      SUM(revenue)::float AS revenue
+      CASE WHEN COUNT(DISTINCT source) = 1 THEN MIN(source) ELSE 'mixed' END AS source
     FROM daily_downloads
     WHERE day >= ${opts.from}::date
       AND day <= ${opts.to}::date

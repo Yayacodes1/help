@@ -49,7 +49,6 @@ import { AssistantChat } from '@/components/admin/assistant-chat'
 import { AssistantDrawer } from '@/components/admin/assistant-drawer'
 import { AnalyticsPanel } from '@/components/admin/analytics-panel'
 import { AnalyticsSheet } from '@/components/admin/analytics-sheet'
-import { revenueCatLinks } from '@/lib/revenuecat'
 import { TopVideosPanel } from '@/components/admin/top-videos-panel'
 import { WalletBoard } from '@/components/marketing/wallet-board'
 import { getPayablePeople, getWalletEntries, getWalletTotals } from '@/lib/wallet'
@@ -1433,9 +1432,6 @@ export default async function AdminPage({
           projectId={aProjectId}
           projects={projects}
           showBusiness={showBusiness}
-          revenueCatProjectIds={revenueCatLinks()
-            .map((l) => projects.find((p) => p.name.trim().toLowerCase() === l.appName.toLowerCase())?.id)
-            .filter((id): id is number => id != null)}
         />
       ) : null}
 

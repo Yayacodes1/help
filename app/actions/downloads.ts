@@ -4,7 +4,6 @@ import { sql } from '@/lib/db'
 import { canSeeBusiness, isAdmin } from '@/lib/admin-auth'
 import { revalidatePath } from 'next/cache'
 import { getSheetDayVideos, getSheetPersonVideos, type SheetDayVideo } from '@/lib/analytics'
-import { syncRevenueCatDownloads } from '@/lib/revenuecat'
 
 export type DownloadEntry = { date: string; downloads: number | null }
 
@@ -14,14 +13,14 @@ async function requireAdmin() {
   if (!(await isAdmin())) throw new Error('Unauthorized')
 }
 
-/** Downloads, subscriptions and revenue are owner-only. */
+/** Downloads are owner-only. */
 async function requireOwner() {
   if (!(await canSeeBusiness())) throw new Error('Unauthorized')
 }
 
 /**
  * Upsert daily app downloads for one project; null clears that day.
- * `manual` = typed by hand (RevenueCat sync never overwrites these); `import` = CSV upload.
+ * `manual` = typed by hand; `import` = CSV upload.
  */
 export async function saveDailyDownloads(
   projectId: number,
@@ -73,21 +72,4 @@ export async function loadSheetPerson(
   await requireAdmin()
   if (!Number.isFinite(creatorId) || !DAY.test(from) || !DAY.test(to)) return []
   return getSheetPersonVideos({ creatorId, from, to, projectId })
-}
-
-export async function syncRevenueCatNow(from: string, to: string, projectId: number | null) {
-  await requireOwner()
-  if (!DAY.test(from) || !DAY.test(to)) {
-    return { ok: false as const, error: 'Bad date range.' }
-  }
-  const results = await syncRevenueCatDownloads({ from, to, projectId })
-  if (results.length === 0) {
-    return { ok: false as const, error: 'RevenueCat is not connected for this project yet.' }
-  }
-  revalidatePath('/admin')
-  const errors = results.filter((r) => r.error).map((r) => `${r.appName}: ${r.error}`)
-  const days = results.reduce((s, r) => s + r.days, 0)
-  return errors.length > 0
-    ? { ok: false as const, error: errors.join(' · ') }
-    : { ok: true as const, days }
 }

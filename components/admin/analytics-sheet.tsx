@@ -12,7 +12,6 @@ import {
   ExternalLink,
   FileUp,
   Loader2,
-  RefreshCw,
   X,
 } from 'lucide-react'
 import {
@@ -30,37 +29,17 @@ import { addDays, rankingMonthRange } from '@/lib/campaign'
 import { shiftYearMonth } from '@/lib/biweekly'
 import { formatNumber } from '@/lib/format'
 import type { DailyDownloadsRow, SheetDayVideo, SheetRow } from '@/lib/analytics'
-import {
-  loadSheetDay,
-  loadSheetPerson,
-  saveDailyDownloads,
-  syncRevenueCatNow,
-} from '@/app/actions/downloads'
+import { loadSheetDay, loadSheetPerson, saveDailyDownloads } from '@/app/actions/downloads'
 
 const IG = '#E1306C'
 const TT = '#0F766E'
 const CREATOR = '#6366F1'
 const REPOSTER = '#F59E0B'
 const DOWNLOADS = '#94A3B8'
-const SUBS = '#10B981'
-const REVENUE = '#8B5CF6'
 
 type ChartMode = 'views' | 'ratios'
 
-type ImpactSort =
-  | 'views'
-  | 'dlLift'
-  | 'subLift'
-  | 'estDl'
-  | 'estSubs'
-  | 'per1k'
-  | 'nextDay'
-  | 'spikes'
-  | 'r'
-
-function money(v: number): string {
-  return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
+type ImpactSort = 'views' | 'dlLift' | 'estDl' | 'per1k' | 'nextDay' | 'spikes' | 'r'
 
 function ratio(num: number, den: number, scale = 1): number | null {
   return den > 0 ? (num / den) * scale : null
@@ -220,8 +199,6 @@ function DayDetail({
   projectId,
   showBusiness,
   downloads,
-  subscriptions,
-  revenue,
   avgDownloads,
   onClose,
   onPrev,
@@ -231,8 +208,6 @@ function DayDetail({
   projectId: number | null
   showBusiness: boolean
   downloads: number | undefined
-  subscriptions: number | undefined
-  revenue: number | undefined
   avgDownloads: number | null
   onClose: () => void
   onPrev: (() => void) | null
@@ -359,17 +334,6 @@ function DayDetail({
                         {Math.round(dlDelta * 100)}% vs avg
                       </p>
                     ) : null}
-                    {subscriptions != null || revenue != null ? (
-                      <p className="text-xs text-muted-foreground">
-                        <span style={{ color: SUBS }}>{subscriptions ?? 0} subs</span>
-                        {revenue != null ? (
-                          <>
-                            {' · '}
-                            <span style={{ color: REVENUE }}>{money(revenue)}</span>
-                          </>
-                        ) : null}
-                      </p>
-                    ) : null}
                   </div>
                 ) : null}
                 <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
@@ -485,7 +449,6 @@ function PersonTimeline({
   projectId,
   showBusiness,
   downloadsByDate,
-  subsByDate,
   onClose,
 }: {
   person: PersonAgg
@@ -495,7 +458,6 @@ function PersonTimeline({
   projectId: number | null
   showBusiness: boolean
   downloadsByDate: Map<string, number>
-  subsByDate: Map<string, number>
   onClose: () => void
 }) {
   const [loaded, setLoaded] = useState<{
@@ -521,7 +483,6 @@ function PersonTimeline({
     views: person.byDate.get(d)?.views ?? 0,
     videos: person.byDate.get(d)?.videos ?? 0,
     downloads: downloadsByDate.get(d) ?? null,
-    subs: subsByDate.get(d) ?? null,
   }))
   const withDl = dates.filter((d) => downloadsByDate.has(d))
   const posted = withDl.filter((d) => (person.byDate.get(d)?.videos ?? 0) > 0)
@@ -636,19 +597,6 @@ function PersonTimeline({
                     isAnimationActive={false}
                   />
                 ) : null}
-                {showBusiness ? (
-                  <Line
-                    yAxisId="biz"
-                    type="monotone"
-                    dataKey="subs"
-                    name="Subscriptions"
-                    stroke={SUBS}
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                    isAnimationActive={false}
-                  />
-                ) : null}
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -697,167 +645,6 @@ function PersonTimeline({
   )
 }
 
-const GOAL_PRESETS = [100, 500, 1000, 5000]
-
-/** "To make $X a day we need N downloads and M views" — from the averages in the range. */
-function GoalCalculator({
-  days,
-  revenuePerDay,
-  downloadsPerDay,
-  viewsPerDay,
-  subsPerDay,
-  revenuePerDownload,
-  viewsPerDownload,
-  subsPerDownload,
-}: {
-  days: number
-  revenuePerDay: number | null
-  downloadsPerDay: number | null
-  viewsPerDay: number | null
-  subsPerDay: number | null
-  revenuePerDownload: number | null
-  viewsPerDownload: number | null
-  subsPerDownload: number | null
-}) {
-  const [target, setTarget] = useState('1000')
-  const [open, setOpen] = useState(true)
-  const goal = Math.max(0, Number(target) || 0)
-
-  const neededDl = revenuePerDownload && revenuePerDownload > 0 ? goal / revenuePerDownload : null
-  const neededViews = neededDl != null && viewsPerDownload != null ? neededDl * viewsPerDownload : null
-  const neededSubs = neededDl != null && subsPerDownload != null ? neededDl * subsPerDownload : null
-  const times = (need: number | null, now: number | null) =>
-    need != null && now != null && now > 0 ? need / now : null
-  const dlTimes = times(neededDl, downloadsPerDay)
-  const whole = (v: number | null) => (v == null ? '—' : formatNumber(Math.round(v)))
-
-  const rows: Array<{ label: string; now: string; need: string; x: number | null; color?: string }> = [
-    {
-      label: 'Revenue a day',
-      now: revenuePerDay == null ? '—' : money(revenuePerDay),
-      need: money(goal),
-      x: times(goal, revenuePerDay),
-      color: REVENUE,
-    },
-    { label: 'Downloads a day', now: whole(downloadsPerDay), need: whole(neededDl), x: dlTimes },
-    { label: 'Views a day', now: whole(viewsPerDay), need: whole(neededViews), x: times(neededViews, viewsPerDay) },
-    {
-      label: 'Subscriptions a day',
-      now: subsPerDay == null ? '—' : subsPerDay.toFixed(1),
-      need: neededSubs == null ? '—' : neededSubs.toFixed(1),
-      x: times(neededSubs, subsPerDay),
-      color: SUBS,
-    },
-  ]
-
-  return (
-    <div className="mt-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="text-sm font-semibold"
-          aria-expanded={open}
-        >
-          Goal calculator {open ? '▾' : '▸'}
-        </button>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">I want to make</span>
-          <span className="relative">
-            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
-            <input
-              type="number"
-              min={0}
-              step={50}
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              className="h-8 w-28 rounded-md border border-input bg-background pl-5 pr-2 text-right text-sm tabular-nums"
-              aria-label="Revenue goal per day"
-            />
-          </span>
-          <span className="text-xs text-muted-foreground">a day</span>
-          {GOAL_PRESETS.map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setTarget(String(v))}
-              className={`h-7 rounded-md border px-2 text-xs ${
-                goal === v ? 'border-primary bg-primary text-primary-foreground' : 'border-border hover:bg-accent'
-              }`}
-            >
-              ${formatNumber(v)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {open ? (
-        revenuePerDownload == null ? (
-          <p className="mt-2 text-sm text-muted-foreground">
-            Needs revenue for these dates. Press <span className="font-medium">Sync RevenueCat</span> below, then
-            this shows how many downloads and views you need.
-          </p>
-        ) : (
-          <>
-            <p className="mt-2 text-sm">
-              To make <span className="font-semibold">{money(goal)}</span> a day you need about{' '}
-              <span className="font-semibold">{whole(neededDl)} downloads</span>
-              {neededViews != null ? (
-                <>
-                  {' '}
-                  and <span className="font-semibold">{whole(neededViews)} views</span>
-                </>
-              ) : null}{' '}
-              a day
-              {dlTimes != null ? (
-                <>
-                  {' '}
-                  —{' '}
-                  <span className={`font-semibold ${dlTimes <= 1 ? 'text-emerald-600' : ''}`}>
-                    {dlTimes <= 1 ? 'you are already there' : `${dlTimes.toFixed(1)}× what you get now`}
-                  </span>
-                </>
-              ) : null}
-              .
-            </p>
-            <div className="mt-2 overflow-auto">
-              <table className="w-full min-w-[26rem] text-sm">
-                <thead className="text-xs text-muted-foreground">
-                  <tr>
-                    <th className="py-1 text-left font-medium" />
-                    <th className="py-1 text-right font-medium">Now (avg)</th>
-                    <th className="py-1 text-right font-medium">Needed</th>
-                    <th className="py-1 text-right font-medium">Gap</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.label} className="border-t border-border/60">
-                      <td className="py-1.5 font-medium" style={r.color ? { color: r.color } : undefined}>
-                        {r.label}
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums">{r.now}</td>
-                      <td className="py-1.5 text-right font-semibold tabular-nums">{r.need}</td>
-                      <td className="py-1.5 text-right tabular-nums text-muted-foreground">
-                        {r.x == null ? '—' : r.x <= 1 ? 'reached' : `${r.x.toFixed(1)}×`}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="mt-1.5 text-[11px] text-muted-foreground">
-              Based on the {days} day{days === 1 ? '' : 's'} above: {money(revenuePerDownload)} per download
-              {viewsPerDownload != null ? `, ${formatNumber(Math.round(viewsPerDownload * 100))} views per 100 downloads` : ''}
-              . Change the dates to use a different period.
-            </p>
-          </>
-        )
-      ) : null}
-    </div>
-  )
-}
-
 export function AnalyticsSheet({
   rows,
   downloads,
@@ -867,7 +654,6 @@ export function AnalyticsSheet({
   projectId,
   projects,
   showBusiness,
-  revenueCatProjectIds,
 }: {
   rows: SheetRow[]
   downloads: DailyDownloadsRow[]
@@ -876,10 +662,8 @@ export function AnalyticsSheet({
   today: string
   projectId: number | null
   projects: Array<{ id: number; name: string }>
-  /** Owner only: downloads, subscriptions, revenue and the impact tab. */
+  /** Owner only: downloads and the impact tab. */
   showBusiness: boolean
-  /** Projects with a RevenueCat link configured (env). */
-  revenueCatProjectIds: number[]
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -900,8 +684,6 @@ export function AnalyticsSheet({
     key: 'estDl',
     desc: true,
   })
-  const rcConnected =
-    projectId != null ? revenueCatProjectIds.includes(projectId) : revenueCatProjectIds.length > 0
 
   const serverKey = `${serverFrom}|${serverTo}|${projectId ?? ''}`
   const [syncedKey, setSyncedKey] = useState(serverKey)
@@ -962,18 +744,10 @@ export function AnalyticsSheet({
   const currentMonth = today.slice(0, 7)
   const lastMonth = shiftYearMonth(currentMonth, -1)
 
-  const { downloadsByDate, downloadSource, subsByDate, revenueByDate } = useMemo(() => {
+  const downloadsByDate = useMemo(() => {
     const m = new Map<string, number>()
-    const src = new Map<string, string>()
-    const subs = new Map<string, number>()
-    const rev = new Map<string, number>()
-    for (const d of downloads) {
-      m.set(d.date, d.downloads)
-      src.set(d.date, d.source)
-      if (d.subscriptions != null) subs.set(d.date, d.subscriptions)
-      if (d.revenue != null) rev.set(d.date, d.revenue)
-    }
-    return { downloadsByDate: m, downloadSource: src, subsByDate: subs, revenueByDate: rev }
+    for (const d of downloads) m.set(d.date, d.downloads)
+    return m
   }, [downloads])
 
   const { byDay, totals, people } = useMemo(() => {
@@ -1041,10 +815,6 @@ export function AnalyticsSheet({
   }, [rows, dates])
 
   const totalDownloads = dates.reduce((sum, d) => sum + (downloadsByDate.get(d) ?? 0), 0)
-  const totalSubs = dates.reduce((sum, d) => sum + (subsByDate.get(d) ?? 0), 0)
-  const totalRevenue = dates.reduce((sum, d) => sum + (revenueByDate.get(d) ?? 0), 0)
-  const hasSubs = subsByDate.size > 0
-  const hasRevenue = revenueByDate.size > 0
   const daysWithDownloads = useMemo(
     () => dates.filter((d) => downloadsByDate.has(d)),
     [dates, downloadsByDate],
@@ -1052,8 +822,6 @@ export function AnalyticsSheet({
   // Ratios only use days that have downloads, so empty days don't inflate them.
   const viewsOnDlDays = daysWithDownloads.reduce((sum, d) => sum + (byDay.get(d)?.views ?? 0), 0)
   const viewsPer100 = ratio(viewsOnDlDays, totalDownloads, 100)
-  const subsPer100 = hasSubs ? ratio(totalSubs, totalDownloads, 100) : null
-  const revenuePerDownload = hasRevenue ? ratio(totalRevenue, totalDownloads) : null
   const dlDays = daysWithDownloads.length
 
   const visiblePeople = people.filter((p) => roleView === 'all' || p.role === roleView)
@@ -1081,21 +849,9 @@ export function AnalyticsSheet({
       creatorViews: a.creatorViews,
       reposterViews: a.reposterViews,
       downloads: downloadsByDate.get(d) ?? null,
-      subs: subsByDate.get(d) ?? null,
-      revenue: revenueByDate.get(d) ?? null,
       viewsPer100: (() => {
         const dl = downloadsByDate.get(d)
         return dl ? Math.round((a.views / dl) * 100) : null
-      })(),
-      subsPer100: (() => {
-        const dl = downloadsByDate.get(d)
-        const s = subsByDate.get(d)
-        return dl && s != null ? Number(((s / dl) * 100).toFixed(1)) : null
-      })(),
-      revenuePerDownload: (() => {
-        const dl = downloadsByDate.get(d)
-        const r = revenueByDate.get(d)
-        return dl && r != null ? Number((r / dl).toFixed(2)) : null
       })(),
     }
   })
@@ -1103,11 +859,7 @@ export function AnalyticsSheet({
   const impact = useMemo(() => {
     const ds = daysWithDownloads
     const dl = ds.map((d) => downloadsByDate.get(d) ?? 0)
-    const sb = ds.map((d) => subsByDate.get(d) ?? 0)
-    const series = (pick: (d: string) => number) => ({
-      r: pearson(ds.map(pick), dl),
-      rSubs: pearson(ds.map(pick), sb),
-    })
+    const series = (pick: (d: string) => number) => ({ r: pearson(ds.map(pick), dl) })
     const groups = [
       { label: 'All views', ...series((d) => byDay.get(d)?.views ?? 0) },
       { label: 'Creator views', ...series((d) => byDay.get(d)?.creatorViews ?? 0) },
@@ -1119,7 +871,6 @@ export function AnalyticsSheet({
 
     // A "quiet day" baseline: downloads you'd get anyway, without a video push.
     const baseDl = percentile(dl, 0.2)
-    const baseSubs = percentile(sb, 0.2)
     const spikeCut = percentile(dl, 0.8)
     const spikeDays = ds.filter((d) => (downloadsByDate.get(d) ?? 0) >= spikeCut && spikeCut > baseDl)
 
@@ -1128,21 +879,16 @@ export function AnalyticsSheet({
       const posted = ds.filter(postedOn)
       const notPosted = ds.filter((d) => !postedOn(d))
       const dlOf = (d: string) => downloadsByDate.get(d) ?? 0
-      const subOf = (d: string) => subsByDate.get(d) ?? 0
       const avgPosted = average(posted.map(dlOf))
       const avgNotPosted = average(notPosted.map(dlOf))
-      const subsPosted = average(posted.map(subOf))
-      const subsNotPosted = average(notPosted.map(subOf))
 
       let estDl = 0
-      let estSubs = 0
       for (const d of ds) {
         const dayViews = byDay.get(d)?.views ?? 0
         const mine = p.byDate.get(d)?.views ?? 0
         if (dayViews <= 0 || mine <= 0) continue
         const share = mine / dayViews
         estDl += share * Math.max(0, dlOf(d) - baseDl)
-        estSubs += share * Math.max(0, subOf(d) - baseSubs)
       }
 
       const nextAfterPost = ds.filter((d) => postedOn(addDays(d, -1)))
@@ -1151,7 +897,6 @@ export function AnalyticsSheet({
       const nextOff = average(nextAfterQuiet.map(dlOf))
 
       const dlLift = avgPosted != null && avgNotPosted != null ? avgPosted - avgNotPosted : null
-      const subLift = subsPosted != null && subsNotPosted != null ? subsPosted - subsNotPosted : null
       return {
         ...p,
         r: pearson(ds.map((d) => p.byDate.get(d)?.views ?? 0), dl),
@@ -1160,16 +905,14 @@ export function AnalyticsSheet({
         avgPosted,
         avgNotPosted,
         dlLift,
-        subLift,
         estDl,
-        estSubs,
         per1k: p.views > 0 ? (estDl / p.views) * 1000 : null,
         nextDay: nextOn != null && nextOff != null ? nextOn - nextOff : null,
         spikes: spikeDays.filter(postedOn).length,
       }
     })
-    return { groups, perPerson, baseDl, baseSubs, spikeDays: spikeDays.length }
-  }, [daysWithDownloads, downloadsByDate, subsByDate, byDay, people, totals.views])
+    return { groups, perPerson, baseDl, spikeDays: spikeDays.length }
+  }, [daysWithDownloads, downloadsByDate, byDay, people, totals.views])
 
   const sortedImpact = useMemo(() => {
     const { key, desc } = impactSort
@@ -1203,15 +946,6 @@ export function AnalyticsSheet({
     })
   }
 
-  function syncRevenueCat() {
-    setSaveMsg(null)
-    startSave(async () => {
-      const res = await syncRevenueCatNow(serverFrom, serverTo, projectId)
-      setSaveMsg(res.ok ? `RevenueCat: updated ${res.days} day${res.days === 1 ? '' : 's'}.` : res.error)
-      if (res.ok) router.refresh()
-    })
-  }
-
   function saveDrafts(
     entries: Array<{ date: string; downloads: number | null }>,
     source: 'manual' | 'import' = 'manual',
@@ -1238,7 +972,7 @@ export function AnalyticsSheet({
   function exportDaily() {
     const headers = [
       'date',
-      ...(showBusiness ? ['downloads', 'subscriptions', 'revenue_usd'] : []),
+      ...(showBusiness ? ['downloads'] : []),
       'total_views',
       'tiktok_views',
       'instagram_views',
@@ -1256,9 +990,7 @@ export function AnalyticsSheet({
       const a = byDay.get(d) ?? emptyDay()
       return [
         d,
-        ...(showBusiness
-          ? [downloadsByDate.get(d) ?? '', subsByDate.get(d) ?? '', revenueByDate.get(d) ?? '']
-          : []),
+        ...(showBusiness ? [downloadsByDate.get(d) ?? ''] : []),
         a.views,
         a.ttViews,
         a.igViews,
@@ -1460,25 +1192,12 @@ export function AnalyticsSheet({
         </div>
 
         {showBusiness ? (
-          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:max-w-md">
             {[
               {
                 label: 'Downloads',
                 value: formatNumber(totalDownloads),
                 hint: dlDays > 0 ? `${formatNumber(Math.round(totalDownloads / dlDays))} a day` : 'No downloads yet',
-                color: undefined,
-              },
-              {
-                label: 'Subscriptions',
-                value: hasSubs ? formatNumber(totalSubs) : '—',
-                hint: hasSubs && dlDays > 0 ? `${(totalSubs / dlDays).toFixed(1)} a day` : 'Sync RevenueCat',
-                color: SUBS,
-              },
-              {
-                label: 'Revenue',
-                value: hasRevenue ? money(totalRevenue) : '—',
-                hint: hasRevenue && dlDays > 0 ? `${money(totalRevenue / dlDays)} a day` : 'Sync RevenueCat',
-                color: REVENUE,
               },
               {
                 label: 'Views per 100 downloads',
@@ -1487,46 +1206,15 @@ export function AnalyticsSheet({
                   viewsPer100 == null
                     ? 'Needs downloads'
                     : `~${formatNumber(Math.round(viewsPer100))} views brought 100 downloads`,
-                color: undefined,
-              },
-              {
-                label: 'Subs per 100 downloads',
-                value: fmtRatio(subsPer100),
-                hint: subsPer100 == null ? 'Sync RevenueCat' : `${fmtRatio(subsPer100)} of every 100 subscribed`,
-                color: SUBS,
-              },
-              {
-                label: 'Revenue per download',
-                value: revenuePerDownload == null ? '—' : money(revenuePerDownload),
-                hint:
-                  revenuePerDownload == null
-                    ? 'Sync RevenueCat'
-                    : `${money(revenuePerDownload * 100)} per 100 downloads`,
-                color: REVENUE,
               },
             ].map((s) => (
               <div key={s.label} className="rounded-lg border border-border bg-muted/20 px-3 py-2">
                 <p className="text-xs text-muted-foreground">{s.label}</p>
-                <p className="text-lg font-semibold tabular-nums" style={s.color ? { color: s.color } : undefined}>
-                  {s.value}
-                </p>
+                <p className="text-lg font-semibold tabular-nums">{s.value}</p>
                 <p className="text-[11px] leading-tight text-muted-foreground">{s.hint}</p>
               </div>
             ))}
           </div>
-        ) : null}
-
-        {showBusiness ? (
-          <GoalCalculator
-            days={dlDays}
-            revenuePerDay={hasRevenue && dlDays > 0 ? totalRevenue / dlDays : null}
-            downloadsPerDay={dlDays > 0 ? totalDownloads / dlDays : null}
-            viewsPerDay={dlDays > 0 ? viewsOnDlDays / dlDays : null}
-            subsPerDay={hasSubs && dlDays > 0 ? totalSubs / dlDays : null}
-            revenuePerDownload={revenuePerDownload}
-            viewsPerDownload={viewsPer100 == null ? null : viewsPer100 / 100}
-            subsPerDownload={subsPer100 == null ? null : subsPer100 / 100}
-          />
         ) : null}
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1572,13 +1260,10 @@ export function AnalyticsSheet({
                   width={56}
                   tickFormatter={(v) => formatNumber(Number(v))}
                 />
-                <YAxis yAxisId="small" orientation="right" tick={{ fontSize: 11 }} width={44} />
                 <Tooltip
-                  formatter={(value, name) => {
-                    if (value == null) return ['—', String(name)]
-                    const v = Number(value)
-                    return [String(name).startsWith('Revenue') ? money(v) : formatNumber(v), String(name)]
-                  }}
+                  formatter={(value, name) =>
+                    value == null ? ['—', String(name)] : [formatNumber(Number(value)), String(name)]
+                  }
                   labelFormatter={(_, payload) => {
                     const d = payload?.[0]?.payload?.fullDate as string | undefined
                     return d ? dayLabel(d) : ''
@@ -1593,28 +1278,6 @@ export function AnalyticsSheet({
                   stroke="currentColor"
                   strokeWidth={2}
                   dot={dates.length <= 31}
-                  connectNulls
-                  isAnimationActive={false}
-                />
-                <Line
-                  yAxisId="small"
-                  type="monotone"
-                  dataKey="subsPer100"
-                  name="Subs per 100 downloads"
-                  stroke={SUBS}
-                  strokeWidth={2}
-                  dot={false}
-                  connectNulls
-                  isAnimationActive={false}
-                />
-                <Line
-                  yAxisId="small"
-                  type="monotone"
-                  dataKey="revenuePerDownload"
-                  name="Revenue per download"
-                  stroke={REVENUE}
-                  strokeWidth={2}
-                  dot={false}
                   connectNulls
                   isAnimationActive={false}
                 />
@@ -1665,19 +1328,6 @@ export function AnalyticsSheet({
                   fill={DOWNLOADS}
                   opacity={0.55}
                   maxBarSize={28}
-                  isAnimationActive={false}
-                />
-              ) : null}
-              {showBusiness && hasSubs ? (
-                <Line
-                  yAxisId="downloads"
-                  type="monotone"
-                  dataKey="subs"
-                  name="Subscriptions"
-                  stroke={SUBS}
-                  strokeWidth={2}
-                  dot={false}
-                  connectNulls
                   isAnimationActive={false}
                 />
               ) : null}
@@ -1745,23 +1395,11 @@ export function AnalyticsSheet({
           </div>
           {tab === 'day' && showBusiness ? (
             <>
-              {rcConnected ? (
-                <button
-                  type="button"
-                  disabled={savePending}
-                  onClick={syncRevenueCat}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-sm hover:bg-accent disabled:opacity-60"
-                  title="Pull downloads, subscriptions and revenue from RevenueCat for these dates (hand-typed downloads are kept)"
-                >
-                  <RefreshCw className={`size-3.5 ${savePending ? 'animate-spin' : ''}`} />
-                  Sync RevenueCat
-                </button>
-              ) : null}
               {projectId != null ? (
                 <>
                   <label
                     className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-border px-3 text-sm hover:bg-accent"
-                    title="Upload the RevenueCat “New customers” CSV (or any date, number file)"
+                    title="Upload a CSV with date and downloads columns"
                   >
                     <FileUp className="size-3.5" />
                     Import CSV
@@ -1870,11 +1508,7 @@ export function AnalyticsSheet({
                   {showBusiness ? (
                     <>
                       <th className={th}>Downloads</th>
-                      <th className={th} style={{ color: SUBS }}>Subscriptions</th>
-                      <th className={th} style={{ color: REVENUE }}>Revenue</th>
                       <th className={th} title="Views it took to get 100 downloads">Views / 100 downloads</th>
-                      <th className={th} style={{ color: SUBS }}>Subs / 100 downloads</th>
-                      <th className={th} style={{ color: REVENUE }}>$ / download</th>
                     </>
                   ) : null}
                 </tr>
@@ -1894,14 +1528,8 @@ export function AnalyticsSheet({
                   {showBusiness ? (
                     <>
                       <td className={totalTd}>{formatNumber(totalDownloads)}</td>
-                      <td className={totalTd}>{hasSubs ? formatNumber(totalSubs) : '—'}</td>
-                      <td className={totalTd}>{hasRevenue ? money(totalRevenue) : '—'}</td>
                       <td className={totalTd}>
                         {viewsPer100 == null ? '—' : formatNumber(Math.round(viewsPer100))}
-                      </td>
-                      <td className={totalTd}>{fmtRatio(subsPer100)}</td>
-                      <td className={totalTd}>
-                        {revenuePerDownload == null ? '—' : money(revenuePerDownload)}
                       </td>
                     </>
                   ) : null}
@@ -1935,12 +1563,6 @@ export function AnalyticsSheet({
                       <>
                       <td className={`${td} p-0`}>
                         {projectId != null ? (
-                          <span className="inline-flex items-center">
-                          {downloadSource.get(d) === 'revenuecat' && draft == null ? (
-                            <span className="pl-1 text-[9px] font-semibold text-muted-foreground" title="Synced from RevenueCat">
-                              RC
-                            </span>
-                          ) : null}
                           <input
                             type="number"
                             min={0}
@@ -1950,27 +1572,12 @@ export function AnalyticsSheet({
                             placeholder="—"
                             className="h-7 w-24 bg-transparent px-2 text-right tabular-nums outline-none focus:bg-accent/40"
                           />
-                          </span>
                         ) : (
                           <span className="px-2">{dl != null ? formatNumber(dl) : '—'}</span>
                         )}
                       </td>
                       <td className={td}>
-                        {subsByDate.has(d) ? n(subsByDate.get(d) ?? 0) : '—'}
-                      </td>
-                      <td className={td}>
-                        {revenueByDate.has(d) ? money(revenueByDate.get(d) ?? 0) : '—'}
-                      </td>
-                      <td className={td}>
                         {dl != null && dl > 0 ? formatNumber(Math.round((a.views / dl) * 100)) : '—'}
-                      </td>
-                      <td className={td}>
-                        {dl && subsByDate.has(d)
-                          ? fmtRatio(ratio(subsByDate.get(d) ?? 0, dl, 100))
-                          : '—'}
-                      </td>
-                      <td className={td}>
-                        {dl && revenueByDate.has(d) ? money((revenueByDate.get(d) ?? 0) / dl) : '—'}
                       </td>
                       </>
                       ) : null}
@@ -2071,16 +1678,15 @@ export function AnalyticsSheet({
         {tab === 'impact' && showBusiness ? (
           <div className="mt-2 flex flex-col gap-4">
             <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm">
-              <p className="font-medium">Which creators bring downloads and subscriptions?</p>
+              <p className="font-medium">Which creators bring downloads?</p>
               <ul className="mt-1.5 list-disc space-y-1 pl-5 text-muted-foreground">
                 <li>
-                  <span className="font-medium text-foreground">Est. downloads / subs</span> — each day, downloads
-                  above a quiet day ({formatNumber(Math.round(impact.baseDl))} downloads
-                  {hasSubs ? `, ${formatNumber(Math.round(impact.baseSubs))} subs` : ''}) are split by each
+                  <span className="font-medium text-foreground">Est. downloads</span> — each day, downloads
+                  above a quiet day ({formatNumber(Math.round(impact.baseDl))} downloads) are split by each
                   person&apos;s share of that day&apos;s views. Best single number to rank by.
                 </li>
                 <li>
-                  <span className="font-medium text-foreground">Download / subs lift</span> — average on days they
+                  <span className="font-medium text-foreground">Download lift</span> — average on days they
                   posted minus days they didn&apos;t. <span className="font-medium text-foreground">Next day</span>{' '}
                   — the same, one day later (videos keep getting views).
                 </li>
@@ -2111,10 +1717,8 @@ export function AnalyticsSheet({
                         ['name', 'Person'],
                         ['views', 'Views'],
                         ['estDl', 'Est. downloads'],
-                        ...(hasSubs ? ([['estSubs', 'Est. subs']] as const) : []),
                         ['per1k', 'Downloads per 1k views'],
                         ['dlLift', 'Download lift'],
-                        ...(hasSubs ? ([['subLift', 'Subs lift']] as const) : []),
                         ['nextDay', 'Next-day lift'],
                         ['spikes', 'Spike days'],
                         ['r', 'Match (−1 to 1)'],
@@ -2152,7 +1756,7 @@ export function AnalyticsSheet({
                 <tbody>
                   {sortedImpact.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className={`${td} text-left text-muted-foreground`}>
+                      <td colSpan={8} className={`${td} text-left text-muted-foreground`}>
                         No videos in this range.
                       </td>
                     </tr>
@@ -2192,14 +1796,8 @@ export function AnalyticsSheet({
                             </span>
                           </td>
                           <td className={`${td} font-semibold`}>{formatNumber(Math.round(p.estDl))}</td>
-                          {hasSubs ? (
-                            <td className={td} style={{ color: SUBS }}>
-                              {p.estSubs.toFixed(1)}
-                            </td>
-                          ) : null}
                           <td className={td}>{fmtRatio(p.per1k, 2)}</td>
                           <td className={td}>{signed(p.dlLift)}</td>
-                          {hasSubs ? <td className={td}>{signed(p.subLift, 1)}</td> : null}
                           <td className={td}>{signed(p.nextDay)}</td>
                           <td className={td}>
                             {p.spikes}
@@ -2222,7 +1820,6 @@ export function AnalyticsSheet({
                   <tr>
                     <th className={`${th} text-left`}>Group</th>
                     <th className={th}>Match with downloads</th>
-                    {hasSubs ? <th className={th}>Match with subs</th> : null}
                     <th className={`${th} text-left`}>Strength</th>
                   </tr>
                 </thead>
@@ -2233,9 +1830,6 @@ export function AnalyticsSheet({
                       <tr key={g.label}>
                         <td className={`${td} text-left font-medium`}>{g.label}</td>
                         <td className={td}>{g.r == null ? '—' : g.r.toFixed(2)}</td>
-                        {hasSubs ? (
-                          <td className={td}>{g.rSubs == null ? '—' : g.rSubs.toFixed(2)}</td>
-                        ) : null}
                         <td className={`${td} text-left ${s.className}`}>{s.text}</td>
                       </tr>
                     )
@@ -2256,7 +1850,6 @@ export function AnalyticsSheet({
           projectId={projectId}
           showBusiness={showBusiness}
           downloadsByDate={downloadsByDate}
-          subsByDate={subsByDate}
           onClose={() => setOpenPersonId(null)}
         />
       ) : null}
@@ -2267,8 +1860,6 @@ export function AnalyticsSheet({
           projectId={projectId}
           showBusiness={showBusiness}
           downloads={downloadsByDate.get(openDay)}
-          subscriptions={subsByDate.get(openDay)}
-          revenue={revenueByDate.get(openDay)}
           avgDownloads={
             daysWithDownloads.length > 0
               ? daysWithDownloads.reduce((s, d) => s + (downloadsByDate.get(d) ?? 0), 0) /
