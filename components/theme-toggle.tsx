@@ -3,7 +3,7 @@
 import { Moon, Sun } from 'lucide-react'
 
 const THEME_COOKIE = 'app_theme'
-const THEME_COLORS = { light: '#e8f0fa', dark: '#0c1520' } as const
+const THEME_COLORS = { light: '#f7ebe0', dark: '#17100f' } as const
 
 /** Icons swap with CSS, so the server and client render the same markup. */
 export function ThemeToggle() {
