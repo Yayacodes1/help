@@ -378,7 +378,7 @@ export default async function AdminPage({
       getPaymentDueList(today, projectId, roleSql),
       getWalletTotals(),
       getWalletEntries(),
-      getPayablePeople(),
+      getPayablePeople(today),
       projectId == null && roleSql == null
         ? Promise.resolve(null)
         : getPaymentDueList(today, undefined, null),
@@ -592,7 +592,7 @@ export default async function AdminPage({
     (p) => p.status === 'miss' || p.status === 'partial',
   ).length
   const openMarketingRequests = (marketingRequests ?? []).filter((r) => r.status === 'open').length
-  const walletLeft = walletTotals?.find((w) => w.currency === 'USD')?.left ?? 0
+  const walletLeft = walletTotals?.left ?? 0
 
   const totalViews = (submissions ?? []).reduce((sum, s) => sum + (s.views ?? 0), 0)
   const creatorViews = (submissions ?? []).reduce(
@@ -988,7 +988,8 @@ export default async function AdminPage({
             hint: formatPlanCompare(leaderBoard.all.todayPct, leaderBoard.all.yesterdayPct, 'today', 'yesterday'),
             children: (
               <div className="flex flex-col gap-6">
-                <LeadersBoard board={leaderBoard} />
+                <DayNavigator selectedDay={leaderDay} today={opToday} />
+                <LeadersBoard board={leaderBoard} isToday={leaderDay === opToday} />
                 <LeadersManager directory={leaderDirectory} />
               </div>
             ),
@@ -1216,7 +1217,7 @@ export default async function AdminPage({
             summary:
               openMarketingRequests > 0
                 ? `${openMarketingRequests} asked`
-                : `${formatMoney(walletLeft, 'USD')} left`,
+                : `${formatMoney(walletLeft, 'SAR')} left`,
             hint:
               openMarketingRequests > 0
                 ? 'Money requests waiting'

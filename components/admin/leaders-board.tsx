@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { formatMoney } from '@/lib/format'
+import { formatDate, formatMoney } from '@/lib/format'
 import {
   formatPlanCompare,
   LEADER_LEVEL_LABELS,
@@ -116,9 +116,11 @@ function Row({
   )
 }
 
-export function LeadersBoard({ board }: { board: LeaderBoard }) {
+export function LeadersBoard({ board, isToday = true }: { board: LeaderBoard; isToday?: boolean }) {
   const [openId, setOpenId] = useState<number | 'none' | null>(null)
-  const allLine = formatPlanCompare(board.all.todayPct, board.all.yesterdayPct, 'today', 'yesterday')
+  const dayLabel = isToday ? 'today' : formatDate(board.day)
+  const prevLabel = isToday ? 'yesterday' : formatDate(board.prevDay)
+  const allLine = formatPlanCompare(board.all.todayPct, board.all.yesterdayPct, dayLabel, prevLabel)
 
   return (
     <div className="flex flex-col gap-3">
@@ -126,7 +128,7 @@ export function LeadersBoard({ board }: { board: LeaderBoard }) {
         All creators on plan: <span className="font-semibold tabular-nums">{allLine}</span>
       </p>
       <p className="text-xs text-muted-foreground">
-        Ranked best to worst by today’s on-plan rate. Posted / partial / didn’t, then checks done, then creators near a
+        Ranked best to worst by {isToday ? 'today’s' : `${dayLabel}’s`} on-plan rate. Posted / partial / didn’t, then checks done, then creators near a
         strike. {board.day} vs {board.prevDay}.
       </p>
       <div className="overflow-x-auto rounded-lg border border-border">
@@ -136,8 +138,8 @@ export function LeadersBoard({ board }: { board: LeaderBoard }) {
               <th className="px-3 py-2 font-medium">#</th>
               <th className="px-3 py-2 font-medium">Leader</th>
               <th className="px-3 py-2 font-medium">Level · pay</th>
-              <th className="px-3 py-2 text-right font-medium">Today</th>
-              <th className="px-3 py-2 text-right font-medium">Yesterday</th>
+              <th className="px-3 py-2 text-right font-medium">{isToday ? 'Today' : dayLabel}</th>
+              <th className="px-3 py-2 text-right font-medium">{isToday ? 'Yesterday' : prevLabel}</th>
               <th className="px-3 py-2 text-right font-medium">Change</th>
               <th className="px-3 py-2 text-right font-medium">P / part / miss</th>
               <th className="px-3 py-2 text-right font-medium">Checked</th>

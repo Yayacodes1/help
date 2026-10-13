@@ -1,10 +1,13 @@
 'use client'
 
-import { useMemo, useRef, useState, useTransition } from 'react'
+import { Fragment, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { formatDate, formatMoney, payCurrency } from '@/lib/format'
+import Link from 'next/link'
+import { formatDate, formatMoney } from '@/lib/format'
+import { SAR_PER_USD } from '@/lib/fx'
+import { adminPersonHref } from '@/lib/admin-href'
 import type { MarketingRequest, MarketingRequestItem } from '@/lib/marketing'
-import type { WalletEntry, WalletPerson, WalletTotals } from '@/lib/wallet'
+import type { WalletContract, WalletEntry, WalletPerson, WalletTotals } from '@/lib/wallet'
 import type { PaymentDueRow } from '@/lib/queries'
 import {
   cancelMarketingRequest,
@@ -32,7 +35,8 @@ type Who = 'reposter' | 'creator' | 'all'
 type LedgerFilter = 'all' | 'in' | 'pay' | 'spend' | 'adjust'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
-const usdMoney = (n: number) => formatMoney(n, 'USD')
+const sarMoney = (n: number) => formatMoney(n, 'SAR')
+const inSar = (amount: number, currency: string) => round2(currency === 'USD' ? amount * SAR_PER_USD : amount)
 const byName = (id: string | null) =>
   id === 'yahya' ? 'Yahya' : id === 'ahmed' ? 'Ahmed' : id ? id : '—'
 
@@ -47,7 +51,7 @@ export function WalletBoard({
 }: {
   today: string
   isOwner: boolean
-  totals: WalletTotals[]
+  totals: WalletTotals
   entries: WalletEntry[]
   requests: RequestWithItems[]
   people: WalletPerson[]
@@ -59,17 +63,7 @@ export function WalletBoard({
   const [action, setAction] = useState<Action>(null)
   const [flash, setFlash] = useState<string | null>(null)
 
-  const usd = totals.find((t) => t.currency === 'USD') ?? {
-    currency: 'USD' as const,
-    sent: 0,
-    adjusted: 0,
-    spentPayments: 0,
-    spentOther: 0,
-    left: 0,
-    waiting: 0,
-    lastCount: null,
-  }
-  const otherCurrencies = totals.filter((t) => t.currency !== 'USD')
+  const w = totals
 
   const dueById = useMemo(() => {
     const map = new Map<number, number>()
@@ -102,47 +96,41 @@ export function WalletBoard({
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile
           label="Sent to Ahmed"
-          value={usdMoney(usd.sent)}
+          value={sarMoney(w.sent)}
           hint={
-            Math.abs(usd.adjusted) > 0.009
-              ? `All money Yahya sent · ${usd.adjusted > 0 ? '+' : '−'}${usdMoney(Math.abs(usd.adjusted))} from Ahmed’s count`
+            Math.abs(w.adjusted) > 0.009
+              ? `All money Yahya sent · ${w.adjusted > 0 ? '+' : '−'}${sarMoney(Math.abs(w.adjusted))} from Ahmed’s counts`
               : 'All money Yahya sent'
           }
         />
         <Tile
           label="Asked, not sent yet"
-          value={usdMoney(usd.waiting)}
+          value={sarMoney(w.waiting)}
           hint={`${openRequests.length} open request${openRequests.length === 1 ? '' : 's'}`}
-          tone={usd.waiting > 0 ? 'warn' : undefined}
+          tone={w.waiting > 0 ? 'warn' : undefined}
         />
         <Tile
           label="Spent"
-          value={usdMoney(usd.spentPayments + usd.spentOther)}
-          hint={`People ${usdMoney(usd.spentPayments)} · Other ${usdMoney(usd.spentOther)}`}
+          value={sarMoney(w.spentPayments + w.spentOther)}
+          hint={`People ${sarMoney(w.spentPayments)} · Other ${sarMoney(w.spentOther)}`}
         />
         <Tile
-          label="Left with Ahmed"
-          value={usdMoney(usd.left)}
+          label="Ahmed has now"
+          value={sarMoney(w.left)}
           hint={
-            usd.lastCount
-              ? `Ahmed said he had ${usdMoney(usd.lastCount.amount)} on ${formatDate(usd.lastCount.on)}`
-              : usd.left < 0
+            w.lastCount
+              ? `Counted ${sarMoney(w.lastCount.amount)} on ${formatDate(w.lastCount.on)}, then the app takes off what he pays`
+              : w.left < 0
                 ? 'Spent more than was sent'
                 : 'Sent − spent'
           }
-          tone={usd.left < 0 ? 'bad' : 'good'}
+          tone={w.left < 0 ? 'bad' : 'good'}
         />
       </section>
-      {otherCurrencies.map((t) => (
-        <p key={t.currency} className="-mt-3 text-xs text-muted-foreground">
-          {t.currency}: sent {formatMoney(t.sent, t.currency)} · spent{' '}
-          {formatMoney(t.spentOther, t.currency)} · left {formatMoney(t.left, t.currency)}
-          {t.waiting > 0 ? ` · asked ${formatMoney(t.waiting, t.currency)}` : ''}
-        </p>
-      ))}
       <p className="-mt-2 text-xs text-muted-foreground">
-        Every payment Ahmed logs comes out of his wallet and shows who logged it. Only Yahya can
-        record or change money sent to Ahmed.
+        Everything is in riyals (dollars count as {SAR_PER_USD} SAR). Use “How much I have” to set the real amount
+        any time. Every payment Ahmed logs comes out of his wallet in that person’s currency. Only Yahya can record
+        or change money sent to Ahmed.
       </p>
 
       <div className="flex flex-wrap gap-2">
@@ -178,7 +166,7 @@ export function WalletBoard({
           isOwner={isOwner}
           people={people}
           dueById={dueById}
-          left={usd.left}
+          left={w.left}
           pending={pending}
           onSubmit={(input) =>
             startTransition(async () => {
@@ -189,7 +177,7 @@ export function WalletBoard({
                 return
               }
               done(
-                `Recorded ${res.count} payment${res.count === 1 ? '' : 's'} · ${usdMoney(res.total)}${
+                `Recorded ${res.count} payment${res.count === 1 ? '' : 's'} · ${sarMoney(res.total)}${
                   res.fromWallet ? ' from Ahmed’s wallet' : ' (paid directly by Yahya)'
                 }`,
               )
@@ -210,7 +198,7 @@ export function WalletBoard({
           onSubmit={(fd) =>
             startTransition(async () => {
               await createMarketingExpense(fd)
-              done(`Logged ${formatMoney(Number(fd.get('amount')) || 0, String(fd.get('currency') || 'USD'))} spend`)
+              done(`Logged ${formatMoney(Number(fd.get('amount')) || 0, String(fd.get('currency') || 'SAR'))} spend`)
             })
           }
         />
@@ -267,7 +255,7 @@ export function WalletBoard({
           onSubmit={(fd) =>
             startTransition(async () => {
               await createMarketingTransfer(fd)
-              done(`Recorded ${formatMoney(Number(fd.get('amount')) || 0, String(fd.get('currency') || 'USD'))} sent to Ahmed`)
+              done(`Recorded ${formatMoney(Number(fd.get('amount')) || 0, String(fd.get('currency') || 'SAR'))} sent to Ahmed`)
             })
           }
         />
@@ -392,7 +380,7 @@ export function WalletBoard({
         isOwner={isOwner}
         pending={pending}
         onDelete={(e) => {
-          if (!confirm(`Delete “${e.label}” (${formatMoney(e.amount, e.currency)})?`)) return
+          if (!confirm(`Delete “${e.label}” (${sarMoney(e.sar)})?`)) return
           startTransition(async () => {
             if (e.kind === 'in') await deleteMarketingTransfer(e.id)
             else if (e.kind === 'adjust') await deleteWalletAdjustment(e.id)
@@ -456,6 +444,54 @@ function RequestItems({ items, currency }: { items: MarketingRequestItem[]; curr
   )
 }
 
+function contractStatus(c: WalletContract): { short: string; label: string; tone: string } {
+  if (c.agreed > 0 && c.paid >= c.agreed - 0.009) {
+    return { short: 'paid ✓', label: 'Paid in full', tone: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' }
+  }
+  if (c.paid > 0) {
+    return { short: 'part paid', label: 'Partly paid', tone: 'bg-amber-500/15 text-amber-700 dark:text-amber-300' }
+  }
+  return { short: 'not paid', label: 'Not paid yet', tone: 'bg-destructive/10 text-destructive' }
+}
+
+function ContractCard({ person }: { person: WalletPerson }) {
+  const c = person.contract
+  const href = adminPersonHref(person.id, { role: person.role, panel: 'contracts', from: 'marketing' })
+  if (!c) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        No contract yet.{' '}
+        <Link href={href} className="font-medium text-foreground underline-offset-4 hover:underline">
+          Open their page
+        </Link>
+      </p>
+    )
+  }
+  const money = (n: number) => formatMoney(n, person.currency)
+  const status = contractStatus(c)
+  const leftToPay = Math.max(0, round2(c.agreed - c.paid))
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold">{c.name}</span>
+        <span className="text-muted-foreground">
+          {formatDate(c.startDate)} → {c.endDate ? formatDate(c.endDate) : 'open'}
+          {c.active ? '' : ' · ended'}
+        </span>
+        <span className={`rounded-full px-2 py-0.5 font-semibold ${status.tone}`}>{status.label}</span>
+      </div>
+      <p className="tabular-nums">
+        Agreed {c.agreed > 0 ? money(c.agreed) : 'not set'} · Paid {money(c.paid)}
+        {c.payments > 0 ? ` (${c.payments} payment${c.payments === 1 ? '' : 's'}, last ${formatDate(c.lastPaidOn!)})` : ''}
+        {c.agreed > 0 ? ` · Left to pay ${money(leftToPay)}` : ''}
+      </p>
+      <Link href={href} className="self-start font-medium underline-offset-4 hover:underline">
+        Open the contract →
+      </Link>
+    </div>
+  )
+}
+
 function PayPeopleForm({
   today,
   isOwner,
@@ -500,8 +536,9 @@ function PayPeopleForm({
   const visible = people.filter(
     (p) => (who === 'all' || p.role === who) && (!onlyDue || dueById.has(p.id)),
   )
+  const [openContract, setOpenContract] = useState<number | null>(null)
   const selected = people.filter((p) => checked.has(p.id) && Number(amounts[p.id]) > 0)
-  const total = round2(selected.reduce((s, p) => s + (Number(amounts[p.id]) || 0), 0))
+  const total = round2(selected.reduce((s, p) => s + inSar(Number(amounts[p.id]) || 0, p.currency), 0))
   const fromWallet = !isOwner || paidFrom === 'ahmed'
   const overBudget = fromWallet && total > left + 0.001
 
@@ -620,46 +657,68 @@ function PayPeopleForm({
                 <th className="w-10 px-2 py-2" />
                 <th className="px-2 py-2 text-left font-medium">Name</th>
                 <th className="px-2 py-2 text-right font-medium">Owed</th>
-                <th className="w-36 px-2 py-2 text-right font-medium">Pay</th>
+                <th className="w-40 px-2 py-2 text-right font-medium">Pay</th>
               </tr>
             </thead>
             <tbody>
               {visible.map((p) => {
                 const owed = dueById.get(p.id)
+                const open = openContract === p.id
                 return (
-                  <tr key={p.id} className="border-t border-border">
-                    <td className="px-2 py-1.5 text-center">
-                      <input
-                        type="checkbox"
-                        checked={checked.has(p.id)}
-                        onChange={(e) => toggle(p.id, e.target.checked)}
-                        aria-label={`Pay ${p.name}`}
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      {p.name}
-                      {who === 'all' && (
-                        <span className="ml-1 text-[10px] uppercase text-muted-foreground">{p.role}</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
-                      {owed ? formatMoney(owed, payCurrency(p.role, p.pay_currency)) : '—'}
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={amounts[p.id] ?? ''}
-                        onChange={(e) => {
-                          const v = e.target.value
-                          setAmounts((cur) => ({ ...cur, [p.id]: v }))
-                          if (Number(v) > 0) toggle(p.id, true)
-                        }}
-                        className="h-8 w-full rounded-md border border-input bg-background px-2 text-right text-sm tabular-nums"
-                      />
-                    </td>
-                  </tr>
+                  <Fragment key={p.id}>
+                    <tr className="border-t border-border">
+                      <td className="px-2 py-1.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={checked.has(p.id)}
+                          onChange={(e) => toggle(p.id, e.target.checked)}
+                          aria-label={`Pay ${p.name}`}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {p.name}
+                        {who === 'all' && (
+                          <span className="ml-1 text-[10px] uppercase text-muted-foreground">{p.role}</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setOpenContract(open ? null : p.id)}
+                          className={`ml-2 rounded-full border px-2 py-0.5 text-[11px] ${
+                            open ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground'
+                          }`}
+                        >
+                          Contract{p.contract ? ` · ${contractStatus(p.contract).short}` : ''}
+                        </button>
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
+                        {owed ? formatMoney(owed, p.currency) : '—'}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={amounts[p.id] ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setAmounts((cur) => ({ ...cur, [p.id]: v }))
+                              if (Number(v) > 0) toggle(p.id, true)
+                            }}
+                            className="h-8 w-full rounded-md border border-input bg-background px-2 text-right text-sm tabular-nums"
+                          />
+                          <span className="w-8 text-[10px] font-semibold text-muted-foreground">{p.currency}</span>
+                        </div>
+                      </td>
+                    </tr>
+                    {open ? (
+                      <tr className="bg-muted/40">
+                        <td colSpan={4} className="px-3 py-2">
+                          <ContractCard person={p} />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 )
               })}
             </tbody>
@@ -698,12 +757,12 @@ function PayPeopleForm({
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
-          <span className="font-semibold tabular-nums">{usdMoney(total)}</span> to{' '}
+          <span className="font-semibold tabular-nums">{sarMoney(total)}</span> to{' '}
           {selected.length} {selected.length === 1 ? 'person' : 'people'}
           {fromWallet && (
             <span className={overBudget ? 'ml-2 text-destructive' : 'ml-2 text-muted-foreground'}>
-              · Ahmed has {usdMoney(left)} left
-              {overBudget ? ` — ${usdMoney(total - left)} more than he has` : ''}
+              · Ahmed has {sarMoney(left)}
+              {overBudget ? ` — ${sarMoney(total - left)} more than he has` : ''}
             </span>
           )}
         </div>
@@ -751,7 +810,7 @@ function AskForm({
   const [lines, setLines] = useState<AskLine[]>([{ key: 0, reason: '', amount: '' }])
   const [title, setTitle] = useState('')
   const [neededBy, setNeededBy] = useState('')
-  const [currency, setCurrency] = useState('USD')
+  const [currency, setCurrency] = useState('SAR')
   const [note, setNote] = useState('')
 
   const total = round2(lines.reduce((s, l) => s + (Number(l.amount) || 0), 0))
@@ -794,8 +853,8 @@ function AskForm({
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Currency
           <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={inputClass}>
-            <option value="USD">USD ($)</option>
             <option value="SAR">SAR (﷼)</option>
+            <option value="USD">USD ($)</option>
           </select>
         </label>
       </div>
@@ -904,9 +963,9 @@ function SimpleMoneyForm({
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Currency
-          <select name="currency" defaultValue="USD" className={inputClass}>
-            <option value="USD">USD ($)</option>
+          <select name="currency" defaultValue="SAR" className={inputClass}>
             <option value="SAR">SAR (﷼)</option>
+            <option value="USD">USD ($)</option>
           </select>
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2">
@@ -937,21 +996,20 @@ function Ledger({
   onDelete,
 }: {
   entries: WalletEntry[]
-  totals: WalletTotals[]
+  totals: WalletTotals
   isOwner: boolean
   pending: boolean
   onDelete: (e: WalletEntry) => void
 }) {
   const [filter, setFilter] = useState<LedgerFilter>('all')
 
-  /** Balance right after each entry, walking back from today's balance. */
+  /** Balance (SAR) right after each entry, walking back from today's balance. */
   const leftAfter = useMemo(() => {
-    const running = new Map(totals.map((t) => [t.currency, t.left]))
+    let running = totals.left
     const out = new Map<string, number>()
     for (const e of entries) {
-      const cur = running.get(e.currency) ?? 0
-      out.set(e.key, cur)
-      running.set(e.currency, e.kind === 'in' || e.kind === 'adjust' ? cur - e.amount : cur + e.amount)
+      out.set(e.key, running)
+      running = round2(e.kind === 'in' || e.kind === 'adjust' ? running - e.sar : running + e.sar)
     }
     return out
   }, [entries, totals])
@@ -1010,6 +1068,14 @@ function Ledger({
                     <td className="py-2 pr-2">
                       <span className="font-medium">{e.label}</span>
                       {e.note ? <span className="block text-xs text-muted-foreground">{e.note}</span> : null}
+                      {e.kind === 'pay' && e.creatorId != null ? (
+                        <Link
+                          href={adminPersonHref(e.creatorId, { panel: 'contracts', from: 'marketing' })}
+                          className="block text-xs text-muted-foreground underline-offset-4 hover:underline"
+                        >
+                          {e.contractName ? `Contract: ${e.contractName}` : 'Not linked to a contract'} · open →
+                        </Link>
+                      ) : null}
                     </td>
                     <td className="py-2 pr-2 text-muted-foreground">{byName(e.recordedBy)}</td>
                     <td
@@ -1020,10 +1086,15 @@ function Ledger({
                       }`}
                     >
                       {e.kind === 'in' || (e.kind === 'adjust' && e.amount >= 0) ? '+' : '−'}
-                      {formatMoney(Math.abs(e.amount), e.currency)}
+                      {sarMoney(Math.abs(e.sar))}
+                      {e.currency === 'USD' ? (
+                        <span className="block text-[11px] font-normal text-muted-foreground">
+                          {formatMoney(Math.abs(e.amount), 'USD')}
+                        </span>
+                      ) : null}
                     </td>
                     <td className="whitespace-nowrap py-2 pr-2 text-right tabular-nums text-muted-foreground">
-                      {formatMoney(leftAfter.get(e.key) ?? 0, e.currency)}
+                      {sarMoney(leftAfter.get(e.key) ?? 0)}
                     </td>
                     <td className="py-2 text-right">
                       {canDelete && (
@@ -1058,22 +1129,22 @@ function BalanceForm({
 }: {
   today: string
   isOwner: boolean
-  totals: WalletTotals[]
+  totals: WalletTotals
   pending: boolean
   onSubmit: (fd: FormData) => void
 }) {
-  const [currency, setCurrency] = useState<'USD' | 'SAR'>('USD')
+  const [currency, setCurrency] = useState<'USD' | 'SAR'>('SAR')
   const [amount, setAmount] = useState('')
-  const left = totals.find((t) => t.currency === currency)?.left ?? 0
+  const left = totals.left
   const typed = Number(amount)
-  const diff = amount.trim() !== '' && Number.isFinite(typed) ? round2(typed - left) : null
+  const diff = amount.trim() !== '' && Number.isFinite(typed) ? round2(inSar(typed, currency) - left) : null
   return (
     <section className="rounded-lg border border-border bg-card p-4">
       <h3 className="text-sm font-semibold">{isOwner ? 'What Ahmed has' : 'How much I have'}</h3>
       <p className="mt-1 text-xs text-muted-foreground">
         {isOwner ? 'Type what Ahmed has on his end right now.' : 'Type how much money you have on your end right now.'}{' '}
-        The app adds a fix so “Left with Ahmed” matches it. The app says{' '}
-        <span className="font-medium text-foreground">{formatMoney(left, currency)}</span>.
+        From then on the app takes off whatever he pays. The app says{' '}
+        <span className="font-medium text-foreground">{sarMoney(left)}</span> right now.
       </p>
       <form action={onSubmit} className="mt-3 grid gap-2 sm:grid-cols-4">
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -1093,11 +1164,11 @@ function BalanceForm({
           <select
             name="currency"
             value={currency}
-            onChange={(e) => setCurrency(e.target.value === 'SAR' ? 'SAR' : 'USD')}
+            onChange={(e) => setCurrency(e.target.value === 'USD' ? 'USD' : 'SAR')}
             className={inputClass}
           >
-            <option value="USD">USD ($)</option>
             <option value="SAR">SAR (﷼)</option>
+            <option value="USD">USD ($)</option>
           </select>
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -1114,7 +1185,7 @@ function BalanceForm({
               ? ' '
               : Math.abs(diff) < 0.009
                 ? 'Matches the app.'
-                : `${diff > 0 ? 'Adds' : 'Takes off'} ${formatMoney(Math.abs(diff), currency)}`}
+                : `${diff > 0 ? 'Adds' : 'Takes off'} ${sarMoney(Math.abs(diff))}`}
           </span>
           <button type="submit" disabled={pending} className={primaryBtn}>
             {pending ? 'Saving…' : 'Save amount'}

@@ -784,7 +784,9 @@ export function expectedContractPay(contract: Contract): number | null {
 }
 
 /** Minimum owed for balance math: period base + commission (0 if TBD). */
-export function minimumContractDue(contract: Contract): number {
+export function minimumContractDue(
+  contract: Pick<Contract, 'start_date' | 'end_date' | 'base_amount' | 'base_pay_cadence' | 'commission_amount'>,
+): number {
   const everyDays = 14
   const hasHalves =
     !!contract.end_date &&

@@ -4,6 +4,8 @@ import { sql } from '@/lib/db'
 import { getAdminSession } from '@/lib/admin-auth'
 import { normalizeCurrency } from '@/lib/marketing'
 import { getWalletTotals, paymentSource } from '@/lib/wallet'
+import { payCurrency } from '@/lib/format'
+import { usdToSar } from '@/lib/fx'
 import { revalidatePath } from 'next/cache'
 
 /** Returns the admin account id (yahya / ahmed). */
@@ -236,19 +238,18 @@ export async function setWalletBalance(formData: FormData) {
   const by = await requireAdmin()
   const raw = Number((formData.get('amount') ?? '').toString())
   if (!Number.isFinite(raw)) return { ok: false as const, error: 'Enter an amount.' }
-  const counted = Math.round(raw * 100) / 100
-  const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
+  const typedCurrency = normalizeCurrency((formData.get('currency') ?? 'SAR').toString())
+  const counted = typedCurrency === 'USD' ? usdToSar(raw) : Math.round(raw * 100) / 100
   const on = parseDate(formData.get('counted_on')) ?? new Date().toISOString().slice(0, 10)
   const note = parseText(formData.get('note'), 500)
-  const totals = await getWalletTotals()
-  const left = totals.find((t) => t.currency === currency)?.left ?? 0
+  const { left } = await getWalletTotals()
   const diff = Math.round((counted - left) * 100) / 100
   await sql`
     INSERT INTO wallet_adjustments (adjusted_on, amount, counted, currency, note, recorded_by)
-    VALUES (${on}, ${diff}, ${counted}, ${currency}, ${note}, ${by})
+    VALUES (${on}, ${diff}, ${counted}, 'SAR', ${note}, ${by})
   `
   revalidateMarketing()
-  return { ok: true as const, diff, counted, currency }
+  return { ok: true as const, diff, counted, currency: 'SAR' as const }
 }
 
 export async function deleteWalletAdjustment(id: number) {
@@ -315,7 +316,12 @@ export async function recordWalletPayments(input: WalletPaymentInput) {
     .filter((e) => e.creatorId > 0 && e.amount > 0)
   if (entries.length === 0) return { ok: false as const, error: 'Tick at least one person and enter an amount.' }
 
-  const known = (await sql`SELECT id FROM creators`) as { id: number }[]
+  const known = (await sql`SELECT id, role, pay_currency FROM creators`) as {
+    id: number
+    role: string
+    pay_currency: string | null
+  }[]
+  const currencyById = new Map(known.map((r) => [r.id, payCurrency(r.role, r.pay_currency)]))
   const allowed = new Set(known.map((r) => r.id))
   const source = await paymentSource(input.paidFrom)
   const note = input.note.trim().slice(0, 500) || null
@@ -338,8 +344,9 @@ export async function recordWalletPayments(input: WalletPaymentInput) {
     `
     await sql`UPDATE creators SET last_paid_at = GREATEST(COALESCE(last_paid_at, ${input.paidOn}::date), ${input.paidOn}::date) WHERE id = ${e.creatorId}`
     count++
-    total += e.amount
+    total += currencyById.get(e.creatorId) === 'USD' ? usdToSar(e.amount) : e.amount
   }
+  total = Math.round(total * 100) / 100
   revalidatePath('/admin')
   revalidatePath('/submit')
   return { ok: true as const, count, total, fromWallet: source.paidBy === 'ahmed' }
