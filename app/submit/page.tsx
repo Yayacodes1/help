@@ -285,31 +285,31 @@ export default async function SubmitPage({
           />
         </div>
 
-        <header className="animate-in fade-in slide-in-from-top-2 overflow-hidden rounded-2xl border border-[#e8cfc0] dark:border-border bg-[#fff1e6] dark:bg-card p-6 text-[#9a0d18] dark:text-card-foreground shadow-sm">
+        <header className="animate-in fade-in slide-in-from-top-2 overflow-hidden rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-base font-semibold text-[#9a0d18] dark:text-card-foreground">
+              <p className="text-base font-semibold text-card-foreground">
                 {t('hey')} @{username}
               </p>
-              <p className="mt-0.5 text-xs text-[#a05a55] dark:text-muted-foreground">
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 {login.platform === 'instagram' ? t('instagram') : t('tiktok')}
               </p>
-              <h1 className="mt-1 text-balance text-2xl font-bold tracking-tight text-[#9a0d18] dark:text-card-foreground">
+              <h1 className="mt-1 text-balance text-2xl font-bold tracking-tight text-card-foreground">
                 {t('submitHeading')}
               </h1>
             </div>
-            <div className="flex h-12 min-w-12 shrink-0 items-center justify-center rounded-xl bg-[#c41e2a] px-2 text-lg font-bold text-[#fff7f0]">
+            <div className="flex h-12 min-w-12 shrink-0 items-center justify-center rounded-xl bg-primary px-2 text-lg font-bold text-primary-foreground">
               {!homeProject ? 'نوتك · ميقات' : isMiqatHome ? 'ميقات' : 'نوتك'}
             </div>
           </div>
-          <p className="mt-3 text-sm font-medium text-[#b01020] dark:text-primary">
+          <p className="mt-3 text-sm font-medium text-primary">
             {active
               ? `${active.name} · ${formatDate(active.start_date)}${
                   active.end_date ? ` → ${formatDate(active.end_date)}` : ` → ${t('openEnded')}`
                 }`
               : t('submitToday')}
           </p>
-          <p className="mt-1 text-xs text-[#a05a55] dark:text-muted-foreground">{t('platformsBoth')}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t('platformsBoth')}</p>
         </header>
 
         {strikeSummary ? (

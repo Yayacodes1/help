@@ -66,7 +66,7 @@ export function StrikesPanel({
           </div>
         </div>
         <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3">
-          <div className="text-xl font-semibold tabular-nums text-[#9a0d18] dark:text-card-foreground">
+          <div className="text-xl font-semibold tabular-nums text-card-foreground">
             {board.needsCorrective}
           </div>
           <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -187,7 +187,7 @@ export function StrikesPanel({
                       {row.contractName ?? labels.noContract}
                     </p>
                     {row.needsCorrective ? (
-                      <p className="mt-0.5 text-xs font-medium text-[#9a0d18] dark:text-card-foreground">
+                      <p className="mt-0.5 text-xs font-medium text-card-foreground">
                         {labels.correctiveFlag} ({row.maxStrikes}+)
                       </p>
                     ) : null}

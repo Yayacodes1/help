@@ -30,7 +30,7 @@ export async function generateViewport(): Promise<Viewport> {
   const theme = await getTheme()
   return {
     colorScheme: theme,
-    themeColor: theme === 'dark' ? '#17100f' : '#f7ebe0',
+    themeColor: theme === 'dark' ? '#0c1520' : '#e8f0fa',
   }
 }
 
