@@ -41,11 +41,34 @@ export function detectPlatformFromUrl(url: string): Platform | null {
   return null
 }
 
+/** Zero-width and bidi marks that phones (especially in Arabic) put around copied links. */
+const INVISIBLE = /[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g
+
+function looksLikeLink(token: string): boolean {
+  return /:\/\//.test(token) || /^(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/|$)/i.test(token)
+}
+
+/**
+ * Pulls links out of whatever was pasted: share text around them, Arabic commas,
+ * invisible marks, or two links stuck together with no space. Plain words are ignored.
+ */
 export function parseMediaLinks(raw: string): string[] {
   return raw
-    .split(/[\n,\s]+/)
+    .replace(INVISIBLE, ' ')
+    .replace(/(?=https?:\/\/)/gi, ' ')
+    .split(/[\s,،؛]+/)
+    .map((token) => token.replace(/^[^a-z0-9]+/i, '').replace(/[)\]}>"'.،؛!?]+$/, ''))
+    .filter(looksLikeLink)
     .map((l) => normalizeMediaUrl(l))
     .filter((l): l is string => Boolean(l))
+}
+
+function hasVideoPath(url: string): boolean {
+  try {
+    return new URL(url).pathname.replace(/\/+$/, '').length > 1
+  } catch {
+    return false
+  }
 }
 
 export type ClassifiedLink =
@@ -67,6 +90,10 @@ export function classifyMediaLinks(raw: string): {
         url,
         error: 'Not an Instagram or TikTok link',
       })
+      continue
+    }
+    if (!hasVideoPath(url)) {
+      rejected.push({ url, error: 'Not a video link' })
       continue
     }
     rows.push({ url, platform })

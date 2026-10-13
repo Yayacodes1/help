@@ -75,7 +75,9 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
     if (rejected.length > 0) {
       return {
         ok: false,
-        message: `Could not recognize ${rejected.length} link(s). Use Instagram or TikTok URLs only.`,
+        message: `لم نتعرف على الروابط. Could not recognize ${rejected.length} link(s). Use Instagram or TikTok video links only:\n${rejected
+          .map((r) => `• ${r.url}`)
+          .join('\n')}`,
       }
     }
     return { ok: false, message: 'Paste at least one Instagram or TikTok video link.' }
@@ -179,7 +181,11 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   revalidatePath('/admin')
   revalidatePath('/leader', 'layout')
   const skipped =
-    rejected.length > 0 ? ` Skipped ${rejected.length} unrecognized link(s).` : ''
+    rejected.length > 0
+      ? `\n\n⚠️ لم نتعرف على هذه الروابط ولم تُحسب. Skipped ${rejected.length} link(s) that are not Instagram/TikTok videos:\n${rejected
+          .map((r) => `• ${r.url}`)
+          .join('\n')}`
+      : ''
   const ig = fresh.filter((r) => r.platform === 'instagram').length
   const tt = fresh.filter((r) => r.platform === 'tiktok').length
   const when = `${videoDate} ${postTime.slice(0, 5)}`
