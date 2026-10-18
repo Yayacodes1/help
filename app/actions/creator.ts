@@ -31,26 +31,22 @@ export async function startSubmission(_prev: unknown, formData: FormData) {
   if (!username) {
     return { ok: false, message: 'أدخل اسم المستخدم.' }
   }
-  const creator = await getCreatorByLoginHandle(platform, username)
+  let creator = await getCreatorByLoginHandle(platform, username)
+  let loginPlatform = platform
+  if (!creator) {
+    const other = platform === 'instagram' ? 'tiktok' : 'instagram'
+    creator = await getCreatorByLoginHandle(other, username)
+    if (creator) loginPlatform = other
+  }
+  if (!creator) {
+    creator = await getCreatorByName(username)
+  }
   if (!creator) {
     return { ok: false, message: 'اسم المستخدم غير مسجّل على هذا الحساب. تواصل مع الإدارة لإضافتك.' }
   }
-  const expectedRole = (formData.get('expected_role') ?? '').toString()
-  if (expectedRole === 'reposter' && creator.role !== 'reposter') {
-    return {
-      ok: false,
-      message: 'هذا الحساب صانع محتوى. اختر Creator من نوع الحساب. This account is a creator — pick Creator.',
-    }
-  }
-  if (expectedRole === 'creator' && creator.role === 'reposter') {
-    return {
-      ok: false,
-      message: 'هذا الحساب معيد نشر. اختر Reposter من نوع الحساب. This account is a reposter — pick Reposter.',
-    }
-  }
   await sql`
     UPDATE creators
-    SET login_platform = ${platform}
+    SET login_platform = ${loginPlatform}
     WHERE id = ${creator.id}
   `
   redirect(`/submit?u=${encodeURIComponent(username)}`)

@@ -27,6 +27,7 @@ import {
   getTopVideos,
   getViewsLeaderboard,
   getViewsSummary,
+  type ViewsSummary,
 } from '@/lib/analytics'
 import { getLeaderBoard, getLeaderForCreator } from '@/lib/leaders'
 import { getTeamMembers } from '@/lib/leader-portal'
@@ -62,7 +63,7 @@ export async function ReposterDashboard({
     getServerToday(),
     getServerTimeHm(),
     getAllProjects(),
-    getLeaderForCreator(creator.id),
+    getLeaderForCreator(creator.id).catch(() => null),
   ])
   const tab = resolveReposterTab(searchParams.tab, searchParams.panel)
   const date = DATE_RE.test(searchParams.date ?? '') ? searchParams.date! : today
@@ -93,7 +94,7 @@ export async function ReposterDashboard({
     getCreatorCountsByPlatformOnDate(creator.id, date),
     getSubmissionsForCreatorOnDate(creator.id, date),
     getActiveContract(creator.id, today),
-    getCreatorStrikeSummary(creator.id, today),
+    getCreatorStrikeSummary(creator.id, today).catch(() => null),
   ])
   const dailyGoals = goalsForContract(creator, active)
   const fields = PLATFORMS.map((platform) => ({
@@ -109,13 +110,13 @@ export async function ReposterDashboard({
 
   if (tab === 'today') {
     const [board, activityMarks, tasks, checked, calendar] = await Promise.all([
-      getLeaderBoard(date),
-      getActivityForDay(date, videoIds),
-      link ? listLeaderTasks(link.leaderId) : Promise.resolve([]),
-      getTaskChecksForDay(creator.id, taskDay),
-      link ? getTaskCalendar(creator.id, link.leaderId, today) : Promise.resolve([]),
+      link ? getLeaderBoard(date).catch(() => null) : Promise.resolve(null),
+      getActivityForDay(date, videoIds).catch(() => ({})),
+      link ? listLeaderTasks(link.leaderId).catch(() => []) : Promise.resolve([]),
+      getTaskChecksForDay(creator.id, taskDay).catch(() => new Set<number>()),
+      link ? getTaskCalendar(creator.id, link.leaderId, today).catch(() => []) : Promise.resolve([]),
     ])
-    const score = link ? (board.leaders.find((row) => row.leaderId === link.leaderId) ?? null) : null
+    const score = link && board ? (board.leaders.find((row) => row.leaderId === link.leaderId) ?? null) : null
     const roster = score?.people ?? []
     const ticked = tasks.filter((task) => checked.has(task.id)).length
     panels.push(
@@ -192,15 +193,29 @@ export async function ReposterDashboard({
 
   if (tab === 'analytics') {
     const range = { from: monthStart, to: monthEnd, creatorIds: videoIds }
+    const emptySummary: ViewsSummary = {
+      from: monthStart,
+      to: monthEnd,
+      creatorId: null,
+      projectId: null,
+      role: null,
+      videos: 0,
+      views: 0,
+      videos_instagram: 0,
+      videos_tiktok: 0,
+      views_instagram: 0,
+      views_tiktok: 0,
+      zero_view_videos: 0,
+    }
     const [daily, byCreatorDaily, leaderboard, summary, topVideos, league, contestBoard] = await Promise.all([
-      getDailyAnalytics(range),
-      getDailyViewsByCreator(range),
-      getViewsLeaderboard({ ...range, limit: 1000 }),
-      getViewsSummary(range),
-      getTopVideos({ from: monthStart, to: monthEnd, creatorIds: videoIds }),
-      getLeagueBoard({ role: 'reposter' }),
+      getDailyAnalytics(range).catch(() => []),
+      getDailyViewsByCreator(range).catch(() => []),
+      getViewsLeaderboard({ ...range, limit: 1000 }).catch(() => []),
+      getViewsSummary(range).catch(() => emptySummary),
+      getTopVideos({ from: monthStart, to: monthEnd, creatorIds: videoIds }).catch(() => []),
+      getLeagueBoard({ role: 'reposter' }).catch(() => null),
       isContestLive(today) && miqatId != null
-        ? getLeagueBoard({ role: 'reposter', from: CONTEST.from, to: CONTEST.to, projectId: miqatId })
+        ? getLeagueBoard({ role: 'reposter', from: CONTEST.from, to: CONTEST.to, projectId: miqatId }).catch(() => null)
         : Promise.resolve(null),
     ])
     panels.push(
@@ -316,7 +331,7 @@ export async function ReposterDashboard({
   }
 
   if (tab === 'team') {
-    const members = await getTeamMembers(teamIds, today)
+    const members = await getTeamMembers(teamIds, today).catch(() => [])
     panels.push({
       id: 'team',
       title: t('leaderTabTeam'),

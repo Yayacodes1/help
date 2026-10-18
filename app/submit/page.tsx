@@ -40,9 +40,11 @@ import { formatDate, formatMoney, payCurrency } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 import { getLeaderSession } from '@/lib/leader-auth'
+import { getLeaderForCreator } from '@/lib/leaders'
 import { ReposterDashboard } from '@/app/submit/reposter-dashboard'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 function isValidDate(value: string | undefined): value is string {
   return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -66,15 +68,30 @@ export default async function SubmitPage({
   const login = loginHandleFor(creator)
   const username = login.handle || creator.name
   if (creator.role === 'reposter') {
-    await syncReposterStrikes({ today: operationalDayFromIso(await getServerNowIso()), creatorId: creator.id })
-    return (
-      <ReposterDashboard
-        creator={creator}
-        username={username}
-        locale={locale}
-        searchParams={{ u, date: dateParam, panel, tab, taskDay }}
-      />
-    )
+    try {
+      await syncReposterStrikes({
+        today: operationalDayFromIso(await getServerNowIso()),
+        creatorId: creator.id,
+      })
+    } catch {
+      /* still let them in if strike sync fails */
+    }
+    let grouped = false
+    try {
+      grouped = (await getLeaderForCreator(creator.id)) != null
+    } catch {
+      grouped = false
+    }
+    if (grouped) {
+      return (
+        <ReposterDashboard
+          creator={creator}
+          username={username}
+          locale={locale}
+          searchParams={{ u, date: dateParam, panel, tab, taskDay }}
+        />
+      )
+    }
   }
   const [calendarToday, serverNow, defaultTime] = await Promise.all([
     getServerToday(),
@@ -83,9 +100,6 @@ export default async function SubmitPage({
   ])
   const opToday = operationalDayFromIso(serverNow)
   const today = opToday
-  if (creator.role === 'reposter') {
-    await syncReposterStrikes({ today: opToday, creatorId: creator.id })
-  }
   const date = isValidDate(dateParam) ? dateParam : today
   const isToday = date === today
 
