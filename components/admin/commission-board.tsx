@@ -112,6 +112,7 @@ export function CommissionBoardPanel({
         panel="commission"
         basePath="/admin"
         currency="SAR"
+        onlyPayNow
         labels={{
           scope: labels.estimateScope,
           allContracts: labels.allContracts,

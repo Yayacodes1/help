@@ -76,13 +76,19 @@ export type OutflowMonthBucket = {
   total: number
 }
 
+export type MarketingPaySlice = { dueOn: string; amount: number; label: string }
+
 export type MarketingMonthPerson = {
   creator_id: number
   creator_name: string
   role: string
   planned: number
   paid: number
-  installments: { dueOn: string; amount: number; label: string }[]
+  installments: MarketingPaySlice[]
+  firstPay: MarketingPaySlice | null
+  secondPay: MarketingPaySlice | null
+  monthlyUsd: number
+  paymentCount: number
 }
 
 export type MarketingMonthBucket = {
@@ -582,6 +588,10 @@ export async function getOutflowSnapshot(opts: {
         planned: 0,
         paid: 0,
         installments: [],
+        firstPay: null,
+        secondPay: null,
+        monthlyUsd: 0,
+        paymentCount: 0,
       }
       byId.set(hit.creator_id, person)
     }
@@ -617,12 +627,39 @@ export async function getOutflowSnapshot(opts: {
     person.paid += amount
   }
 
+  const paymentCountRows = (await sql`
+    SELECT p.creator_id, COUNT(*)::int AS n
+    FROM payments p
+    JOIN LATERAL (
+      SELECT start_date
+      FROM contracts ct
+      WHERE ct.creator_id = p.creator_id
+        AND ct.start_date <= ${today}::date
+        AND (ct.end_date IS NULL OR ct.end_date >= ${today}::date)
+      ORDER BY start_date DESC, id DESC
+      LIMIT 1
+    ) live ON p.paid_on >= live.start_date
+    GROUP BY p.creator_id
+  `) as { creator_id: number; n: number }[]
+  const paymentCountById = new Map(paymentCountRows.map((r) => [r.creator_id, r.n]))
+  const monthlyById = new Map(peopleTotals.map((p) => [p.creator_id, p.monthly]))
+
   const marketingMonths = [...marketingMap.values()]
     .sort((a, b) => a.key.localeCompare(b.key))
     .map((bucket) => {
-      const people = [...(peopleByMonth.get(bucket.key)?.values() ?? [])].sort((a, b) =>
-        a.creator_name.localeCompare(b.creator_name),
-      )
+      const people = [...(peopleByMonth.get(bucket.key)?.values() ?? [])]
+        .map((person) => {
+          const installments = [...person.installments].sort((a, b) => a.dueOn.localeCompare(b.dueOn))
+          return {
+            ...person,
+            installments,
+            firstPay: installments[0] ?? null,
+            secondPay: installments[1] ?? null,
+            monthlyUsd: monthlyById.get(person.creator_id) ?? 0,
+            paymentCount: Math.min(2, paymentCountById.get(person.creator_id) ?? 0),
+          }
+        })
+        .sort((a, b) => a.creator_name.localeCompare(b.creator_name))
       return { ...bucket, people }
     })
 

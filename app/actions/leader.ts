@@ -3,7 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createLeaderSession, destroyLeaderSession, getLeaderSession } from '@/lib/leader-auth'
+import { addDays } from '@/lib/campaign'
 import { creatorBelongsToLeader, findLeaderByName } from '@/lib/leaders'
+import { createBreakRequest } from '@/lib/break-requests'
 import { verifyPassword } from '@/lib/passwords'
 import { sql } from '@/lib/db'
 
@@ -62,4 +64,32 @@ export async function saveLeaderCheck(formData: FormData) {
   revalidatePath('/leader')
   revalidatePath(`/leader/creators/${creatorId}`)
   revalidatePath('/admin')
+}
+
+export async function requestTeamBreak(formData: FormData) {
+  const session = await getLeaderSession()
+  if (!session) throw new Error('Unauthorized')
+  const creatorId = Number(formData.get('creator_id'))
+  const start = (formData.get('start_date') ?? '').toString()
+  const daysRaw = Number(formData.get('days'))
+  const days = Number.isFinite(daysRaw) && daysRaw >= 1 ? Math.min(90, Math.floor(daysRaw)) : 0
+  const reasonRaw = (formData.get('reason') ?? '').toString().trim()
+  if (!Number.isFinite(creatorId) || creatorId <= 0 || !DATE_RE.test(start) || days < 1) {
+    return { ok: false as const, error: 'Pick a person, a start date, and how many days.' }
+  }
+  if (!(await creatorBelongsToLeader(creatorId, session.id))) {
+    return { ok: false as const, error: 'That person is not on your team.' }
+  }
+  const end = addDays(start, days - 1)
+  await createBreakRequest({
+    leaderId: session.id,
+    creatorId,
+    start,
+    end,
+    days,
+    reason: reasonRaw ? reasonRaw.slice(0, 500) : null,
+  })
+  revalidatePath('/leader')
+  revalidatePath('/admin')
+  return { ok: true as const }
 }

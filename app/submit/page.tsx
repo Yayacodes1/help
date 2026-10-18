@@ -56,7 +56,11 @@ export default async function SubmitPage({
   searchParams: Promise<{ u?: string; date?: string; panel?: string; tab?: string; taskDay?: string }>
 }) {
   const { u, date: dateParam, panel, tab, taskDay } = await searchParams
-  await ensureCreatorTrackingColumns()
+  try {
+    await ensureCreatorTrackingColumns()
+  } catch {
+    /* schema ensure must not block login */
+  }
   const [locale, leaderSession] = await Promise.all([getLocale(), getLeaderSession()])
   const t = createT(locale)
   const creator = u ? await getCreatorByName(u) : null
@@ -83,14 +87,16 @@ export default async function SubmitPage({
       grouped = false
     }
     if (grouped) {
-      return (
-        <ReposterDashboard
-          creator={creator}
-          username={username}
-          locale={locale}
-          searchParams={{ u, date: dateParam, panel, tab, taskDay }}
-        />
-      )
+      try {
+        return await ReposterDashboard({
+          creator,
+          username,
+          locale,
+          searchParams: { u, date: dateParam, panel, tab, taskDay },
+        })
+      } catch {
+        /* grouped dashboard failed — still let them in on the upload page */
+      }
     }
   }
   const [calendarToday, serverNow, defaultTime] = await Promise.all([
@@ -143,7 +149,7 @@ export default async function SubmitPage({
     getActiveContract(creator.id, today),
     getContractComparisons(creator, today),
     creator.role === 'reposter'
-      ? getLeagueBoard({ role: 'reposter' })
+      ? getLeagueBoard({ role: 'reposter' }).catch(() => null)
       : Promise.resolve(null),
     creator.role === 'reposter' && isContestLive(calendarToday) && miqatId != null
       ? getLeagueBoard({
@@ -151,10 +157,10 @@ export default async function SubmitPage({
           from: CONTEST.from,
           to: CONTEST.to,
           projectId: miqatId,
-        })
+        }).catch(() => null)
       : Promise.resolve(null),
     creator.role === 'reposter'
-      ? getCreatorStrikeSummary(creator.id, opToday)
+      ? getCreatorStrikeSummary(creator.id, opToday).catch(() => null)
       : Promise.resolve(null),
     getPaymentsForCreator(creator.id),
   ])

@@ -15,6 +15,7 @@ import {
   getAdminSubmissions,
   getAllProjects,
   getCreatorCountsByPlatformOnDate,
+  getCreatorsWithProgressOnDate,
   getLoginHandles,
   getServerTimeHm,
   getServerToday,
@@ -28,7 +29,7 @@ import {
   getViewsSummary,
   type ViewsSummary,
 } from '@/lib/analytics'
-import { getLeaderBoard, getLeaderForCreator } from '@/lib/leaders'
+import { getLeaderForCreator } from '@/lib/leaders'
 import { getTeamMembers } from '@/lib/leader-portal'
 import { getActivityForDay } from '@/lib/activity'
 import { getTaskCalendar, getTaskChecksForDay, listLeaderTasks } from '@/lib/tasks'
@@ -103,8 +104,11 @@ export async function ReposterDashboard({
   ].filter((b): b is BrandProject => b != null && b.handles.length > 0)
 
   const [counts, active, strikeSummary] = await Promise.all([
-    getCreatorCountsByPlatformOnDate(creator.id, date),
-    getActiveContract(creator.id, today),
+    getCreatorCountsByPlatformOnDate(creator.id, date).catch(() => ({
+      instagram: 0,
+      tiktok: 0,
+    })),
+    getActiveContract(creator.id, today).catch(() => null),
     getCreatorStrikeSummary(creator.id, today).catch(() => null),
   ])
   const dailyGoals = goalsForContract(creator, active)
@@ -120,28 +124,40 @@ export async function ReposterDashboard({
   const panels: PanelItem[] = []
 
   if (tab === 'today') {
-    const [board, activityMarks, tasks, checked, calendar, handles, myChecks, groupSubs] = await Promise.all([
-      link ? getLeaderBoard(date).catch(() => null) : Promise.resolve(null),
+    const [progress, activityMarks, tasks, checked, calendar, handles, myChecks, groupSubs] = await Promise.all([
+      teamIds.length > 0
+        ? getCreatorsWithProgressOnDate(date, undefined, 'creator', {
+            creatorIds: teamIds,
+            includeAllCreators: true,
+            includeAllReposters: true,
+          }).catch(() => [])
+        : Promise.resolve([]),
       getActivityForDay(date, videoIds).catch(() => ({})),
-      link ? listLeaderTasks(link.leaderId).catch(() => []) : Promise.resolve([]),
+      link ? listLeaderTasks(link.leaderId, { today }).catch(() => []) : Promise.resolve([]),
       getTaskChecksForDay(creator.id, taskDay).catch(() => new Set<number>()),
       link ? getTaskCalendar(creator.id, link.leaderId, today).catch(() => []) : Promise.resolve([]),
       getLoginHandles(videoIds).catch(() => new Map()),
       getReposterChecksForDay(creator.id, date).catch(() => new Set<number>()),
       getAdminSubmissions({ from: date, to: date, creatorIds: videoIds, role: 'creator' }).catch(() => []),
     ])
-    const score = link && board ? (board.leaders.find((row) => row.leaderId === link.leaderId) ?? null) : null
-    const roster = (score?.people ?? []).filter((p) => p.role === 'creator')
-    const checkPeople = roster.map((p) => ({
-      id: p.id,
-      handle: handles.get(p.id)?.handle || p.name,
-      status: p.status,
-      todayInstagram: p.todayInstagram,
-      todayTiktok: p.todayTiktok,
-      goalInstagram: p.goalInstagram,
-      goalTiktok: p.goalTiktok,
-      checked: myChecks.has(p.id),
-    }))
+    const checkPeople = progress
+      .filter((p) => p.role === 'creator' && !p.paused_at)
+      .map((p) => {
+        const any = p.today_instagram > 0 || p.today_tiktok > 0
+        const igOk = p.goal_instagram <= 0 || p.today_instagram >= p.goal_instagram
+        const ttOk = p.goal_tiktok <= 0 || p.today_tiktok >= p.goal_tiktok
+        const status = igOk && ttOk && any ? 'hit' : any ? 'partial' : 'miss'
+        return {
+          id: p.id,
+          handle: handles.get(p.id)?.handle || p.name,
+          status: status as 'hit' | 'partial' | 'miss',
+          todayInstagram: p.today_instagram,
+          todayTiktok: p.today_tiktok,
+          goalInstagram: p.goal_instagram,
+          goalTiktok: p.goal_tiktok,
+          checked: myChecks.has(p.id),
+        }
+      })
     const ticked = tasks.filter((task) => checked.has(task.id)).length
     const creatorVideos = groupSubs.map((s) => ({
       id: s.id,

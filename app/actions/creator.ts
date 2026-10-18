@@ -22,7 +22,6 @@ const TIME_RE = /^\d{2}:\d{2}(:\d{2})?$/
 // Public gate: verify the TikTok username belongs to a registered creator,
 // then unlock the submission form for them.
 export async function startSubmission(_prev: unknown, formData: FormData) {
-  await ensureCreatorTrackingColumns()
   const platform = parseLoginPlatform(formData.get('login_platform'))
   const username = normalizeHandle((formData.get('username') ?? '').toString())
   if (!platform) {
@@ -44,11 +43,15 @@ export async function startSubmission(_prev: unknown, formData: FormData) {
   if (!creator) {
     return { ok: false, message: 'اسم المستخدم غير مسجّل على هذا الحساب. تواصل مع الإدارة لإضافتك.' }
   }
-  await sql`
-    UPDATE creators
-    SET login_platform = ${loginPlatform}
-    WHERE id = ${creator.id}
-  `
+  try {
+    await sql`
+      UPDATE creators
+      SET login_platform = ${loginPlatform}
+      WHERE id = ${creator.id}
+    `
+  } catch {
+    /* still let them in if the login-platform write fails */
+  }
   redirect(`/submit?u=${encodeURIComponent(username)}`)
 }
 

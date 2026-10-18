@@ -19,11 +19,19 @@ export async function createLeaderTask(formData: FormData) {
   const session = await requireLeader()
   const title = (formData.get('title') ?? '').toString().trim().slice(0, 200)
   if (!title) return
+  const pin = (formData.get('pin') ?? '').toString() === '1'
   await ensureTaskTables()
-  await sql`
-    INSERT INTO leader_tasks (leader_id, title)
-    VALUES (${session.id}, ${title})
-  `
+  if (pin) {
+    await sql`
+      INSERT INTO leader_tasks (leader_id, title, pinned_at)
+      VALUES (${session.id}, ${title}, NOW())
+    `
+  } else {
+    await sql`
+      INSERT INTO leader_tasks (leader_id, title)
+      VALUES (${session.id}, ${title})
+    `
+  }
   revalidatePath('/leader')
   revalidatePath('/submit')
   revalidatePath('/admin')
@@ -40,6 +48,30 @@ export async function updateLeaderTask(formData: FormData) {
     SET title = ${title}
     WHERE id = ${id} AND leader_id = ${session.id} AND archived_at IS NULL
   `
+  revalidatePath('/leader')
+  revalidatePath('/submit')
+  revalidatePath('/admin')
+}
+
+export async function pinLeaderTask(formData: FormData) {
+  const session = await requireLeader()
+  const id = Number(formData.get('task_id'))
+  if (!Number.isFinite(id) || id <= 0) return
+  await ensureTaskTables()
+  const unpin = (formData.get('unpin') ?? '').toString() === '1'
+  if (unpin) {
+    await sql`
+      UPDATE leader_tasks
+      SET pinned_at = NULL, archived_at = NOW()
+      WHERE id = ${id} AND leader_id = ${session.id} AND archived_at IS NULL
+    `
+  } else {
+    await sql`
+      UPDATE leader_tasks
+      SET pinned_at = NOW()
+      WHERE id = ${id} AND leader_id = ${session.id} AND archived_at IS NULL
+    `
+  }
   revalidatePath('/leader')
   revalidatePath('/submit')
   revalidatePath('/admin')

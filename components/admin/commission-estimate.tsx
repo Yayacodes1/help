@@ -13,6 +13,7 @@ export function CommissionEstimateCards({
   basePath,
   showCreator = true,
   currency = 'SAR',
+  onlyPayNow = false,
   labels,
 }: {
   estimate: CommissionEstimate
@@ -23,6 +24,7 @@ export function CommissionEstimateCards({
   basePath: string
   showCreator?: boolean
   currency?: string
+  onlyPayNow?: boolean
   labels: {
     scope: string
     allContracts: string
@@ -78,22 +80,26 @@ export function CommissionEstimateCards({
         </select>
       </label>
 
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <EstimateCard
-          value={formatMoney(estimate.did, currency)}
-          label={labels.did}
-          hint={labels.didHint}
-        />
-        <EstimateCard
-          value={formatMoney(estimate.goingToDo, currency)}
-          label={labels.goingToDo}
-          hint={labels.goingHint}
-        />
-        <EstimateCard
-          value={formatMoney(estimate.recorded, currency)}
-          label={labels.recorded}
-          hint={labels.recordedHint}
-        />
+      <div className={`grid gap-2 ${onlyPayNow ? 'sm:grid-cols-1' : 'sm:grid-cols-2 lg:grid-cols-4'}`}>
+        {onlyPayNow ? null : (
+          <>
+            <EstimateCard
+              value={formatMoney(estimate.did, currency)}
+              label={labels.did}
+              hint={labels.didHint}
+            />
+            <EstimateCard
+              value={formatMoney(estimate.goingToDo, currency)}
+              label={labels.goingToDo}
+              hint={labels.goingHint}
+            />
+            <EstimateCard
+              value={formatMoney(estimate.recorded, currency)}
+              label={labels.recorded}
+              hint={labels.recordedHint}
+            />
+          </>
+        )}
         <EstimateCard
           value={formatMoney(estimate.payNow, currency)}
           label={labels.payNow}

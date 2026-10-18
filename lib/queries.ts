@@ -2,6 +2,7 @@ import 'server-only'
 import { sql, type Contract, type Creator, type Payment, type Platform, type Project, type ScheduleBreak, type Submission } from '@/lib/db'
 import type { ParticipantRole } from '@/lib/participant-role'
 import { addDays, maxDate, yearRange } from '@/lib/campaign'
+import { daysBetweenInclusive } from '@/lib/biweekly'
 import { loginHandleFor, normalizeHandle, type LoginPlatform } from '@/lib/usernames'
 import {
   buildConsistency,
@@ -1089,6 +1090,8 @@ export type PaymentDueRow = {
   videosComplete: boolean
   /** True = paid/settled history (keep after paying); false = still needs attention */
   settled: boolean
+  daysOnContract?: number
+  windowDays?: number
 }
 
 function buildDueRow(input: {
@@ -1144,7 +1147,12 @@ export async function getPaymentDueList(
   today: string,
   projectId?: number,
   role?: ParticipantRole | null,
-): Promise<{ due: PaymentDueRow[]; settled: PaymentDueRow[] }> {
+): Promise<{
+  due: PaymentDueRow[]
+  settled: PaymentDueRow[]
+  willPay: PaymentDueRow[]
+  urgent: PaymentDueRow[]
+}> {
   const pid = projectId ?? null
   const roleFilter = role ?? null
   const creators = (await sql`
@@ -1166,6 +1174,9 @@ export async function getPaymentDueList(
 
   const due: PaymentDueRow[] = []
   const settled: PaymentDueRow[] = []
+  const willPay: PaymentDueRow[] = []
+  const urgent: PaymentDueRow[] = []
+  const PAY_WINDOW_DAYS = 15
 
   for (const creator of creators) {
     const pay = await getPaySummary(creator, today)
@@ -1206,6 +1217,24 @@ export async function getPaymentDueList(
       const minDue = minimumContractDue(contract)
       const commissionMissing = contract.commission_amount == null
       const fullySettled = minDue > 0 && paidAmount >= minDue - 0.009
+      const live =
+        contract.start_date <= today && (contract.end_date == null || contract.end_date >= today)
+      if (live && !fullySettled && (minDue > 0 || commissionMissing)) {
+        const daysOn = daysBetweenInclusive(contract.start_date, today)
+        const windowRow = buildDueRow({
+          creator,
+          contract,
+          dueDate: addDays(contract.start_date, PAY_WINDOW_DAYS - 1),
+          reason: 'pay_schedule',
+          paidAmount,
+          counts,
+          settled: false,
+        })
+        windowRow.daysOnContract = daysOn
+        windowRow.windowDays = PAY_WINDOW_DAYS
+        if (daysOn >= PAY_WINDOW_DAYS) urgent.push(windowRow)
+        else willPay.push(windowRow)
+      }
 
       // Pay due: video target finished and money not fully recorded. End date ignored.
       if (
@@ -1270,8 +1299,10 @@ export async function getPaymentDueList(
   }
   due.sort(byDate)
   settled.sort((a, b) => -byDate(a, b)) // newest paid history first
+  willPay.sort(byDate)
+  urgent.sort((a, b) => (b.daysOnContract ?? 0) - (a.daysOnContract ?? 0) || byDate(a, b))
 
-  return { due, settled }
+  return { due, settled, willPay, urgent }
 }
 
 export type PaymentRow = Payment & {

@@ -1,5 +1,4 @@
 import { Suspense } from 'react'
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getLeaderSession } from '@/lib/leader-auth'
 import { getLeaderBoard, getLeaderScope } from '@/lib/leaders'
@@ -40,25 +39,28 @@ import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { AnalyticsPanel } from '@/components/admin/analytics-panel'
 import { TopVideosPanel } from '@/components/admin/top-videos-panel'
 import { RoleSelector } from '@/components/admin/role-selector'
-import { CheckForm } from '@/components/leader/check-form'
+import { DailyCheckList } from '@/components/leader/daily-check-list'
 import { ReposterCheckBoard } from '@/components/leader/reposter-check-board'
 import { TaskEditor } from '@/components/leader/task-editor'
+import { BreakRequestForm } from '@/components/leader/break-request-form'
+import { listBreakRequests } from '@/lib/break-requests'
 import { CopyTextButton } from '@/components/leader/copy-text-button'
 import { ConsistencyBoard, CreatorCards, ManageList } from '@/components/leader/team-boards'
 import { listLeaderTasks } from '@/lib/tasks'
 import { getReposterChecksForTeam } from '@/lib/reposter-checks'
-import type { AttendanceStatus } from '@/lib/attendance-types'
-
 export const dynamic = 'force-dynamic'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const LEADER_REFRESH = '/api/leader/refresh-views'
 
-function statusClass(status: AttendanceStatus): string {
-  if (status === 'hit') return 'bg-primary/15 text-primary'
-  if (status === 'partial') return 'bg-amber-500/15 text-amber-800 dark:text-amber-200'
-  if (status === 'miss') return 'bg-destructive/10 text-destructive'
-  return 'bg-muted text-muted-foreground'
+function withPanel(sp: Record<string, string | undefined>, panel: string) {
+  const next = new URLSearchParams()
+  for (const [key, value] of Object.entries(sp)) {
+    if (value) next.set(key, value)
+  }
+  next.set('tab', 'today')
+  next.set('panel', panel)
+  return `/leader?${next.toString()}`
 }
 
 export default async function LeaderHomePage({
@@ -95,7 +97,7 @@ export default async function LeaderHomePage({
 
   async function loadToday() {
     const creatorRaw = Number(sp.creator)
-    const [board, progress, attendance, submissions, members, activityMarks, tasks] = await Promise.all([
+    const [board, progress, attendance, submissions, members, activityMarks, tasks, breakRequests] = await Promise.all([
       getLeaderBoard(opToday),
       getCreatorsWithProgressOnDate(selectedDay, projectId, roleSql, {
         creatorIds: teamIds,
@@ -114,7 +116,8 @@ export default async function LeaderHomePage({
       }),
       getTeamMembers(teamIds, today),
       getActivityForDay(selectedDay, teamIds),
-      listLeaderTasks(session!.id),
+      listLeaderTasks(session!.id, { today: opToday }),
+      listBreakRequests({ leaderId: session!.id }),
     ])
     const tracked = await attachTracking(progress, today)
     const ids = new Set(teamIds)
@@ -130,8 +133,10 @@ export default async function LeaderHomePage({
       attention: attendance.filter((p) => ids.has(p.id) && inRole(p.role)),
       submissions,
       members: members.filter((m) => inRole(m.person.role)),
+      breakPeople: members,
       activityMarks,
       tasks,
+      breakRequests,
       handles,
       checkMap,
     }
@@ -203,8 +208,20 @@ export default async function LeaderHomePage({
   const panels: PanelItem[] = []
 
   if (todayData) {
-    const { score, people, everyone, attention, submissions, members, activityMarks, tasks, handles, checkMap } =
-      todayData
+    const {
+      score,
+      people,
+      everyone,
+      attention,
+      submissions,
+      members,
+      breakPeople,
+      activityMarks,
+      tasks,
+      breakRequests,
+      handles,
+      checkMap,
+    } = todayData
     const groupCreators = [...handles.entries()]
       .filter(([, row]) => row.role === 'creator')
       .map(([id, row]) => ({ id, handle: row.handle }))
@@ -218,6 +235,21 @@ export default async function LeaderHomePage({
     const reposterTicks = groupReposters.reduce((sum, row) => sum + row.checkedIds.length, 0)
     const reposterTickTotal = groupReposters.length * groupCreators.length
     const roster = (score?.people ?? []).filter((p) => inRole(p.role))
+    const creatorRoster = roster.filter((p) => p.role === 'creator')
+    const reposterRoster = roster.filter((p) => p.role === 'reposter')
+    const checkLabels = {
+      mark: t('leaderMark'),
+      undo: t('leaderUndo'),
+      save: t('leaderSaveNote'),
+      notePh: t('leaderNotePh'),
+      posted: t('leaderPosted'),
+      partial: t('leaderPartial'),
+      missed: t('leaderMissed'),
+      onBreak: t('leaderBreak'),
+      off: t('leaderOff'),
+      creatorRole: t('creatorRole'),
+      reposterRole: t('reposterRole'),
+    }
     const goalTotal = people.reduce((sum, c) => sum + c.goal_instagram + c.goal_tiktok, 0)
     const postedTotal = people.reduce((sum, c) => sum + c.today_instagram + c.today_tiktok, 0)
     const postedPeople = people.filter((c) => c.today_instagram + c.today_tiktok > 0).length
@@ -232,67 +264,36 @@ export default async function LeaderHomePage({
     panels.push(
       {
         id: 'check',
-        title: t('leaderDailyCheck'),
-        summary: `${roster.filter((p) => p.checked).length}/${roster.length}`,
+        title: t('leaderDailyCheckCreators'),
+        summary: `${creatorRoster.filter((p) => p.checked).length}/${creatorRoster.length}`,
         hint: opToday,
         children: (
-          <div className="flex flex-col gap-3">
-            <p className="text-xs text-muted-foreground">{t('leaderDailyCheckHint')}</p>
-            {roster.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                {t('leaderNoPeople')}
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {roster.map((person) => (
-                  <li
-                    key={person.id}
-                    className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-3 py-2"
-                  >
-                    <CheckForm
-                      creatorId={person.id}
-                      day={opToday}
-                      checked={person.checked}
-                      note={person.note}
-                      markLabel={t('leaderMark')}
-                      undoLabel={t('leaderUndo')}
-                      saveLabel={t('leaderSaveNote')}
-                      notePlaceholder={t('leaderNotePh')}
-                      compact
-                    />
-                    <Link
-                      href={`/leader/creators/${person.id}`}
-                      className="min-w-0 flex-1 font-medium underline-offset-4 hover:underline"
-                    >
-                      {person.name}
-                      <span className="ms-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-                        {person.role === 'reposter' ? t('reposterRole') : t('creatorRole')}
-                      </span>
-                    </Link>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass(person.status)}`}
-                    >
-                      {person.status === 'hit'
-                        ? t('leaderPosted')
-                        : person.status === 'partial'
-                          ? t('leaderPartial')
-                          : person.status === 'break'
-                            ? t('leaderBreak')
-                            : person.status === 'off'
-                              ? t('leaderOff')
-                              : t('leaderMissed')}
-                    </span>
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      IG {person.todayInstagram}/{person.goalInstagram} · TT {person.todayTiktok}/{person.goalTiktok}
-                    </span>
-                    {person.note ? (
-                      <p className="w-full text-xs text-muted-foreground">“{person.note}”</p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <DailyCheckList
+            people={creatorRoster}
+            day={opToday}
+            emptyLabel={t('leaderNoPeople')}
+            switchHref={withPanel(sp, 'checkReposters')}
+            switchLabel={t('leaderSeeReposters')}
+            hint={t('leaderDailyCheckHint')}
+            labels={checkLabels}
+          />
+        ),
+      },
+      {
+        id: 'checkReposters',
+        title: t('leaderDailyCheckReposters'),
+        summary: `${reposterRoster.filter((p) => p.checked).length}/${reposterRoster.length}`,
+        hint: opToday,
+        children: (
+          <DailyCheckList
+            people={reposterRoster}
+            day={opToday}
+            emptyLabel={t('leaderNoPeople')}
+            switchHref={withPanel(sp, 'check')}
+            switchLabel={t('leaderSeeCreators')}
+            hint={t('leaderDailyCheckRepostersHint')}
+            labels={checkLabels}
+          />
         ),
       },
       {
@@ -327,6 +328,42 @@ export default async function LeaderHomePage({
               remove: t('tasksRemove'),
               empty: t('tasksEmpty'),
               placeholder: t('tasksPlaceholder'),
+              pin: t('tasksPin'),
+              unpin: t('tasksUnpin'),
+              pinAdd: t('tasksPinAdd'),
+            }}
+          />
+        ),
+      },
+      {
+        id: 'breakRequest',
+        title: t('breakRequestTitle'),
+        summary: `${breakRequests.filter((r) => r.status === 'pending').length}`,
+        hint: t('breakRequestHint'),
+        children: (
+          <BreakRequestForm
+            today={today}
+            people={breakPeople.map((m) => ({
+              id: m.person.id,
+              name: m.person.name,
+              role: m.person.role,
+              paused: m.paused,
+            }))}
+            requests={breakRequests}
+            labels={{
+              hint: t('breakRequestHint'),
+              person: t('breakRequestPerson'),
+              start: t('breakRequestStart'),
+              days: t('breakRequestDays'),
+              reason: t('breakRequestReason'),
+              reasonPh: t('breakRequestReasonPh'),
+              send: t('breakRequestSend'),
+              empty: t('breakRequestEmpty'),
+              pending: t('breakRequestPending'),
+              approved: t('breakRequestApproved'),
+              denied: t('breakRequestDenied'),
+              creator: t('creatorRole'),
+              reposter: t('reposterRole'),
             }}
           />
         ),

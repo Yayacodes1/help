@@ -94,6 +94,9 @@ import { TeamGoalsBoard } from '@/components/admin/team-goals-board'
 import { getTeamCounts, getTeamGoals } from '@/lib/team-goals'
 import { CONTEST } from '@/lib/contest'
 import { MiqatContestPanel } from '@/components/admin/miqat-contest-panel'
+import { QuickBreakPicker } from '@/components/admin/quick-break-picker'
+import { BreakRequestsBoard } from '@/components/admin/break-requests-board'
+import { listBreakRequests } from '@/lib/break-requests'
 
 export const dynamic = 'force-dynamic'
 
@@ -422,6 +425,7 @@ export default async function AdminPage({
   const todayData = tab === 'today' ? await loadToday() : null
   const analyticsData = tab === 'analytics' ? await loadAnalytics() : null
   const moneyData = tab === 'money' ? await loadMoney() : null
+  const twodayData = tab === 'twoday' ? { requests: await listBreakRequests({ limit: 80 }) } : null
   const { submissions, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory, activityMarks } =
     todayData ?? ({} as Awaited<ReturnType<typeof loadToday>>)
   const activity = activityMarks ? { day: selectedDay, marks: activityMarks } : undefined
@@ -614,7 +618,7 @@ export default async function AdminPage({
   const creatorsPostedToday = creators.filter(
     (c) => c.today_instagram + c.today_tiktok > 0,
   ).length
-  const payDueCount = payDueRows?.due.length ?? 0
+  const payDueCount = (payDueRows?.urgent.length ?? 0) + (payDueRows?.due.length ?? 0)
 
   const peopleNoun =
     roleFilter === 'reposter'
@@ -691,7 +695,9 @@ export default async function AdminPage({
         ? 'leaders'
         : tab === 'people'
           ? 'manage'
-          : null
+          : tab === 'twoday'
+            ? 'quickBreak'
+            : null
 
   return (
     <main
@@ -744,6 +750,7 @@ export default async function AdminPage({
           active={tab}
           labels={{
             today: t('tabToday'),
+            twoday: t('tabTwoday'),
             analytics: t('tabAnalytics'),
             money: t('tabMoney'),
             people: t('tabPeople'),
@@ -1218,6 +1225,56 @@ export default async function AdminPage({
             ),
           },
           ] : []),
+          ...(twodayData ? [
+          {
+            id: 'quickBreak',
+            title: t('quickBreakTitle'),
+            summary: `${activeBase.length}`,
+            hint: t('quickBreakHint'),
+            children: (
+              <QuickBreakPicker
+                today={today}
+                people={activeBase.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  role: c.role === 'reposter' ? 'reposter' : 'creator',
+                }))}
+                labels={{
+                  hint: t('quickBreakHint'),
+                  search: t('quickBreakSearch'),
+                  selectedEmpty: t('quickBreakEmpty'),
+                  giveBreak: t('quickBreakGive'),
+                  creators: t('roleFilterCreators'),
+                  reposters: t('roleFilterReposters'),
+                  both: t('roleFilterAll'),
+                  remove: t('quickBreakRemove'),
+                  start: t('breakRequestStart'),
+                  days: t('breakRequestDays'),
+                }}
+              />
+            ),
+          },
+          {
+            id: 'breakRequests',
+            title: t('breakRequestsTitle'),
+            summary: `${twodayData.requests.filter((r) => r.status === 'pending').length}`,
+            hint: t('breakRequestHint'),
+            children: (
+              <BreakRequestsBoard
+                requests={twodayData.requests}
+                labels={{
+                  empty: t('breakRequestsEmpty'),
+                  approve: t('breakRequestsApprove'),
+                  deny: t('breakRequestsDeny'),
+                  pending: t('breakRequestPending'),
+                  approved: t('breakRequestApproved'),
+                  denied: t('breakRequestDenied'),
+                  from: t('breakRequestsFrom'),
+                }}
+              />
+            ),
+          },
+          ] : []),
           ...(moneyData ? [
           {
             id: 'marketing',
@@ -1245,8 +1302,8 @@ export default async function AdminPage({
           {
             id: 'commission',
             title: t('commissionBoard'),
-            summary: formatMoney(commissionEstimate.estimate.did),
-            hint: `${t('commissionPayNow')} ${formatMoney(commissionEstimate.estimate.payNow)}`,
+            summary: formatMoney(commissionEstimate.estimate.payNow),
+            hint: t('commissionPayNow'),
             children: (
               <CommissionBoardPanel
                 board={commissionBoard}
@@ -1296,12 +1353,20 @@ export default async function AdminPage({
               <PaymentDuePanel
                 due={payDueRows.due}
                 settled={payDueRows.settled}
+                willPay={payDueRows.willPay}
+                urgent={payDueRows.urgent}
                 linkRole={roleFilter}
                 projectId={projectId}
                 labels={{
                   empty: t('payDueEmpty'),
                   settledEmpty: t('payDueSettledEmpty'),
                   settledTitle: t('payDueSettledTitle'),
+                  willTitle: t('payWillTitle'),
+                  willEmpty: t('payWillEmpty'),
+                  urgentTitle: t('payUrgentTitle'),
+                  urgentEmpty: t('payUrgentEmpty'),
+                  urgentHint: t('payUrgentHint'),
+                  daysOn: t('payDaysOn'),
                   due: t('due'),
                   creator: peopleNoun,
                   contract: t('contracts'),

@@ -14,6 +14,7 @@ export async function ensureTaskTables() {
       archived_at TIMESTAMPTZ
     )
   `
+  await sql`ALTER TABLE leader_tasks ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ`
   await sql`CREATE INDEX IF NOT EXISTS leader_tasks_leader_idx ON leader_tasks (leader_id)`
   await sql`
     CREATE TABLE IF NOT EXISTS reposter_task_checks (
@@ -27,20 +28,41 @@ export async function ensureTaskTables() {
   await sql`CREATE INDEX IF NOT EXISTS reposter_task_checks_creator_day_idx ON reposter_task_checks (creator_id, day)`
 }
 
-export async function listLeaderTasks(leaderId: number, opts: { includeArchived?: boolean } = {}): Promise<LeaderTask[]> {
+export async function listLeaderTasks(
+  leaderId: number,
+  opts: { includeArchived?: boolean; today?: string } = {},
+): Promise<LeaderTask[]> {
   await ensureTaskTables()
+  if (opts.today) {
+    try {
+      await sql`
+        UPDATE leader_tasks
+        SET archived_at = NOW()
+        WHERE leader_id = ${leaderId}
+          AND archived_at IS NULL
+          AND pinned_at IS NULL
+          AND created_at::date < ${opts.today}::date
+      `
+    } catch {
+      /* column may not exist yet */
+    }
+  }
   const rows = opts.includeArchived
     ? await sql`
-        SELECT id, leader_id, title, created_at::text AS created_at, archived_at::text AS archived_at
+        SELECT id, leader_id, title, created_at::text AS created_at,
+               created_at::date::text AS created_on, archived_at::text AS archived_at,
+               pinned_at::text AS pinned_at
         FROM leader_tasks
         WHERE leader_id = ${leaderId}
-        ORDER BY archived_at NULLS FIRST, id ASC
+        ORDER BY archived_at NULLS FIRST, pinned_at DESC NULLS LAST, id ASC
       `
     : await sql`
-        SELECT id, leader_id, title, created_at::text AS created_at, archived_at::text AS archived_at
+        SELECT id, leader_id, title, created_at::text AS created_at,
+               created_at::date::text AS created_on, archived_at::text AS archived_at,
+               pinned_at::text AS pinned_at
         FROM leader_tasks
         WHERE leader_id = ${leaderId} AND archived_at IS NULL
-        ORDER BY id ASC
+        ORDER BY pinned_at DESC NULLS LAST, id ASC
       `
   return rows as LeaderTask[]
 }
@@ -66,10 +88,10 @@ export async function getTaskCalendar(
 ): Promise<TaskDaySummary[]> {
   await ensureTaskTables()
   const tasks = (await sql`
-    SELECT id, created_at::date::text AS created_on
+    SELECT id, created_at::date::text AS created_on, pinned_at::text AS pinned_at
     FROM leader_tasks
     WHERE leader_id = ${leaderId} AND archived_at IS NULL
-  `) as { id: number; created_on: string }[]
+  `) as { id: number; created_on: string; pinned_at: string | null }[]
   const checks = (await sql`
     SELECT task_id, day::text AS day
     FROM reposter_task_checks
@@ -82,8 +104,9 @@ export async function getTaskCalendar(
     const d = new Date(start)
     d.setUTCDate(start.getUTCDate() - i)
     const day = d.toISOString().slice(0, 10)
-    const total = tasks.filter((t) => t.created_on <= day).length
-    const done = checks.filter((c) => c.day === day && tasks.some((t) => t.id === c.task_id)).length
+    const due = tasks.filter((t) => (t.pinned_at ? t.created_on <= day : t.created_on === day))
+    const total = due.length
+    const done = checks.filter((c) => c.day === day && due.some((t) => t.id === c.task_id)).length
     out.push({ day, done, total })
   }
   return out

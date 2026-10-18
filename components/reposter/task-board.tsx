@@ -28,7 +28,9 @@ export function TaskBoard({
 }) {
   const router = useRouter()
   const checked = new Set(checkedIds)
-  const active = tasks.filter((t) => !t.archived_at)
+  const active = tasks.filter(
+    (t) => !t.archived_at && (t.pinned_at || t.created_on === day),
+  )
 
   function openDay(next: string) {
     const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
@@ -106,7 +108,14 @@ export function TaskBoard({
                     >
                       {on ? '✓' : ''}
                     </span>
-                    <span className="min-w-0 flex-1 font-medium">{task.title}</span>
+                    <span className="min-w-0 flex-1 font-medium">
+                      {task.title}
+                      {task.pinned_at ? (
+                        <span className="ms-1 text-amber-500" aria-hidden>
+                          ★
+                        </span>
+                      ) : null}
+                    </span>
                     {on ? (
                       <span className="text-[11px] font-medium text-primary">{labels.done}</span>
                     ) : null}

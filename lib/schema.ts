@@ -233,6 +233,31 @@ export async function ensureCreatorTrackingColumns() {
     )
   `
   await sql`CREATE INDEX IF NOT EXISTS schedule_breaks_creator_id_idx ON schedule_breaks (creator_id)`
+  try {
+    await sql`ALTER TABLE leader_tasks ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ`
+  } catch {
+    /* leader_tasks created later */
+  }
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS break_requests (
+        id SERIAL PRIMARY KEY,
+        leader_id INTEGER NOT NULL REFERENCES leaders(id) ON DELETE CASCADE,
+        creator_id INTEGER NOT NULL REFERENCES creators(id) ON DELETE CASCADE,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        days INTEGER NOT NULL,
+        reason TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        reviewed_by TEXT,
+        reviewed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `
+    await sql`CREATE INDEX IF NOT EXISTS break_requests_status_idx ON break_requests (status, created_at DESC)`
+  } catch {
+    /* leaders table may not exist yet */
+  }
 
   await sql`
     CREATE TABLE IF NOT EXISTS creator_strikes (

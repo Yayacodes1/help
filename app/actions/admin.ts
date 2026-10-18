@@ -13,6 +13,7 @@ import { normalizeParticipantRole } from '@/lib/participant-role'
 import {
   createAdminSession,
   destroyAdminSession,
+  getAdminSession,
   isAdmin,
   verifyLogin,
 } from '@/lib/admin-auth'
@@ -1212,13 +1213,6 @@ export async function addCreatorSubmission(creatorId: number, formData: FormData
   return { ok: true as const }
 }
 
-function inclusiveDayCount(start: string, end: string): number {
-  if (start > end) return 0
-  const a = new Date(`${start}T00:00:00Z`).getTime()
-  const b = new Date(`${end}T00:00:00Z`).getTime()
-  return Math.round((b - a) / 86_400_000) + 1
-}
-
 export async function createScheduleBreak(creatorId: number, formData: FormData) {
   await requireAdmin()
   const start = parseOptionalDate(formData.get('start_date'))
@@ -1230,39 +1224,63 @@ export async function createScheduleBreak(creatorId: number, formData: FormData)
   if (!start || !end || end < start) return
   const reasonRaw = (formData.get('reason') ?? '').toString().trim()
   const reason = reasonRaw ? reasonRaw.slice(0, 500) : null
-  const days = inclusiveDayCount(start, end)
-  const today = await getServerToday()
-
-  const active = (await sql`
-    SELECT id, end_date::text AS end_date
-    FROM contracts
-    WHERE creator_id = ${creatorId}
-      AND start_date <= ${today}::date
-      AND (end_date IS NULL OR end_date >= ${today}::date)
-    ORDER BY start_date DESC, id DESC
-    LIMIT 1
-  `) as { id: number; end_date: string | null }[]
-  const contract = active[0]
-  let daysAdded = 0
-  let extendedContractId: number | null = null
-  if (contract?.end_date) {
-    const nextEnd = addDays(contract.end_date, days)
-    await sql`UPDATE contracts SET end_date = ${nextEnd}::date WHERE id = ${contract.id}`
-    daysAdded = days
-    extendedContractId = contract.id
-  }
-
-  await sql`
-    INSERT INTO schedule_breaks (
-      creator_id, start_date, end_date, reason, days_added, extended_contract_id
-    )
-    VALUES (
-      ${creatorId}, ${start}, ${end}, ${reason}, ${daysAdded}, ${extendedContractId}
-    )
-  `
+  const { applyScheduleBreak } = await import('@/lib/schedule-breaks')
+  await applyScheduleBreak({ creatorId, start, end, reason })
   revalidatePath('/admin')
   revalidatePath(`/admin/creators/${creatorId}`)
   revalidatePath('/submit')
+  revalidatePath('/leader')
+}
+
+export async function createQuickBreaks(formData: FormData) {
+  await requireAdmin()
+  const start = parseOptionalDate(formData.get('start_date'))
+  const daysRaw = Number(formData.get('days'))
+  const days = Number.isFinite(daysRaw) && daysRaw >= 1 ? Math.floor(daysRaw) : 2
+  if (!start) return { ok: false as const, error: 'Pick a start date.' }
+  const end = addDays(start, days - 1)
+  const reasonRaw = (formData.get('reason') ?? '').toString().trim()
+  const reason = reasonRaw ? reasonRaw.slice(0, 500) : '2-day break'
+  const ids = formData
+    .getAll('creator_ids')
+    .map((v) => Number(v))
+    .filter((id) => Number.isFinite(id) && id > 0)
+  if (ids.length === 0) return { ok: false as const, error: 'Pick at least one person.' }
+  const { applyScheduleBreaks } = await import('@/lib/schedule-breaks')
+  const count = await applyScheduleBreaks(ids, start, end, reason)
+  revalidatePath('/admin')
+  revalidatePath('/submit')
+  revalidatePath('/leader')
+  return { ok: true as const, count }
+}
+
+export async function approveBreakRequest(id: number) {
+  const session = await getAdminSession()
+  if (!session) throw new Error('Unauthorized')
+  const { getBreakRequest, setBreakRequestStatus } = await import('@/lib/break-requests')
+  const request = await getBreakRequest(id)
+  if (!request || request.status !== 'pending') return
+  const { applyScheduleBreak } = await import('@/lib/schedule-breaks')
+  await applyScheduleBreak({
+    creatorId: request.creator_id,
+    start: request.start_date,
+    end: request.end_date,
+    reason: request.reason ?? `Break requested by ${request.leader_name}`,
+  })
+  await setBreakRequestStatus(id, 'approved', session.name)
+  revalidatePath('/admin')
+  revalidatePath('/leader')
+  revalidatePath('/submit')
+  revalidatePath(`/admin/creators/${request.creator_id}`)
+}
+
+export async function denyBreakRequest(id: number) {
+  const session = await getAdminSession()
+  if (!session) throw new Error('Unauthorized')
+  const { setBreakRequestStatus } = await import('@/lib/break-requests')
+  await setBreakRequestStatus(id, 'denied', session.name)
+  revalidatePath('/admin')
+  revalidatePath('/leader')
 }
 
 export async function deleteScheduleBreak(id: number, creatorId: number) {

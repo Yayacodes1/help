@@ -583,13 +583,14 @@ function MarketingMonths({ months, view }: { months: MarketingMonthBucket[]; vie
           </div>
           {m.people.length > 0 ? (
             <div className="mt-2 overflow-x-auto">
-              <table className="w-full min-w-[480px] text-left text-sm">
+              <table className="w-full min-w-[640px] text-left text-sm">
                 <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="py-1 pr-2 font-medium">Person</th>
-                    <th className="py-1 pr-2 font-medium">In-month payments</th>
-                    <th className="py-1 pr-2 font-medium text-right">SAR</th>
-                    <th className="py-1 font-medium text-right">USD</th>
+                    <th className="py-1 pr-2 font-medium">First payment</th>
+                    <th className="py-1 pr-2 font-medium">Second payment</th>
+                    <th className="py-1 pr-2 font-medium text-right">Monthly SAR</th>
+                    <th className="py-1 font-medium text-right">Monthly USD</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -597,25 +598,40 @@ function MarketingMonths({ months, view }: { months: MarketingMonthBucket[]; vie
                     <tr key={p.creator_id}>
                       <td className="py-1.5 pr-2">
                         <span className="font-medium">{p.creator_name}</span>
+                        {p.paymentCount > 0 ? (
+                          <span className="ms-1 text-amber-400" aria-label={`${p.paymentCount} paid`}>
+                            {'★'.repeat(p.paymentCount)}
+                          </span>
+                        ) : null}
                         <span className="ml-1 text-[11px] capitalize text-muted-foreground">
                           {p.role}
                         </span>
                       </td>
-                      <td className="py-1.5 pr-2 text-xs text-muted-foreground">
-                        {p.installments.length === 0
-                          ? '—'
-                          : p.installments
-                              .map(
-                                (i) =>
-                                  `${formatDate(i.dueOn)} ${formatMoney(usdToSar(i.amount), 'SAR')} / ${formatMoney(i.amount, 'USD')}`,
-                              )
-                              .join(' · ')}
+                      <td className="py-1.5 pr-2 text-xs">
+                        {p.firstPay ? (
+                          <>
+                            <div className="tabular-nums text-muted-foreground">{formatDate(p.firstPay.dueOn)}</div>
+                            <DualMoney usd={p.firstPay.amount} />
+                          </>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-2 text-xs">
+                        {p.secondPay ? (
+                          <>
+                            <div className="tabular-nums text-muted-foreground">{formatDate(p.secondPay.dueOn)}</div>
+                            <DualMoney usd={p.secondPay.amount} />
+                          </>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="py-1.5 pr-2 text-right tabular-nums">
-                        {formatMoney(usdToSar(p.planned || p.paid), 'SAR')}
+                        {formatMoney(usdToSar(p.monthlyUsd), 'SAR')}
                       </td>
                       <td className="py-1.5 text-right tabular-nums text-muted-foreground">
-                        {formatMoney(p.planned || p.paid, 'USD')}
+                        {formatMoney(p.monthlyUsd, 'USD')}
                       </td>
                     </tr>
                   ))}

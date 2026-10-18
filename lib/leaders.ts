@@ -106,6 +106,12 @@ export async function ensureLeaderTables() {
   await ensureTaskTables()
   const { ensureReposterCheckTables } = await import('@/lib/reposter-checks')
   await ensureReposterCheckTables()
+  try {
+    const { ensureBreakRequestTables } = await import('@/lib/break-requests')
+    await ensureBreakRequestTables()
+  } catch {
+    /* login must still work if this table is not ready */
+  }
 }
 
 function countStatuses(people: AttendancePerson[]): PlanCounts {

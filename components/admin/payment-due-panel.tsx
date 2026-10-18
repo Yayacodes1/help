@@ -64,9 +64,11 @@ function DueTable({
               <td className="whitespace-nowrap px-4 py-3">
                 <div className="font-medium tabular-nums">{formatDate(row.dueDate)}</div>
                 <div className="text-[11px] text-muted-foreground">
-                  {row.reason === 'videos_complete'
-                    ? labels.reasonVideosComplete
-                    : labels.reasonSchedule}
+                  {row.daysOnContract != null
+                    ? `${row.daysOnContract}/${row.windowDays ?? 15}`
+                    : row.reason === 'videos_complete'
+                      ? labels.reasonVideosComplete
+                      : labels.reasonSchedule}
                 </div>
               </td>
               <td className="whitespace-nowrap px-4 py-3">
@@ -131,18 +133,28 @@ function DueTable({
 export function PaymentDuePanel({
   due,
   settled,
+  willPay = [],
+  urgent = [],
   labels,
   linkRole,
   projectId,
 }: {
   due: PaymentDueRow[]
   settled: PaymentDueRow[]
+  willPay?: PaymentDueRow[]
+  urgent?: PaymentDueRow[]
   linkRole?: string | null
   projectId?: number | string | null
   labels: {
     empty: string
     settledEmpty: string
     settledTitle: string
+    willTitle: string
+    willEmpty: string
+    urgentTitle: string
+    urgentEmpty: string
+    urgentHint: string
+    daysOn: string
     due: string
     creator: string
     contract: string
@@ -160,10 +172,25 @@ export function PaymentDuePanel({
 }) {
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-xs text-muted-foreground">
-        Pay due when a contract hits its video target (counted from start). End date does not matter.
-        Open the creator → Contracts to record payment.
-      </p>
+      <p className="text-xs text-muted-foreground">{labels.urgentHint}</p>
+      <div>
+        <h3 className="mb-2 text-sm font-semibold text-amber-800 dark:text-amber-200">{labels.urgentTitle}</h3>
+        <DueTable
+          rows={urgent}
+          linkRole={linkRole}
+          projectId={projectId}
+          labels={{ ...labels, empty: labels.urgentEmpty }}
+        />
+      </div>
+      <div>
+        <h3 className="mb-2 text-sm font-semibold">{labels.willTitle}</h3>
+        <DueTable
+          rows={willPay}
+          linkRole={linkRole}
+          projectId={projectId}
+          labels={{ ...labels, empty: labels.willEmpty }}
+        />
+      </div>
       <DueTable rows={due} labels={labels} linkRole={linkRole} projectId={projectId} />
       <div>
         <h3 className="mb-2 text-sm font-semibold">{labels.settledTitle}</h3>

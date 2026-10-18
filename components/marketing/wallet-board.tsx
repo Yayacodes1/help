@@ -1144,7 +1144,8 @@ function BalanceForm({
       <p className="mt-1 text-xs text-muted-foreground">
         {isOwner ? 'Type what Ahmed has on his end right now.' : 'Type how much money you have on your end right now.'}{' '}
         From then on the app takes off whatever he pays. The app says{' '}
-        <span className="font-medium text-foreground">{sarMoney(left)}</span> right now.
+        <span className="font-medium text-foreground">{sarMoney(left)}</span> right now. Use Reset to 0
+        to clear a negative balance or the amount he has now.
       </p>
       <form action={onSubmit} className="mt-3 grid gap-2 sm:grid-cols-4">
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -1187,9 +1188,26 @@ function BalanceForm({
                 ? 'Matches the app.'
                 : `${diff > 0 ? 'Adds' : 'Takes off'} ${sarMoney(Math.abs(diff))}`}
           </span>
-          <button type="submit" disabled={pending} className={primaryBtn}>
-            {pending ? 'Saving…' : 'Save amount'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                const fd = new FormData()
+                fd.set('amount', '0')
+                fd.set('currency', 'SAR')
+                fd.set('counted_on', today)
+                fd.set('note', 'Reset to 0')
+                onSubmit(fd)
+              }}
+              className={ghostBtn}
+            >
+              Reset to 0
+            </button>
+            <button type="submit" disabled={pending} className={primaryBtn}>
+              {pending ? 'Saving…' : 'Save amount'}
+            </button>
+          </div>
         </div>
       </form>
     </section>
