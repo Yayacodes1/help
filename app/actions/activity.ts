@@ -7,7 +7,7 @@ import { getLeaderSession } from '@/lib/leader-auth'
 import { creatorBelongsToLeader, getLeaderForCreator } from '@/lib/leaders'
 import { ensureActivityTable } from '@/lib/activity'
 import { isActivityKind } from '@/lib/activity-kinds'
-import { getCreatorByName } from '@/lib/queries'
+import { getCreatorById, getCreatorByName } from '@/lib/queries'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -24,7 +24,8 @@ async function markerFor(
   if (!handle) return null
   const actor = await getCreatorByName(handle)
   if (!actor || actor.role !== 'reposter') return null
-  if (actor.id === creatorId) return actor.name
+  const target = await getCreatorById(creatorId)
+  if (!target || target.role !== 'creator') return null
   const [actorLink, targetLink] = await Promise.all([
     getLeaderForCreator(actor.id),
     getLeaderForCreator(creatorId),

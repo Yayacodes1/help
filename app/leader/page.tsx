@@ -10,6 +10,7 @@ import {
   getAdminSubmissions,
   getAllProjects,
   getCreatorsWithProgressOnDate,
+  getLoginHandles,
   getOperationalToday,
   getServerToday,
 } from '@/lib/queries'
@@ -40,10 +41,12 @@ import { AnalyticsPanel } from '@/components/admin/analytics-panel'
 import { TopVideosPanel } from '@/components/admin/top-videos-panel'
 import { RoleSelector } from '@/components/admin/role-selector'
 import { CheckForm } from '@/components/leader/check-form'
+import { ReposterCheckBoard } from '@/components/leader/reposter-check-board'
 import { TaskEditor } from '@/components/leader/task-editor'
 import { CopyTextButton } from '@/components/leader/copy-text-button'
 import { ConsistencyBoard, CreatorCards, ManageList } from '@/components/leader/team-boards'
 import { listLeaderTasks } from '@/lib/tasks'
+import { getReposterChecksForTeam } from '@/lib/reposter-checks'
 import type { AttendanceStatus } from '@/lib/attendance-types'
 
 export const dynamic = 'force-dynamic'
@@ -115,6 +118,11 @@ export default async function LeaderHomePage({
     ])
     const tracked = await attachTracking(progress, today)
     const ids = new Set(teamIds)
+    const handles = await getLoginHandles(scope.videoIds)
+    const groupedReposterIds = [...handles.entries()]
+      .filter(([, row]) => row.role === 'reposter')
+      .map(([id]) => id)
+    const checkMap = await getReposterChecksForTeam(groupedReposterIds, selectedDay)
     return {
       score: board.leaders.find((row) => row.leaderId === session!.id) ?? null,
       people: tracked.filter((c) => !c.paused_at),
@@ -124,6 +132,8 @@ export default async function LeaderHomePage({
       members: members.filter((m) => inRole(m.person.role)),
       activityMarks,
       tasks,
+      handles,
+      checkMap,
     }
   }
 
@@ -193,7 +203,20 @@ export default async function LeaderHomePage({
   const panels: PanelItem[] = []
 
   if (todayData) {
-    const { score, people, everyone, attention, submissions, members, activityMarks, tasks } = todayData
+    const { score, people, everyone, attention, submissions, members, activityMarks, tasks, handles, checkMap } =
+      todayData
+    const groupCreators = [...handles.entries()]
+      .filter(([, row]) => row.role === 'creator')
+      .map(([id, row]) => ({ id, handle: row.handle }))
+    const groupReposters = [...handles.entries()]
+      .filter(([, row]) => row.role === 'reposter')
+      .map(([id, row]) => ({
+        id,
+        handle: row.handle,
+        checkedIds: [...(checkMap.get(id) ?? [])],
+      }))
+    const reposterTicks = groupReposters.reduce((sum, row) => sum + row.checkedIds.length, 0)
+    const reposterTickTotal = groupReposters.length * groupCreators.length
     const roster = (score?.people ?? []).filter((p) => inRole(p.role))
     const goalTotal = people.reduce((sum, c) => sum + c.goal_instagram + c.goal_tiktok, 0)
     const postedTotal = people.reduce((sum, c) => sum + c.today_instagram + c.today_tiktok, 0)
@@ -269,6 +292,22 @@ export default async function LeaderHomePage({
                 ))}
               </ul>
             )}
+          </div>
+        ),
+      },
+      {
+        id: 'reposterChecks',
+        title: t('leaderReposterChecks'),
+        summary: groupCreators.length === 0 ? '—' : `${reposterTicks}/${reposterTickTotal}`,
+        hint: selectedDay,
+        children: (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-muted-foreground">{t('leaderReposterChecksHint')}</p>
+            <ReposterCheckBoard
+              creators={groupCreators}
+              reposters={groupReposters}
+              emptyLabel={t('leaderNoPeople')}
+            />
           </div>
         ),
       },

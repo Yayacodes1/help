@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
+import { LogOut } from 'lucide-react'
 import { LanguageToggle } from '@/components/language-toggle'
 import { createT, type Locale } from '@/lib/i18n'
 import { REPOSTER_TAB_ORDER, resolveReposterTab, type ReposterTab } from '@/lib/reposter-tabs'
@@ -48,7 +49,16 @@ export function ReposterShell({
             </p>
             <h1 className="text-xl font-semibold tracking-tight">{t('reposterDashboard')}</h1>
           </div>
-          <LanguageToggle locale={locale} labels={{ english: t('english'), arabic: t('arabic') }} />
+          <div className="flex flex-wrap items-center gap-3">
+            <LanguageToggle locale={locale} labels={{ english: t('english'), arabic: t('arabic') }} />
+            <Link
+              href="/login"
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
+            >
+              <LogOut className="size-4" />
+              {t('logOut')}
+            </Link>
+          </div>
         </div>
         <nav aria-label="Sections">
           <div className="inline-flex flex-wrap gap-1 rounded-xl border border-border bg-muted/30 p-1">

@@ -12,6 +12,8 @@ export function CheckForm({
   saveLabel,
   notePlaceholder,
   compact = false,
+  action = saveLeaderCheck,
+  extraFields,
 }: {
   creatorId: number
   day: string
@@ -22,10 +24,19 @@ export function CheckForm({
   saveLabel: string
   notePlaceholder: string
   compact?: boolean
+  action?: (formData: FormData) => void | Promise<void>
+  extraFields?: Record<string, string>
 }) {
+  const extras = extraFields
+    ? Object.entries(extraFields).map(([name, value]) => (
+        <input key={name} type="hidden" name={name} value={value} />
+      ))
+    : null
+
   if (compact) {
     return (
-      <form action={saveLeaderCheck}>
+      <form action={action}>
+        {extras}
         <input type="hidden" name="creator_id" value={creatorId} />
         <input type="hidden" name="day" value={day} />
         <input type="hidden" name="keep_note" value="1" />
@@ -48,7 +59,8 @@ export function CheckForm({
 
   return (
     <div className="flex flex-col gap-2">
-      <form action={saveLeaderCheck} className="flex flex-col gap-2">
+      <form action={action} className="flex flex-col gap-2">
+        {extras}
         <input type="hidden" name="creator_id" value={creatorId} />
         <input type="hidden" name="day" value={day} />
         <input type="hidden" name="checked" value="1" />
@@ -67,7 +79,8 @@ export function CheckForm({
         </button>
       </form>
       {checked ? (
-        <form action={saveLeaderCheck}>
+        <form action={action}>
+          {extras}
           <input type="hidden" name="creator_id" value={creatorId} />
           <input type="hidden" name="day" value={day} />
           <input type="hidden" name="checked" value="0" />

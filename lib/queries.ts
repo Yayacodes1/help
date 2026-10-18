@@ -2,7 +2,7 @@ import 'server-only'
 import { sql, type Contract, type Creator, type Payment, type Platform, type Project, type ScheduleBreak, type Submission } from '@/lib/db'
 import type { ParticipantRole } from '@/lib/participant-role'
 import { addDays, maxDate, yearRange } from '@/lib/campaign'
-import { normalizeHandle, type LoginPlatform } from '@/lib/usernames'
+import { loginHandleFor, normalizeHandle, type LoginPlatform } from '@/lib/usernames'
 import {
   buildConsistency,
   eachDate,
@@ -113,6 +113,32 @@ export async function getCreatorByName(name: string): Promise<Creator | null> {
     LIMIT 1
   `) as Creator[]
   return rows[0] ?? null
+}
+
+export async function getLoginHandles(
+  ids: number[],
+): Promise<Map<number, { handle: string; role: 'creator' | 'reposter' }>> {
+  const out = new Map<number, { handle: string; role: 'creator' | 'reposter' }>()
+  if (ids.length === 0) return out
+  const rows = (await sql`
+    SELECT id, name, role, tiktok_username, instagram_username, login_platform
+    FROM creators
+    WHERE id = ANY(${ids}::int[])
+  `) as Array<{
+    id: number
+    name: string
+    role: string
+    tiktok_username: string | null
+    instagram_username: string | null
+    login_platform: string | null
+  }>
+  for (const row of rows) {
+    out.set(row.id, {
+      handle: loginHandleFor(row).handle || row.name,
+      role: row.role === 'reposter' ? 'reposter' : 'creator',
+    })
+  }
+  return out
 }
 
 export async function getCreatorByLoginHandle(

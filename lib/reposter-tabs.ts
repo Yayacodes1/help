@@ -1,6 +1,6 @@
 export const REPOSTER_TABS = {
   today: ['check', 'tasks', 'videos'],
-  analytics: ['analytics', 'topvideos'],
+  analytics: ['analyticsCreators', 'analyticsReposters'],
   team: ['team'],
   upload: ['upload'],
 } as const

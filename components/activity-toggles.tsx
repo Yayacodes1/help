@@ -2,7 +2,12 @@
 
 import { useOptimistic, useTransition } from 'react'
 import { setActivity } from '@/app/actions/activity'
-import { ACTIVITY_KINDS, ACTIVITY_LABELS, type ActivityKind } from '@/lib/activity-kinds'
+import {
+  ACTIVITY_KINDS,
+  ACTIVITY_LABELS,
+  LEADER_ACTIVITY_KINDS,
+  type ActivityKind,
+} from '@/lib/activity-kinds'
 
 export function ActivityToggles({
   creatorId,
@@ -10,6 +15,8 @@ export function ActivityToggles({
   marked,
   actorUsername,
   readOnly = false,
+  kinds = LEADER_ACTIVITY_KINDS,
+  labels,
 }: {
   creatorId: number
   day: string
@@ -17,6 +24,8 @@ export function ActivityToggles({
   /** When a reposter is ticking from /submit. */
   actorUsername?: string
   readOnly?: boolean
+  kinds?: readonly ActivityKind[]
+  labels?: Partial<Record<ActivityKind, string>>
 }) {
   const [, startTransition] = useTransition()
   const [shown, setShown] = useOptimistic(marked, (current: ActivityKind[], next: { kind: ActivityKind; on: boolean }) =>
@@ -25,7 +34,7 @@ export function ActivityToggles({
 
   return (
     <div className="flex flex-wrap gap-1">
-      {ACTIVITY_KINDS.map((kind) => {
+      {kinds.map((kind) => {
         const on = shown.includes(kind)
         return (
           <button
@@ -49,7 +58,7 @@ export function ActivityToggles({
             } ${readOnly ? 'cursor-default' : ''}`}
           >
             {on ? '✓ ' : ''}
-            {ACTIVITY_LABELS[kind]}
+            {labels?.[kind] ?? ACTIVITY_LABELS[kind]}
           </button>
         )
       })}

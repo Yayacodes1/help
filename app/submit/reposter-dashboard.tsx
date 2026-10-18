@@ -1,30 +1,29 @@
 import { Suspense } from 'react'
 import { SubmitForm, type BrandProject } from '@/components/submit-form'
-import { TodayVideos } from '@/components/today-videos'
 import { DateSelect } from '@/components/date-select'
 import { PanelBoard, type PanelItem } from '@/components/admin/panel-board'
 import { AnalyticsPanel } from '@/components/admin/analytics-panel'
-import { TopVideosPanel } from '@/components/admin/top-videos-panel'
 import { ReposterShell } from '@/components/reposter/reposter-shell'
 import { ReposterDailyCheck } from '@/components/reposter/daily-check'
 import { TaskBoard } from '@/components/reposter/task-board'
 import { ReposterTeamList } from '@/components/reposter/team-list'
+import { GroupVideos } from '@/components/reposter/group-videos'
 import { ContestPodium } from '@/components/contest-podium'
 import { RankingBoard } from '@/components/ranking-board'
 import { StrikeBanner } from '@/components/strike-banner'
 import {
+  getAdminSubmissions,
   getAllProjects,
   getCreatorCountsByPlatformOnDate,
+  getLoginHandles,
   getServerTimeHm,
   getServerToday,
-  getSubmissionsForCreatorOnDate,
   getActiveContract,
   goalsForContract,
 } from '@/lib/queries'
 import {
   getDailyAnalytics,
   getDailyViewsByCreator,
-  getTopVideos,
   getViewsLeaderboard,
   getViewsSummary,
   type ViewsSummary,
@@ -44,8 +43,21 @@ import { goalFor } from '@/lib/platforms'
 import { formatNumber } from '@/lib/format'
 import { createT, type Locale } from '@/lib/i18n'
 import { getCreatorStrikeSummary } from '@/lib/strikes'
+import { getReposterChecksForDay } from '@/lib/reposter-checks'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function namedByHandle<T extends { creator_id: number; creator_name: string }>(
+  rows: T[],
+  handles: Map<number, { handle: string; role: 'creator' | 'reposter' }>,
+): T[] {
+  return rows.map((row) => ({
+    ...row,
+    creator_name: handles.get(row.creator_id)?.handle
+      ? `@${handles.get(row.creator_id)!.handle}`
+      : row.creator_name,
+  }))
+}
 
 export async function ReposterDashboard({
   creator,
@@ -90,9 +102,8 @@ export async function ReposterDashboard({
       : null,
   ].filter((b): b is BrandProject => b != null && b.handles.length > 0)
 
-  const [counts, ownVideos, active, strikeSummary] = await Promise.all([
+  const [counts, active, strikeSummary] = await Promise.all([
     getCreatorCountsByPlatformOnDate(creator.id, date),
-    getSubmissionsForCreatorOnDate(creator.id, date),
     getActiveContract(creator.id, today),
     getCreatorStrikeSummary(creator.id, today).catch(() => null),
   ])
@@ -109,25 +120,46 @@ export async function ReposterDashboard({
   const panels: PanelItem[] = []
 
   if (tab === 'today') {
-    const [board, activityMarks, tasks, checked, calendar] = await Promise.all([
+    const [board, activityMarks, tasks, checked, calendar, handles, myChecks, groupSubs] = await Promise.all([
       link ? getLeaderBoard(date).catch(() => null) : Promise.resolve(null),
       getActivityForDay(date, videoIds).catch(() => ({})),
       link ? listLeaderTasks(link.leaderId).catch(() => []) : Promise.resolve([]),
       getTaskChecksForDay(creator.id, taskDay).catch(() => new Set<number>()),
       link ? getTaskCalendar(creator.id, link.leaderId, today).catch(() => []) : Promise.resolve([]),
+      getLoginHandles(videoIds).catch(() => new Map()),
+      getReposterChecksForDay(creator.id, date).catch(() => new Set<number>()),
+      getAdminSubmissions({ from: date, to: date, creatorIds: videoIds, role: 'creator' }).catch(() => []),
     ])
     const score = link && board ? (board.leaders.find((row) => row.leaderId === link.leaderId) ?? null) : null
-    const roster = score?.people ?? []
+    const roster = (score?.people ?? []).filter((p) => p.role === 'creator')
+    const checkPeople = roster.map((p) => ({
+      id: p.id,
+      handle: handles.get(p.id)?.handle || p.name,
+      status: p.status,
+      todayInstagram: p.todayInstagram,
+      todayTiktok: p.todayTiktok,
+      goalInstagram: p.goalInstagram,
+      goalTiktok: p.goalTiktok,
+      checked: myChecks.has(p.id),
+    }))
     const ticked = tasks.filter((task) => checked.has(task.id)).length
+    const creatorVideos = groupSubs.map((s) => ({
+      id: s.id,
+      handle: handles.get(s.creator_id)?.handle || s.creator_name,
+      platform: s.platform,
+      url: s.url,
+      views: s.views ?? 0,
+      projectName: s.project_name,
+    }))
     panels.push(
       {
         id: 'check',
         title: t('leaderDailyCheck'),
-        summary: `${roster.filter((p) => p.status === 'hit').length}/${roster.length}`,
+        summary: `${checkPeople.filter((p) => p.checked).length}/${checkPeople.length}`,
         hint: link?.leaderName ?? t('leaderNoPeople'),
         children: (
           <ReposterDailyCheck
-            people={roster}
+            people={checkPeople}
             day={date}
             marks={activityMarks}
             actorUsername={username}
@@ -139,8 +171,11 @@ export async function ReposterDashboard({
               missed: t('leaderMissed'),
               break: t('leaderBreak'),
               off: t('leaderOff'),
-              creator: t('creatorRole'),
-              reposter: t('reposterRole'),
+              mark: t('leaderMark'),
+              undo: t('leaderUndo'),
+              comment: t('activityComment'),
+              like: t('activityLike'),
+              save: t('activitySave'),
             }}
           />
         ),
@@ -170,21 +205,15 @@ export async function ReposterDashboard({
       {
         id: 'videos',
         title: t('videos'),
-        summary: `${ownVideos.length}`,
+        summary: `${creatorVideos.length}`,
         hint: date,
         children: (
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">{t('chooseDayHint')}</p>
+              <p className="text-xs text-muted-foreground">{t('groupVideosHint')}</p>
               <DateSelect date={date} />
             </div>
-            <TodayVideos
-              username={username}
-              submissions={ownVideos}
-              locale={locale}
-              projects={projects}
-              changeProjectLabel={t('changeProject')}
-            />
+            <GroupVideos videos={creatorVideos} emptyLabel={t('groupVideosEmpty')} />
           </div>
         ),
       },
@@ -192,7 +221,12 @@ export async function ReposterDashboard({
   }
 
   if (tab === 'analytics') {
-    const range = { from: monthStart, to: monthEnd, creatorIds: videoIds }
+    const handles = await getLoginHandles(videoIds.length > 0 ? videoIds : [creator.id]).catch(() => new Map())
+    const creatorIds = [...handles.entries()].filter(([, row]) => row.role === 'creator').map(([id]) => id)
+    const reposterIds = [...handles.entries()].filter(([, row]) => row.role === 'reposter').map(([id]) => id)
+    if (!reposterIds.includes(creator.id)) reposterIds.push(creator.id)
+    const creatorRange = { from: monthStart, to: monthEnd, creatorIds }
+    const reposterRange = { from: monthStart, to: monthEnd, creatorIds: reposterIds }
     const emptySummary: ViewsSummary = {
       from: monthStart,
       to: monthEnd,
@@ -207,23 +241,94 @@ export async function ReposterDashboard({
       views_tiktok: 0,
       zero_view_videos: 0,
     }
-    const [daily, byCreatorDaily, leaderboard, summary, topVideos, league, contestBoard] = await Promise.all([
-      getDailyAnalytics(range).catch(() => []),
-      getDailyViewsByCreator(range).catch(() => []),
-      getViewsLeaderboard({ ...range, limit: 1000 }).catch(() => []),
-      getViewsSummary(range).catch(() => emptySummary),
-      getTopVideos({ from: monthStart, to: monthEnd, creatorIds: videoIds }).catch(() => []),
+    const [
+      dailyCreators,
+      byCreatorDaily,
+      creatorBoard,
+      creatorSummary,
+      dailyReposters,
+      byReposterDaily,
+      reposterBoard,
+      reposterSummary,
+      league,
+      contestBoard,
+    ] = await Promise.all([
+      getDailyAnalytics(creatorRange).catch(() => []),
+      getDailyViewsByCreator(creatorRange).catch(() => []),
+      getViewsLeaderboard({ ...creatorRange, limit: 1000 }).catch(() => []),
+      getViewsSummary(creatorRange).catch(() => emptySummary),
+      getDailyAnalytics(reposterRange).catch(() => []),
+      getDailyViewsByCreator(reposterRange).catch(() => []),
+      getViewsLeaderboard({ ...reposterRange, limit: 1000 }).catch(() => []),
+      getViewsSummary(reposterRange).catch(() => emptySummary),
       getLeagueBoard({ role: 'reposter' }).catch(() => null),
       isContestLive(today) && miqatId != null
         ? getLeagueBoard({ role: 'reposter', from: CONTEST.from, to: CONTEST.to, projectId: miqatId }).catch(() => null)
         : Promise.resolve(null),
     ])
+    const chartLabels = {
+      views: t('views'),
+      videos: t('videos'),
+      roleCreators: t('roleFilterCreators'),
+      roleReposters: t('roleFilterReposters'),
+      roleAll: t('roleFilterAll'),
+      month: t('rankingMonth'),
+      people: t('people'),
+      loading: t('analyticsLoading'),
+      day: t('analyticsDay'),
+      prevDay: t('analyticsPrevDay'),
+      nextDay: t('analyticsNextDay'),
+      openSheet: t('analyticsOpenSheet'),
+      instagram: t('instagram'),
+      tiktok: t('tiktok'),
+      showVideos: t('showVideos'),
+      topCreators: t('topPeople'),
+      empty: t('analyticsEmpty'),
+      from: t('from'),
+      to: t('to'),
+      apply: t('apply'),
+      chartLine: t('chartLine'),
+      chartBar: t('chartBar'),
+      chartLog: t('chartLog'),
+      chartLinear: t('chartLinear'),
+      allProjects: t('allProjects'),
+      total: t('analyticsTotal'),
+      clear: t('analyticsClear'),
+      pickHint: t('analyticsPickHint'),
+      splitPlatforms: t('analyticsSplit'),
+    }
     panels.push(
       {
-        id: 'analytics',
-        title: t('analytics'),
-        summary: formatNumber(summary.views),
-        hint: `${summary.videos} ${t('videos')}`,
+        id: 'analyticsCreators',
+        title: t('analyticsCreators'),
+        summary: formatNumber(creatorSummary.views),
+        hint: `${creatorSummary.videos} ${t('videos')}`,
+        children: (
+          <div className="flex flex-col gap-4">
+            <AnalyticsPanel
+              daily={dailyCreators}
+              byCreatorDaily={namedByHandle(byCreatorDaily, handles)}
+              leaderboard={namedByHandle(creatorBoard, handles)}
+              summary={creatorSummary}
+              projects={projects}
+              projectId={null}
+              role="creator"
+              today={today}
+              defaultFrom={monthStart}
+              defaultTo={monthEnd}
+              allowSheet={false}
+              showRoleFilter={false}
+              urlKeys={{ from: 'cFrom', to: 'cTo', role: 'cRole' }}
+              labels={chartLabels}
+            />
+          </div>
+        ),
+      },
+      {
+        id: 'analyticsReposters',
+        title: t('analyticsReposters'),
+        summary: formatNumber(reposterSummary.views),
+        hint: `${reposterSummary.videos} ${t('videos')}`,
         children: (
           <div className="flex flex-col gap-4">
             {contestBoard ? (
@@ -262,69 +367,22 @@ export async function ReposterDashboard({
               />
             ) : null}
             <AnalyticsPanel
-              daily={daily}
-              byCreatorDaily={byCreatorDaily}
-              leaderboard={leaderboard}
-              summary={summary}
+              daily={dailyReposters}
+              byCreatorDaily={namedByHandle(byReposterDaily, handles)}
+              leaderboard={namedByHandle(reposterBoard, handles)}
+              summary={reposterSummary}
               projects={projects}
               projectId={null}
-              role="all"
+              role="reposter"
               today={today}
               defaultFrom={monthStart}
               defaultTo={monthEnd}
               allowSheet={false}
-              labels={{
-                views: t('views'),
-                videos: t('videos'),
-                roleCreators: t('roleFilterCreators'),
-                roleReposters: t('roleFilterReposters'),
-                roleAll: t('roleFilterAll'),
-                month: t('rankingMonth'),
-                people: t('people'),
-                loading: t('analyticsLoading'),
-                day: t('analyticsDay'),
-                prevDay: t('analyticsPrevDay'),
-                nextDay: t('analyticsNextDay'),
-                openSheet: t('analyticsOpenSheet'),
-                instagram: t('instagram'),
-                tiktok: t('tiktok'),
-                showVideos: t('showVideos'),
-                topCreators: t('topPeople'),
-                empty: t('analyticsEmpty'),
-                from: t('from'),
-                to: t('to'),
-                apply: t('apply'),
-                chartLine: t('chartLine'),
-                chartBar: t('chartBar'),
-                chartLog: t('chartLog'),
-                chartLinear: t('chartLinear'),
-                allProjects: t('allProjects'),
-                total: t('analyticsTotal'),
-                clear: t('analyticsClear'),
-                pickHint: t('analyticsPickHint'),
-                splitPlatforms: t('analyticsSplit'),
-              }}
+              showRoleFilter={false}
+              urlKeys={{ from: 'rFrom', to: 'rTo', role: 'rRole' }}
+              labels={chartLabels}
             />
           </div>
-        ),
-      },
-      {
-        id: 'topvideos',
-        title: 'Top videos',
-        summary: topVideos[0] ? formatNumber(topVideos[0].views) : '0',
-        hint: `${topVideos.length}`,
-        children: (
-          <Suspense fallback={<p className="text-sm text-muted-foreground">…</p>}>
-            <TopVideosPanel
-              videos={topVideos}
-              projects={projects}
-              projectId={null}
-              today={today}
-              defaultFrom={monthStart}
-              defaultTo={monthEnd}
-              labels={{ allProjects: t('allProjects'), chooseProject: t('chooseProject') }}
-            />
-          </Suspense>
         ),
       },
     )
@@ -393,7 +451,7 @@ export async function ReposterDashboard({
           ? 'team'
           : tab === 'upload'
             ? 'upload'
-            : 'analytics'
+            : 'analyticsCreators'
 
   return (
     <ReposterShell locale={locale} username={username} displayName={username} squadName={squadName}>

@@ -141,6 +141,7 @@ export function AnalyticsPanel({
   sideBySide = false,
   urlKeys = { from: 'aFrom', to: 'aTo', role: 'aRole' },
   allowSheet = true,
+  showRoleFilter = true,
 }: {
   daily: DailyAnalyticsRow[]
   byCreatorDaily: CreatorDailyViewsRow[]
@@ -159,6 +160,7 @@ export function AnalyticsPanel({
   urlKeys?: { from: string; to: string; role: string }
   /** The daily sheet is admin-only. */
   allowSheet?: boolean
+  showRoleFilter?: boolean
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -396,17 +398,19 @@ export function AnalyticsPanel({
             <span className="mx-1 h-6 w-px bg-border" aria-hidden />
           </>
         )}
-        {(
-          [
-            ['all', labels.roleAll],
-            ['creator', labels.roleCreators],
-            ['reposter', labels.roleReposters],
-          ] as const
-        ).map(([value, label]) => (
-          <button key={value} type="button" onClick={() => push({ role: value })} className={chipClass(role === value)}>
-            {label}
-          </button>
-        ))}
+        {showRoleFilter
+          ? (
+              [
+                ['all', labels.roleAll],
+                ['creator', labels.roleCreators],
+                ['reposter', labels.roleReposters],
+              ] as const
+            ).map(([value, label]) => (
+              <button key={value} type="button" onClick={() => push({ role: value })} className={chipClass(role === value)}>
+                {label}
+              </button>
+            ))
+          : null}
         {allowSheet ? (
           <button
             type="button"

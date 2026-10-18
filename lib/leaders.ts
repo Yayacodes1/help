@@ -104,6 +104,8 @@ export async function ensureLeaderTables() {
   `
   const { ensureTaskTables } = await import('@/lib/tasks')
   await ensureTaskTables()
+  const { ensureReposterCheckTables } = await import('@/lib/reposter-checks')
+  await ensureReposterCheckTables()
 }
 
 function countStatuses(people: AttendancePerson[]): PlanCounts {

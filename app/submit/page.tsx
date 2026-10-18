@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Send } from 'lucide-react'
+import { LogOut, Send } from 'lucide-react'
 import { SubmitForm } from '@/components/submit-form'
 import { TodayVideos } from '@/components/today-videos'
 import { DateSelect } from '@/components/date-select'
@@ -305,10 +305,19 @@ export default async function SubmitPage({
           ) : (
             <span />
           )}
-          <LanguageToggle
-            locale={locale}
-            labels={{ english: t('english'), arabic: t('arabic') }}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <LanguageToggle
+              locale={locale}
+              labels={{ english: t('english'), arabic: t('arabic') }}
+            />
+            <Link
+              href="/login"
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
+            >
+              <LogOut className="size-4" />
+              {t('logOut')}
+            </Link>
+          </div>
         </div>
 
         <header className="animate-in fade-in slide-in-from-top-2 overflow-hidden rounded-2xl border border-[#e8cfc0] dark:border-border bg-[#fff1e6] dark:bg-card p-6 text-[#9a0d18] dark:text-card-foreground shadow-sm">

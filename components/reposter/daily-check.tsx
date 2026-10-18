@@ -1,13 +1,25 @@
 import { ActivityToggles } from '@/components/activity-toggles'
-import type { ActivityKind } from '@/lib/activity-kinds'
+import { CheckForm } from '@/components/leader/check-form'
+import { saveReposterCheck } from '@/app/actions/reposter-check'
+import { REPOSTER_ACTIVITY_KINDS, type ActivityKind } from '@/lib/activity-kinds'
 import type { AttendanceStatus } from '@/lib/attendance-types'
-import type { LeaderRosterPerson } from '@/lib/leader-score'
 
 function statusClass(status: AttendanceStatus): string {
   if (status === 'hit') return 'bg-primary/15 text-primary'
   if (status === 'partial') return 'bg-amber-500/15 text-amber-800 dark:text-amber-200'
   if (status === 'miss') return 'bg-destructive/10 text-destructive'
   return 'bg-muted text-muted-foreground'
+}
+
+export type ReposterCheckPerson = {
+  id: number
+  handle: string
+  status: AttendanceStatus
+  todayInstagram: number
+  todayTiktok: number
+  goalInstagram: number
+  goalTiktok: number
+  checked: boolean
 }
 
 export function ReposterDailyCheck({
@@ -17,7 +29,7 @@ export function ReposterDailyCheck({
   actorUsername,
   labels,
 }: {
-  people: LeaderRosterPerson[]
+  people: ReposterCheckPerson[]
   day: string
   marks: Record<number, ActivityKind[]>
   actorUsername: string
@@ -29,8 +41,11 @@ export function ReposterDailyCheck({
     missed: string
     break: string
     off: string
-    creator: string
-    reposter: string
+    mark: string
+    undo: string
+    comment: string
+    like: string
+    save: string
   }
 }) {
   function word(status: AttendanceStatus) {
@@ -49,68 +64,53 @@ export function ReposterDailyCheck({
     )
   }
 
-  const creators = people.filter((p) => p.role === 'creator')
-  const reposters = people.filter((p) => p.role === 'reposter')
-
   return (
     <div className="flex flex-col gap-4">
       <p className="text-xs text-muted-foreground">{labels.hint}</p>
-      {creators.length > 0 ? (
-        <ul className="flex flex-col gap-2">
-          {creators.map((person) => (
-            <li
-              key={person.id}
-              className="flex flex-col gap-2 rounded-xl border border-border bg-card px-3 py-2.5"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="min-w-0 flex-1 font-medium">{person.name}</span>
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {labels.creator}
-                </span>
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass(person.status)}`}>
-                  {word(person.status)}
-                </span>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  IG {person.todayInstagram}/{person.goalInstagram} · TT {person.todayTiktok}/
-                  {person.goalTiktok}
-                </span>
-              </div>
-              <ActivityToggles
+      <ul className="flex flex-col gap-2">
+        {people.map((person) => (
+          <li
+            key={person.id}
+            className="flex flex-col gap-2 rounded-xl border border-border bg-card px-3 py-2.5"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <CheckForm
                 creatorId={person.id}
                 day={day}
-                marked={marks[person.id] ?? []}
-                actorUsername={actorUsername}
+                checked={person.checked}
+                note={null}
+                markLabel={labels.mark}
+                undoLabel={labels.undo}
+                saveLabel={labels.mark}
+                notePlaceholder=""
+                compact
+                action={saveReposterCheck}
+                extraFields={{ username: actorUsername }}
               />
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {reposters.length > 0 ? (
-        <ul className="flex flex-col gap-2">
-          {reposters.map((person) => (
-            <li
-              key={person.id}
-              className="flex flex-col gap-2 rounded-xl border border-border bg-card px-3 py-2.5"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="min-w-0 flex-1 font-medium">{person.name}</span>
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {labels.reposter}
-                </span>
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass(person.status)}`}>
-                  {word(person.status)}
-                </span>
-              </div>
-              <ActivityToggles
-                creatorId={person.id}
-                day={day}
-                marked={marks[person.id] ?? []}
-                actorUsername={actorUsername}
-              />
-            </li>
-          ))}
-        </ul>
-      ) : null}
+              <span className="min-w-0 flex-1 font-medium">@{person.handle}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass(person.status)}`}>
+                {word(person.status)}
+              </span>
+              <span className="text-xs tabular-nums text-muted-foreground">
+                IG {person.todayInstagram}/{person.goalInstagram} · TT {person.todayTiktok}/
+                {person.goalTiktok}
+              </span>
+            </div>
+            <ActivityToggles
+              creatorId={person.id}
+              day={day}
+              marked={marks[person.id] ?? []}
+              actorUsername={actorUsername}
+              kinds={REPOSTER_ACTIVITY_KINDS}
+              labels={{
+                comments: labels.comment,
+                like: labels.like,
+                save: labels.save,
+              }}
+            />
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
