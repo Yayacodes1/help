@@ -102,6 +102,8 @@ export async function ensureLeaderTables() {
       PRIMARY KEY (leader_id, creator_id, day)
     )
   `
+  const { ensureTaskTables } = await import('@/lib/tasks')
+  await ensureTaskTables()
 }
 
 function countStatuses(people: AttendancePerson[]): PlanCounts {
@@ -577,6 +579,31 @@ export type LeaderScope = {
   ownId: number | null
   /** Team plus the leader's own account: whose videos the leader can see and refresh. */
   videoIds: number[]
+}
+
+export type CreatorLeaderLink = {
+  leaderId: number
+  leaderName: string
+  teamIds: number[]
+  ownId: number | null
+}
+
+/** Leader this person belongs to: assigned `leader_id`, or the leader who linked them as their reposter. */
+export async function getLeaderForCreator(creatorId: number): Promise<CreatorLeaderLink | null> {
+  await ensureLeaderTables()
+  const rows = (await sql`
+    SELECT l.id, l.name
+    FROM leaders l
+    LEFT JOIN creators c ON c.id = ${creatorId}
+    WHERE l.reposter_id = ${creatorId}
+       OR l.id = c.leader_id
+    ORDER BY CASE WHEN l.reposter_id = ${creatorId} THEN 0 ELSE 1 END
+    LIMIT 1
+  `) as { id: number; name: string }[]
+  const row = rows[0]
+  if (!row) return null
+  const scope = await getLeaderScope(row.id)
+  return { leaderId: row.id, leaderName: row.name, teamIds: scope.teamIds, ownId: scope.ownId }
 }
 
 export async function getLeaderScope(leaderId: number): Promise<LeaderScope> {

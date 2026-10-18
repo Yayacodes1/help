@@ -216,7 +216,7 @@ export function SubmitForm({
           rows={5}
           onChange={(e) => onLinksChange(e.target.value)}
           dir="ltr"
-          placeholder={'https://www.instagram.com/reel/…\nhttps://vt.tiktok.com/…'}
+          placeholder={'https://www.instagram.com/reel/…\nhttps://www.tt.site/t/…'}
           className="mt-2 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
       </div>

@@ -40,6 +40,7 @@ import { formatDate, formatMoney, payCurrency } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 import { getLeaderSession } from '@/lib/leader-auth'
+import { ReposterDashboard } from '@/app/submit/reposter-dashboard'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,9 +51,9 @@ function isValidDate(value: string | undefined): value is string {
 export default async function SubmitPage({
   searchParams,
 }: {
-  searchParams: Promise<{ u?: string; date?: string; panel?: string }>
+  searchParams: Promise<{ u?: string; date?: string; panel?: string; tab?: string; taskDay?: string }>
 }) {
-  const { u, date: dateParam, panel } = await searchParams
+  const { u, date: dateParam, panel, tab, taskDay } = await searchParams
   await ensureCreatorTrackingColumns()
   const [locale, leaderSession] = await Promise.all([getLocale(), getLeaderSession()])
   const t = createT(locale)
@@ -64,6 +65,17 @@ export default async function SubmitPage({
 
   const login = loginHandleFor(creator)
   const username = login.handle || creator.name
+  if (creator.role === 'reposter') {
+    await syncReposterStrikes({ today: operationalDayFromIso(await getServerNowIso()), creatorId: creator.id })
+    return (
+      <ReposterDashboard
+        creator={creator}
+        username={username}
+        locale={locale}
+        searchParams={{ u, date: dateParam, panel, tab, taskDay }}
+      />
+    )
+  }
   const [calendarToday, serverNow, defaultTime] = await Promise.all([
     getServerToday(),
     getServerNowIso(),

@@ -1,5 +1,5 @@
 export const LEADER_TABS = {
-  today: ['check', 'progress', 'consistency', 'attention', 'videos'],
+  today: ['check', 'tasks', 'progress', 'consistency', 'attention', 'videos'],
   analytics: ['analytics', 'topvideos'],
   team: ['creators', 'manage'],
 } as const

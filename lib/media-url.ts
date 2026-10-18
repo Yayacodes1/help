@@ -11,6 +11,12 @@ export function normalizeMediaUrl(raw: string): string | null {
  * Infer Instagram vs TikTok from the URL host/path.
  * Returns null when the link is not a recognizable IG/TT video URL.
  */
+/** TikTok’s own domains plus the newer share host `tt.site` (replaces vt.tiktok.com). */
+export function isTikTokHost(host: string): boolean {
+  const h = host.replace(/^www\./i, '').toLowerCase()
+  return h === 'tiktok.com' || h.endsWith('.tiktok.com') || h === 'tt.site' || h.endsWith('.tt.site')
+}
+
 export function detectPlatformFromUrl(url: string): Platform | null {
   let parsed: URL
   try {
@@ -29,12 +35,7 @@ export function detectPlatformFromUrl(url: string): Platform | null {
     return 'instagram'
   }
 
-  if (
-    host === 'tiktok.com' ||
-    host.endsWith('.tiktok.com') ||
-    host === 'vm.tiktok.com' ||
-    host === 'vt.tiktok.com'
-  ) {
+  if (isTikTokHost(host)) {
     return 'tiktok'
   }
 

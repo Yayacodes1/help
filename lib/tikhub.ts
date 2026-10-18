@@ -1,5 +1,6 @@
 import 'server-only'
 import type { Platform } from '@/lib/db'
+import { isTikTokHost } from '@/lib/media-url'
 
 const BASE = 'https://api.tikhub.io'
 
@@ -26,7 +27,7 @@ export function extractInstagramCode(url: string): string | null {
 export function extractTikTokAwemeId(url: string): string | null {
   try {
     const u = new URL(url.trim())
-    const fromPath = u.pathname.match(/\/video\/(\d{5,})/)
+    const fromPath = u.pathname.match(/\/(?:video|photo)\/(\d{5,})/)
     if (fromPath?.[1]) return fromPath[1]
     const fromQuery =
       u.searchParams.get('aweme_id') ||
@@ -229,7 +230,7 @@ async function tikhubGet(path: string, query: Record<string, string>): Promise<u
   return res.json()
 }
 
-/** Follow vt./vm. redirects to the canonical TikTok URL (no TikHub charge). */
+/** Follow vt./vm./tt.site redirects to the canonical TikTok URL (no TikHub charge). */
 export async function resolveMediaRedirect(url: string): Promise<string> {
   try {
     const res = await fetch(url, {
@@ -237,7 +238,7 @@ export async function resolveMediaRedirect(url: string): Promise<string> {
       redirect: 'follow',
       headers: {
         'User-Agent':
-          'Mozilla/5.0 (compatible; CreatorSubmissionsBot/1.0; +https://vercel.app)',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         Accept: 'text/html,application/xhtml+xml',
       },
       cache: 'no-store',
@@ -283,9 +284,34 @@ function metaFromPayload(
   }
 }
 
+function isShortTikTokUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname
+    const h = host.replace(/^www\./i, '').toLowerCase()
+    return (
+      isTikTokHost(h) &&
+      (h === 'tt.site' ||
+        h.endsWith('.tt.site') ||
+        h === 'vt.tiktok.com' ||
+        h === 'vm.tiktok.com' ||
+        !/\/(?:video|photo)\/\d{5,}/.test(new URL(url).pathname))
+    )
+  } catch {
+    return false
+  }
+}
+
 async function fetchTikTokViews(url: string): Promise<FetchViewsResult> {
   const attempts: string[] = []
-  let bestResolved = url
+  let working = url
+
+  // Open tt.site / vt. / vm. first — TikHub often cannot read the share host itself.
+  if (isShortTikTokUrl(url)) {
+    const resolved = await resolveMediaRedirect(url)
+    if (resolved !== url) working = resolved
+  }
+
+  let bestResolved = working
 
   const tryShare = async (shareUrl: string) => {
     const data = await tikhubGet(
@@ -299,16 +325,18 @@ async function fetchTikTokViews(url: string): Promise<FetchViewsResult> {
     return null
   }
 
-  // 1) Original short / full URL
-  try {
-    const hit = await tryShare(url)
-    if (hit) return hit
-  } catch (e) {
-    attempts.push(e instanceof Error ? e.message.slice(0, 80) : 'share_url failed')
+  // 1) Resolved canonical URL, then the original paste
+  for (const shareUrl of working === url ? [url] : [working, url]) {
+    try {
+      const hit = await tryShare(shareUrl)
+      if (hit) return { ...hit, resolvedUrl: working !== url ? working : hit.resolvedUrl }
+    } catch (e) {
+      attempts.push(e instanceof Error ? e.message.slice(0, 80) : 'share_url failed')
+    }
   }
 
-  // 2) Follow redirect (vt./vm.) then retry share + id endpoints
-  const resolved = await resolveMediaRedirect(url)
+  // 2) Follow redirect if we have not already, then retry share + id endpoints
+  const resolved = working === url ? await resolveMediaRedirect(url) : working
   if (resolved !== url) bestResolved = resolved
 
   if (resolved !== url) {

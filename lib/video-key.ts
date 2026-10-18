@@ -1,5 +1,6 @@
 import 'server-only'
 import { sql } from '@/lib/db'
+import { isTikTokHost } from '@/lib/media-url'
 
 /**
  * One key per video, however the link was written:
@@ -14,7 +15,7 @@ export function videoKeyFromUrl(raw: string): string | null {
   }
   const host = u.hostname.replace(/^www\./i, '').toLowerCase()
   const path = u.pathname.replace(/\/+$/, '')
-  if (host.endsWith('tiktok.com')) {
+  if (isTikTokHost(host)) {
     const id = path.match(/\/(?:video|photo)\/(\d{8,})/)?.[1]
     if (id) return `tt:${id}`
   }
@@ -25,11 +26,11 @@ export function videoKeyFromUrl(raw: string): string | null {
   return `url:${host}${path}`
 }
 
-/** Like `videoKeyFromUrl`, but opens TikTok short links (vt./vm.) to find the real video id. */
+/** Like `videoKeyFromUrl`, but opens TikTok short links (vt./vm./tt.site) to find the real video id. */
 export async function resolveVideoKey(url: string): Promise<{ key: string | null; resolvedUrl: string }> {
   const key = videoKeyFromUrl(url)
   if (key && !key.startsWith('url:')) return { key, resolvedUrl: url }
-  if (/(^|\.)tiktok\.com$/i.test(safeHost(url))) {
+  if (isTikTokHost(safeHost(url))) {
     const { resolveMediaRedirect } = await import('@/lib/tikhub')
     const resolvedUrl = await resolveMediaRedirect(url)
     const resolvedKey = videoKeyFromUrl(resolvedUrl)

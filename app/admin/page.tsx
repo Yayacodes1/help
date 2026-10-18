@@ -62,7 +62,7 @@ import { getOutflowSnapshot, type OutflowView } from '@/lib/outflow'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 import type { Platform, Project } from '@/lib/db'
-import { parseRoleFilter, roleFilterToSql } from '@/lib/participant-role'
+import { isLeadersView, parseRoleFilter, roleFilterToSql } from '@/lib/participant-role'
 import { getLeagueBoard } from '@/lib/ranking'
 import { RankingBoard } from '@/components/ranking-board'
 import { RankingFilters } from '@/components/admin/ranking-filters'
@@ -73,6 +73,7 @@ import { getReposterStrikeBoard, syncReposterStrikes } from '@/lib/strikes'
 import { getAttendanceForDay } from '@/lib/attendance'
 import { formatPlanCompare, getLeaderBoard, getLeaderDirectory, loadLeaderLinks, withLeaderFields } from '@/lib/leaders'
 import { LeadersBoard } from '@/components/admin/leaders-board'
+import { LeaderSquadsBoard } from '@/components/admin/leader-squads-board'
 import { LeadersManager } from '@/components/admin/leaders-manager'
 import { getActivityForDay } from '@/lib/activity'
 import { getProjectViewsBoard } from '@/lib/project-views'
@@ -168,6 +169,7 @@ export default async function AdminPage({
   // Default view: Notek | Miqat side by side; picking one project narrows it.
   const splitRequested = projectId == null
   const roleParam = sp.role ?? 'creator'
+  const leadersView = isLeadersView(sp.role)
   const roleFilter = parseRoleFilter(roleParam)
   const roleSql = roleFilterToSql(roleFilter)
 
@@ -685,9 +687,11 @@ export default async function AdminPage({
   const defaultPanel =
     sp.panel && tabPanels.includes(sp.panel)
       ? sp.panel
-      : tab === 'people'
-        ? 'manage'
-        : null
+      : leadersView && tab === 'today'
+        ? 'leaders'
+        : tab === 'people'
+          ? 'manage'
+          : null
 
   return (
     <main
@@ -711,10 +715,12 @@ export default async function AdminPage({
               labels={{ english: t('english'), arabic: t('arabic') }}
             />
             <RoleSelector
+              showLeaders
               labels={{
                 creators: t('roleFilterCreators'),
                 reposters: t('roleFilterReposters'),
                 all: t('roleFilterAll'),
+                leaders: t('roleFilterLeaders'),
               }}
             />
             <ProjectSelector projects={projects} />
@@ -988,7 +994,10 @@ export default async function AdminPage({
             children: (
               <div className="flex flex-col gap-6">
                 <DayNavigator selectedDay={leaderDay} today={opToday} />
-                <LeadersBoard board={leaderBoard} isToday={leaderDay === opToday} />
+                <LeaderSquadsBoard board={leaderBoard} marks={activity?.marks ?? {}} />
+                {!leadersView ? (
+                  <LeadersBoard board={leaderBoard} isToday={leaderDay === opToday} />
+                ) : null}
                 <LeadersManager directory={leaderDirectory} />
               </div>
             ),

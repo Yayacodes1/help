@@ -19,9 +19,13 @@ export function normalizeParticipantRole(
  * Missing / invalid → creators (default). `all` → both.
  */
 export function parseRoleFilter(value: string | null | undefined): RoleFilter {
-  if (value === 'all') return 'all'
+  if (value === 'all' || value === 'leaders') return 'all'
   if (value === 'reposter') return 'reposter'
   return 'creator'
+}
+
+export function isLeadersView(value: string | null | undefined): boolean {
+  return value === 'leaders'
 }
 
 /** SQL filter value: null means no role restriction (all). */

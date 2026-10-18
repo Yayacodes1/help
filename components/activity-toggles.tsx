@@ -8,10 +8,15 @@ export function ActivityToggles({
   creatorId,
   day,
   marked,
+  actorUsername,
+  readOnly = false,
 }: {
   creatorId: number
   day: string
   marked: ActivityKind[]
+  /** When a reposter is ticking from /submit. */
+  actorUsername?: string
+  readOnly?: boolean
 }) {
   const [, startTransition] = useTransition()
   const [shown, setShown] = useOptimistic(marked, (current: ActivityKind[], next: { kind: ActivityKind; on: boolean }) =>
@@ -27,17 +32,21 @@ export function ActivityToggles({
             key={kind}
             type="button"
             aria-pressed={on}
-            onClick={() =>
-              startTransition(async () => {
-                setShown({ kind, on: !on })
-                await setActivity({ creatorId, day, kind, on: !on })
-              })
+            onClick={
+              readOnly
+                ? undefined
+                : () =>
+                    startTransition(async () => {
+                      setShown({ kind, on: !on })
+                      await setActivity({ creatorId, day, kind, on: !on, actorUsername })
+                    })
             }
+            disabled={readOnly}
             className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
               on
                 ? 'border-primary bg-primary text-primary-foreground'
                 : 'border-border bg-card text-muted-foreground hover:border-primary/40'
-            }`}
+            } ${readOnly ? 'cursor-default' : ''}`}
           >
             {on ? '✓ ' : ''}
             {ACTIVITY_LABELS[kind]}

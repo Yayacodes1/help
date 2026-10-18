@@ -211,19 +211,14 @@ export function RefreshViewsButton({
           if (timedOut && timeouts < 10) {
             timeouts += 1
             setMessage(
-              `Timed out on a batch — retrying smaller chunk… (${timeouts})`,
+              `Timed out on a batch — retrying this same batch… (${timeouts})`,
             )
             await new Promise((r) => setTimeout(r, 700))
             try {
               data = await fetchChunk(offset, 2, filters, endpoint)
-            } catch (retryErr) {
-              offset += limit
-              setMessage(
-                `Batch still timing out — skipped ahead. ${
-                  retryErr instanceof Error ? retryErr.message : why
-                }`,
-              )
-              continue
+            } catch {
+              await new Promise((r) => setTimeout(r, 900))
+              data = await fetchChunk(offset, 1, filters, endpoint)
             }
           } else {
             throw chunkErr instanceof Error ? chunkErr : new Error(why)
@@ -349,14 +344,22 @@ export function RefreshVideoButton({
   const router = useRouter()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
 
   async function run() {
     setPending(true)
     setError(null)
+    setStatus(null)
     try {
       const data = await fetchChunk(0, 1, { submissionId }, endpoint)
       if (data.failed > 0) {
         setError(data.failureSamples?.[0]?.reason || 'Refresh failed')
+      } else if (data.checked === 0) {
+        setError('Video not found for refresh.')
+      } else if (data.updated > 0) {
+        setStatus('Updated')
+      } else {
+        setStatus('Already current')
       }
       router.refresh()
     } catch (e) {
@@ -381,6 +384,10 @@ export function RefreshVideoButton({
       {error ? (
         <span className="max-w-[160px] text-left text-[11px] leading-snug text-destructive">
           {error}
+        </span>
+      ) : status ? (
+        <span className="max-w-[160px] text-left text-[11px] leading-snug text-emerald-700 dark:text-emerald-300">
+          {status}
         </span>
       ) : null}
     </div>

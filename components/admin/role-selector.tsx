@@ -4,27 +4,37 @@ import { useTransition } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import type { RoleFilter } from '@/lib/participant-role'
 
-/** Creators (default) / Reposters / Both for the whole dashboard. */
+export type DashboardRole = RoleFilter | 'leaders'
+
+/** Creators (default) / Reposters / Both / Leaders for the whole dashboard. */
 export function RoleSelector({
   labels,
   defaultRole = 'creator',
+  showLeaders = false,
 }: {
   labels: {
     creators: string
     reposters: string
     all: string
+    leaders?: string
   }
   /** What a missing `?role=` means on this page. */
   defaultRole?: RoleFilter
+  showLeaders?: boolean
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
   const [isPending, startTransition] = useTransition()
   const raw = params.get('role')
-  const value: RoleFilter = raw === 'all' || raw === 'reposter' || raw === 'creator' ? raw : defaultRole
+  const value: DashboardRole =
+    raw === 'leaders' && showLeaders
+      ? 'leaders'
+      : raw === 'all' || raw === 'reposter' || raw === 'creator'
+        ? raw
+        : defaultRole
 
-  function onChange(nextValue: RoleFilter) {
+  function onChange(nextValue: DashboardRole) {
     const next = new URLSearchParams(params.toString())
     if (nextValue === defaultRole) next.delete('role')
     else next.set('role', nextValue)
@@ -35,19 +45,24 @@ export function RoleSelector({
     next.delete('aRole')
     next.delete('creator')
     next.delete('aCreator')
+    if (nextValue === 'leaders') {
+      next.set('tab', 'today')
+      next.set('panel', 'leaders')
+    }
     startTransition(() => router.push(`${pathname}?${next.toString()}`, { scroll: false }))
   }
 
-  const options: Array<[RoleFilter, string]> = [
+  const options: Array<[DashboardRole, string]> = [
     ['creator', labels.creators],
     ['reposter', labels.reposters],
     ['all', labels.all],
+    ...(showLeaders && labels.leaders ? [['leaders', labels.leaders] as [DashboardRole, string]] : []),
   ]
 
   return (
     <div
       role="group"
-      aria-label="Show creators, reposters, or both"
+      aria-label="Show creators, reposters, both, or leaders"
       className={`inline-flex h-10 items-center gap-1 rounded-lg border border-input bg-background p-1 ${
         isPending ? 'opacity-60' : ''
       }`}

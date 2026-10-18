@@ -40,8 +40,10 @@ import { AnalyticsPanel } from '@/components/admin/analytics-panel'
 import { TopVideosPanel } from '@/components/admin/top-videos-panel'
 import { RoleSelector } from '@/components/admin/role-selector'
 import { CheckForm } from '@/components/leader/check-form'
+import { TaskEditor } from '@/components/leader/task-editor'
 import { CopyTextButton } from '@/components/leader/copy-text-button'
 import { ConsistencyBoard, CreatorCards, ManageList } from '@/components/leader/team-boards'
+import { listLeaderTasks } from '@/lib/tasks'
 import type { AttendanceStatus } from '@/lib/attendance-types'
 
 export const dynamic = 'force-dynamic'
@@ -90,7 +92,7 @@ export default async function LeaderHomePage({
 
   async function loadToday() {
     const creatorRaw = Number(sp.creator)
-    const [board, progress, attendance, submissions, members, activityMarks] = await Promise.all([
+    const [board, progress, attendance, submissions, members, activityMarks, tasks] = await Promise.all([
       getLeaderBoard(opToday),
       getCreatorsWithProgressOnDate(selectedDay, projectId, roleSql, {
         creatorIds: teamIds,
@@ -109,6 +111,7 @@ export default async function LeaderHomePage({
       }),
       getTeamMembers(teamIds, today),
       getActivityForDay(selectedDay, teamIds),
+      listLeaderTasks(session!.id),
     ])
     const tracked = await attachTracking(progress, today)
     const ids = new Set(teamIds)
@@ -120,6 +123,7 @@ export default async function LeaderHomePage({
       submissions,
       members: members.filter((m) => inRole(m.person.role)),
       activityMarks,
+      tasks,
     }
   }
 
@@ -189,7 +193,7 @@ export default async function LeaderHomePage({
   const panels: PanelItem[] = []
 
   if (todayData) {
-    const { score, people, everyone, attention, submissions, members, activityMarks } = todayData
+    const { score, people, everyone, attention, submissions, members, activityMarks, tasks } = todayData
     const roster = (score?.people ?? []).filter((p) => inRole(p.role))
     const goalTotal = people.reduce((sum, c) => sum + c.goal_instagram + c.goal_tiktok, 0)
     const postedTotal = people.reduce((sum, c) => sum + c.today_instagram + c.today_tiktok, 0)
@@ -266,6 +270,26 @@ export default async function LeaderHomePage({
               </ul>
             )}
           </div>
+        ),
+      },
+      {
+        id: 'tasks',
+        title: t('tasksTitle'),
+        summary: `${tasks.length}`,
+        hint: t('tasksLeaderHint'),
+        children: (
+          <TaskEditor
+            tasks={tasks}
+            labels={{
+              title: t('tasksTitle'),
+              hint: t('tasksLeaderHint'),
+              add: t('tasksAdd'),
+              save: t('tasksSave'),
+              remove: t('tasksRemove'),
+              empty: t('tasksEmpty'),
+              placeholder: t('tasksPlaceholder'),
+            }}
+          />
         ),
       },
       {
