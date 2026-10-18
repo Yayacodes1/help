@@ -371,20 +371,6 @@ export async function findLeaderByName(
   return rows[0] ?? null
 }
 
-export async function getLeaderForCreator(
-  creatorId: number,
-): Promise<{ id: number; name: string } | null> {
-  await ensureLeaderTables()
-  const rows = (await sql`
-    SELECT l.id, l.name
-    FROM creators c
-    JOIN leaders l ON l.id = c.leader_id
-    WHERE c.id = ${creatorId}
-    LIMIT 1
-  `) as { id: number; name: string }[]
-  return rows[0] ?? null
-}
-
 export async function loadLeaderLinks(): Promise<{
   leaders: { id: number; name: string }[]
   assignments: LeaderLink[]
@@ -589,7 +575,7 @@ export type CreatorLeaderLink = {
 }
 
 /** Leader this person belongs to: assigned `leader_id`, or the leader who linked them as their reposter. */
-export async function getLeaderForCreator(creatorId: number): Promise<CreatorLeaderLink | null> {
+export async function getLeaderForCreator(creatorId: number): Promise<(CreatorLeaderLink & { id: number; name: string }) | null> {
   await ensureLeaderTables()
   const rows = (await sql`
     SELECT l.id, l.name
@@ -603,7 +589,14 @@ export async function getLeaderForCreator(creatorId: number): Promise<CreatorLea
   const row = rows[0]
   if (!row) return null
   const scope = await getLeaderScope(row.id)
-  return { leaderId: row.id, leaderName: row.name, teamIds: scope.teamIds, ownId: scope.ownId }
+  return {
+    id: row.id,
+    name: row.name,
+    leaderId: row.id,
+    leaderName: row.name,
+    teamIds: scope.teamIds,
+    ownId: scope.ownId,
+  }
 }
 
 export async function getLeaderScope(leaderId: number): Promise<LeaderScope> {
