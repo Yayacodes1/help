@@ -35,6 +35,19 @@ export async function startSubmission(_prev: unknown, formData: FormData) {
   if (!creator) {
     return { ok: false, message: 'اسم المستخدم غير مسجّل على هذا الحساب. تواصل مع الإدارة لإضافتك.' }
   }
+  const expectedRole = (formData.get('expected_role') ?? '').toString()
+  if (expectedRole === 'reposter' && creator.role !== 'reposter') {
+    return {
+      ok: false,
+      message: 'هذا الحساب صانع محتوى. اختر Creator من نوع الحساب. This account is a creator — pick Creator.',
+    }
+  }
+  if (expectedRole === 'creator' && creator.role === 'reposter') {
+    return {
+      ok: false,
+      message: 'هذا الحساب معيد نشر. اختر Reposter من نوع الحساب. This account is a reposter — pick Reposter.',
+    }
+  }
   await sql`
     UPDATE creators
     SET login_platform = ${platform}

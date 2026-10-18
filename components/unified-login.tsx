@@ -9,7 +9,7 @@ import { LanguageToggle } from '@/components/language-toggle'
 import { CreatorLoginFields } from '@/components/creator-login-fields'
 import { createT, type Locale } from '@/lib/i18n'
 
-type Role = 'creator' | 'yahya' | 'ahmed' | 'leader'
+type Role = 'creator' | 'reposter' | 'yahya' | 'ahmed' | 'leader'
 type CreatorState = { ok: boolean; message: string } | null
 type AdminState = { ok: boolean; message: string }
 
@@ -64,6 +64,7 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
             }`}
           >
             <option value="creator">{t('creatorRole')}</option>
+            <option value="reposter">{t('reposterRole')}</option>
             <option value="leader">{t('leaderRole')}</option>
             <option value="yahya">Yahya</option>
             <option value="ahmed">Ahmed</option>
@@ -132,8 +133,9 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
               <ArrowLeft className={`h-4 w-4 ${rtl ? '' : 'rotate-180'}`} />
             </button>
           </form>
-        ) : role === 'creator' ? (
+        ) : role === 'creator' || role === 'reposter' ? (
           <form action={creatorAction} className="mt-5 flex flex-col gap-3">
+            <input type="hidden" name="expected_role" value={role} />
             <CreatorLoginFields locale={locale} />
 
             {creatorState && !creatorState.ok && (
