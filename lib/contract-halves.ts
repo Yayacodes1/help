@@ -116,6 +116,61 @@ export function halfPaymentNote(half: HalfIndex, contractName: string): string {
     : `2nd half · ${contractName}`
 }
 
+export type ContractWaveStatus = {
+  hasTwoHalves: boolean
+  firstDue: number
+  firstPaid: number
+  firstBalance: number
+  firstSettled: boolean
+  secondDue: number
+  secondPaid: number
+  secondBalance: number
+  secondSettled: boolean
+}
+
+/** Split a contract's typed due into first / second waves and match recorded payments. */
+export function contractWaveStatus(opts: {
+  start: string
+  end: string | null
+  minDue: number
+  payments: HalfPayment[]
+  everyDays?: number
+}): ContractWaveStatus {
+  const every = opts.everyDays ?? 14
+  const minDue = roundMoney(opts.minDue)
+  const hasTwoHalves = !!opts.end && contractSupportsBiweeklyHalves(opts.start, opts.end, every)
+  if (!hasTwoHalves) {
+    const paid = roundMoney(opts.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0))
+    const balance = Math.max(0, roundMoney(minDue - paid))
+    return {
+      hasTwoHalves: false,
+      firstDue: minDue,
+      firstPaid: paid,
+      firstBalance: balance,
+      firstSettled: minDue <= 0.009 ? paid > 0.009 : balance <= 0.009,
+      secondDue: 0,
+      secondPaid: 0,
+      secondBalance: 0,
+      secondSettled: true,
+    }
+  }
+  const split = inferBiweeklyInstallments(minDue, [])
+  const assigned = assignPaymentsToHalves(opts.payments, split.first, split.second)
+  const firstBalance = Math.max(0, roundMoney(split.first - assigned.firstPaid))
+  const secondBalance = Math.max(0, roundMoney(split.second - assigned.secondPaid))
+  return {
+    hasTwoHalves: true,
+    firstDue: roundMoney(split.first),
+    firstPaid: assigned.firstPaid,
+    firstBalance,
+    firstSettled: split.first <= 0.009 ? assigned.firstPaid > 0.009 : firstBalance <= 0.009,
+    secondDue: roundMoney(split.second),
+    secondPaid: assigned.secondPaid,
+    secondBalance,
+    secondSettled: split.second <= 0.009 ? assigned.secondPaid > 0.009 : secondBalance <= 0.009,
+  }
+}
+
 /**
  * Split recorded payments across the two halves.
  * Prefers note tags (1st/2nd); otherwise fills half 1 then half 2 in pay order.

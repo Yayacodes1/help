@@ -17,13 +17,22 @@ import {
   isAdmin,
   verifyLogin,
 } from '@/lib/admin-auth'
-import { getPaidForContract, getServerToday } from '@/lib/queries'
+import {
+  getPaidForContract,
+  getPaymentsForContract,
+  getServerToday,
+  minimumContractDue,
+} from '@/lib/queries'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { normalizeHandle, parseLoginPlatform, parseOptionalHandle, resolveLoginPlatform } from '@/lib/usernames'
 import { HOUSE_COMMISSION, normalizeCountMode } from '@/lib/commission'
-import { normalizeBasePayCadence } from '@/lib/contract-halves'
+import {
+  contractWaveStatus,
+  halfPaymentNote,
+  normalizeBasePayCadence,
+} from '@/lib/contract-halves'
 import { scheduleFromContract } from '@/lib/posting-schedule'
 import type { CountMode } from '@/lib/db'
 
@@ -966,6 +975,75 @@ export async function recordContractPayment(
   revalidatePath('/admin')
   revalidatePath(`/admin/creators/${creatorId}`)
   revalidatePath('/submit')
+}
+
+/** Record first, second, or both remaining contract waves from Pay due. */
+export async function recordDueHalfPayment(
+  creatorId: number,
+  contractId: number,
+  which: 'first' | 'second' | 'both',
+) {
+  await requireAdmin()
+  const today = await getServerToday()
+  const rows = (await sql`
+    SELECT id, name, start_date::text AS start_date, end_date::text AS end_date,
+           base_amount::float AS base_amount, base_pay_cadence, commission_amount::float AS commission_amount
+    FROM contracts
+    WHERE id = ${contractId} AND creator_id = ${creatorId}
+    LIMIT 1
+  `) as {
+    id: number
+    name: string
+    start_date: string
+    end_date: string | null
+    base_amount: number
+    base_pay_cadence: string | null
+    commission_amount: number | null
+  }[]
+  const contract = rows[0]
+  if (!contract) return { ok: false as const, error: 'Contract not found.' }
+
+  const windowEnd = contract.end_date && contract.end_date > today ? contract.end_date : today
+  const payments = await getPaymentsForContract(
+    creatorId,
+    contract.id,
+    contract.start_date,
+    windowEnd,
+  )
+  const minDue = minimumContractDue(contract)
+  const waves = contractWaveStatus({
+    start: contract.start_date,
+    end: contract.end_date,
+    minDue,
+    payments,
+  })
+  const source = await paymentSource(null)
+  const toRecord: Array<{ amount: number; note: string }> = []
+  if ((which === 'first' || which === 'both') && waves.firstBalance > 0.009) {
+    toRecord.push({
+      amount: waves.firstBalance,
+      note: halfPaymentNote(1, contract.name),
+    })
+  }
+  if ((which === 'second' || which === 'both') && waves.secondBalance > 0.009) {
+    toRecord.push({
+      amount: waves.secondBalance,
+      note: halfPaymentNote(2, contract.name),
+    })
+  }
+  if (toRecord.length === 0) return { ok: true as const, count: 0 }
+
+  for (const item of toRecord) {
+    await sql`
+      INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by)
+      VALUES (${creatorId}, ${contractId}, ${today}, ${item.amount}, ${item.note}, ${source.paidBy}, ${source.recordedBy})
+    `
+  }
+  await sql`UPDATE creators SET last_paid_at = ${today} WHERE id = ${creatorId}`
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  revalidatePath('/submit')
+  return { ok: true as const, count: toRecord.length }
 }
 
 // --- Submissions ---

@@ -13,7 +13,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { Loader2, Redo2, Sparkles, Undo2 } from 'lucide-react'
+import { Loader2, Redo2, RotateCcw, Sparkles, Undo2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { formatMoney } from '@/lib/format'
 import { AssistantMarkdown } from '@/components/admin/assistant-markdown'
@@ -38,6 +38,7 @@ type Labels = {
   error: string
   undo: string
   redo: string
+  restart: string
 }
 
 const CHAT_STORAGE_KEY = 'admin-assistant-chat-v1'
@@ -631,7 +632,7 @@ export function AssistantChat({
     [],
   )
 
-  const { messages, sendMessage, addToolApprovalResponse, status, error, setMessages } =
+  const { messages, sendMessage, addToolApprovalResponse, status, error, setMessages, stop } =
     useChat({
       id: CHAT_ID,
       transport,
@@ -984,9 +985,13 @@ export function AssistantChat({
     }
   }
 
-  function clearChat() {
+  function restartConversation() {
+    void stop?.()
     setMessages([])
     recordedToolIds.current.clear()
+    setUndoStack([])
+    setRedoStack([])
+    setInput('')
     setHistoryError(null)
     try {
       localStorage.removeItem(CHAT_STORAGE_KEY)
@@ -1007,6 +1012,15 @@ export function AssistantChat({
     >
       {embedded ? (
         <div className="mb-2 flex justify-end gap-1">
+          <button
+            type="button"
+            onClick={restartConversation}
+            title={labels.restart}
+            className="inline-flex h-8 items-center gap-1 rounded-lg border border-border px-2 text-xs text-muted-foreground hover:bg-accent/40"
+          >
+            <RotateCcw className="size-3.5" />
+            {labels.restart}
+          </button>
           <button
             type="button"
             disabled={busy || undoStack.length === 0}
@@ -1038,6 +1052,15 @@ export function AssistantChat({
             <p className="mt-0.5 text-xs text-muted-foreground">{labels.subtitle}</p>
           </div>
           <div className="flex shrink-0 gap-1">
+            <button
+              type="button"
+              onClick={restartConversation}
+              title={labels.restart}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-border px-2 text-xs text-muted-foreground hover:bg-accent/40"
+            >
+              <RotateCcw className="size-3.5" />
+              {labels.restart}
+            </button>
             <button
               type="button"
               disabled={busy || undoStack.length === 0}
@@ -1221,16 +1244,13 @@ export function AssistantChat({
           {busy ? <Loader2 className="size-4 animate-spin" /> : null}
           {labels.send}
         </button>
-        {messages.length > 0 && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={clearChat}
-            className="h-10 shrink-0 rounded-lg border border-border px-3 text-xs text-muted-foreground hover:bg-accent/40 disabled:opacity-50"
-          >
-            Clear
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={restartConversation}
+          className="h-10 shrink-0 rounded-lg border border-border px-3 text-xs text-muted-foreground hover:bg-accent/40"
+        >
+          {labels.restart}
+        </button>
       </form>
     </section>
   )

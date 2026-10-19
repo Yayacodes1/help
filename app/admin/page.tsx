@@ -1355,6 +1355,7 @@ export default async function AdminPage({
                 settled={payDueRows.settled}
                 willPay={payDueRows.willPay}
                 urgent={payDueRows.urgent}
+                second={payDueRows.second}
                 linkRole={roleFilter}
                 projectId={projectId}
                 labels={{
@@ -1380,6 +1381,14 @@ export default async function AdminPage({
                   reasonVideosComplete: t('reasonVideosComplete'),
                   reasonSchedule: t('reasonSchedule'),
                   openCreator: t('backToAdmin'),
+                  firstPayment: t('firstPayment'),
+                  secondPayment: t('secondPayment'),
+                  bothPayments: t('bothPayments'),
+                  payFirst: t('payFirst'),
+                  paySecond: t('paySecond'),
+                  payBoth: t('payBoth'),
+                  paidYes: t('paidYes'),
+                  paidNo: t('paidNo'),
                 }}
               />
             ),
@@ -1538,6 +1547,7 @@ export default async function AdminPage({
               error: t('assistantError'),
               undo: t('assistantUndo'),
               redo: t('assistantRedo'),
+              restart: t('assistantRestart'),
             }}
           />
         </AssistantDrawer>
