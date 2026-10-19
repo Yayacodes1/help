@@ -45,6 +45,7 @@ import { formatNumber } from '@/lib/format'
 import { createT, type Locale } from '@/lib/i18n'
 import { getCreatorStrikeSummary } from '@/lib/strikes'
 import { getReposterChecksForDay } from '@/lib/reposter-checks'
+import { timed } from '@/lib/ensure-once'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -72,19 +73,32 @@ export async function ReposterDashboard({
   searchParams: { date?: string; tab?: string; panel?: string; taskDay?: string; u?: string }
 }) {
   const t = createT(locale)
-  const [today, defaultTime, projects, link] = await Promise.all([
+  const started = Date.now()
+  const tab = resolveReposterTab(searchParams.tab, searchParams.panel)
+  const [today, link] = await Promise.all([
     getServerToday(),
-    getServerTimeHm(),
-    getAllProjects(),
     getLeaderForCreator(creator.id).catch(() => null),
   ])
-  const tab = resolveReposterTab(searchParams.tab, searchParams.panel)
   const date = DATE_RE.test(searchParams.date ?? '') ? searchParams.date! : today
   const taskDay = DATE_RE.test(searchParams.taskDay ?? '') ? searchParams.taskDay! : today
   const { start: monthStart, end: monthEnd } = monthRange(today)
   const teamIds = link?.teamIds ?? []
   const videoIds = teamIds.length > 0 ? teamIds : [creator.id]
   const squadName = link ? squadLabel(squadKeyFromName(link.leaderName)) : null
+  const needProjects = tab === 'upload' || tab === 'analytics'
+  const needUploadMeta = tab === 'upload'
+  const [defaultTime, projects, counts, active, strikeSummary] = await Promise.all([
+    needUploadMeta ? getServerTimeHm() : Promise.resolve('12:00'),
+    needProjects ? getAllProjects() : Promise.resolve([]),
+    needUploadMeta
+      ? getCreatorCountsByPlatformOnDate(creator.id, date).catch(() => ({
+          instagram: 0,
+          tiktok: 0,
+        }))
+      : Promise.resolve({ instagram: 0, tiktok: 0 }),
+    needUploadMeta ? getActiveContract(creator.id, today).catch(() => null) : Promise.resolve(null),
+    getCreatorStrikeSummary(creator.id, today).catch(() => null),
+  ])
   const miqatId = findMiyqatProject(projects)?.id ?? null
   const notekId = projects.find((p) => /notek|نوتك/i.test(p.name))?.id ?? null
   const clean = (h: string | null | undefined) => (h ?? '').trim().replace(/^@+/, '').toLowerCase()
@@ -102,15 +116,6 @@ export async function ReposterDashboard({
         }
       : null,
   ].filter((b): b is BrandProject => b != null && b.handles.length > 0)
-
-  const [counts, active, strikeSummary] = await Promise.all([
-    getCreatorCountsByPlatformOnDate(creator.id, date).catch(() => ({
-      instagram: 0,
-      tiktok: 0,
-    })),
-    getActiveContract(creator.id, today).catch(() => null),
-    getCreatorStrikeSummary(creator.id, today).catch(() => null),
-  ])
   const dailyGoals = goalsForContract(creator, active)
   const fields = PLATFORMS.map((platform) => ({
     platform,
@@ -126,11 +131,11 @@ export async function ReposterDashboard({
   if (tab === 'today') {
     const [progress, activityMarks, tasks, checked, calendar, handles, myChecks, groupSubs] = await Promise.all([
       teamIds.length > 0
-        ? getCreatorsWithProgressOnDate(date, undefined, 'creator', {
-            creatorIds: teamIds,
-            includeAllCreators: true,
-            includeAllReposters: true,
-          }).catch(() => [])
+        ? timed('reposter-team-progress', () =>
+            getCreatorsWithProgressOnDate(date, undefined, 'creator', {
+              creatorIds: teamIds,
+            }),
+          ).catch(() => [])
         : Promise.resolve([]),
       getActivityForDay(date, videoIds).catch(() => ({})),
       link ? listLeaderTasks(link.leaderId, { today }).catch(() => []) : Promise.resolve([]),
@@ -271,11 +276,11 @@ export async function ReposterDashboard({
     ] = await Promise.all([
       getDailyAnalytics(creatorRange).catch(() => []),
       getDailyViewsByCreator(creatorRange).catch(() => []),
-      getViewsLeaderboard({ ...creatorRange, limit: 1000 }).catch(() => []),
+      getViewsLeaderboard({ ...creatorRange, limit: 40 }).catch(() => []),
       getViewsSummary(creatorRange).catch(() => emptySummary),
       getDailyAnalytics(reposterRange).catch(() => []),
       getDailyViewsByCreator(reposterRange).catch(() => []),
-      getViewsLeaderboard({ ...reposterRange, limit: 1000 }).catch(() => []),
+      getViewsLeaderboard({ ...reposterRange, limit: 40 }).catch(() => []),
       getViewsSummary(reposterRange).catch(() => emptySummary),
       getLeagueBoard({ role: 'reposter' }).catch(() => null),
       isContestLive(today) && miqatId != null
@@ -442,7 +447,7 @@ export async function ReposterDashboard({
               pasteHint: t('pasteLinksHint'),
               send: t('submitVideos'),
               sendTo: t('submitVideosTo'),
-              sending: '…',
+              sending: t('sending'),
               project: t('submitProject'),
               projectHint: t('submitProjectHint'),
               pickProject: t('pickProject'),
@@ -468,6 +473,8 @@ export async function ReposterDashboard({
           : tab === 'upload'
             ? 'upload'
             : 'analyticsCreators'
+
+  console.info(`[perf] reposter-dashboard tab=${tab} ${Date.now() - started}ms team=${teamIds.length}`)
 
   return (
     <ReposterShell locale={locale} username={username} displayName={username} squadName={squadName}>

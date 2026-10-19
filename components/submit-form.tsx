@@ -104,6 +104,7 @@ export function SubmitForm({
   const [state, formAction, pending] = useActionState<State, FormData>(action, null)
   const [projectId, setProjectId] = useState<string>('')
   const [autoPicked, setAutoPicked] = useState<string | null>(null)
+  const submittedLock = useRef(false)
   const projectName = projects.find((p) => String(p.id) === projectId)?.name ?? null
 
   function onLinksChange(text: string) {
@@ -116,10 +117,15 @@ export function SubmitForm({
   }
 
   useEffect(() => {
+    if (!pending) submittedLock.current = false
+  }, [pending])
+
+  useEffect(() => {
     if (state?.ok) {
       formRef.current?.reset()
       setProjectId('')
       setAutoPicked(null)
+      submittedLock.current = false
       if (state.videoDate && state.videoDate !== params.get('date')) {
         const next = new URLSearchParams(params.toString())
         next.set('date', state.videoDate)
@@ -132,7 +138,19 @@ export function SubmitForm({
   }, [state])
 
   return (
-    <form ref={formRef} action={formAction} className="flex flex-col gap-5">
+    <form
+      ref={formRef}
+      action={formAction}
+      onSubmit={(e) => {
+        if (pending || submittedLock.current) {
+          e.preventDefault()
+          return
+        }
+        submittedLock.current = true
+      }}
+      className="flex flex-col gap-5"
+      aria-busy={pending}
+    >
       {projects.length === 0 ? (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
           No projects are set up yet. Ask admin to add Notek and Miqat.
@@ -313,7 +331,7 @@ export function SubmitForm({
         disabled={pending}
         className="flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-60"
       >
-        <Send className="h-4 w-4" />
+        <Send className={`h-4 w-4 ${pending ? 'animate-pulse' : ''}`} />
         {pending ? labels.sending : projectName ? `${labels.sendTo} ${projectName}` : labels.send}
       </button>
     </form>

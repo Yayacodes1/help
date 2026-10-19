@@ -8,6 +8,36 @@ import { fetchViewsDetailed } from '@/lib/tikhub'
 import { applyFetchViewsResult } from '@/lib/submission-meta'
 import { publicViewsError } from '@/lib/tikhub-views'
 
+/** Fill view counts after a submit so TikHub never blocks saving the links. */
+export async function hydrateSubmissionViews(
+  rows: Array<{ id: number; platform: Platform; url: string }>,
+) {
+  for (const row of rows) {
+    try {
+      const result = await fetchViewsDetailed(row.platform, row.url)
+      if (result.ok) {
+        await applyFetchViewsResult(row.id, result)
+      } else {
+        await sql`
+          UPDATE submissions
+          SET views_error = ${publicViewsError(result.reason, row.platform).slice(0, 400)}
+          WHERE id = ${row.id}
+        `
+      }
+    } catch (e) {
+      const reason = publicViewsError(
+        e instanceof Error ? e.message : 'views fetch failed',
+        row.platform,
+      )
+      await sql`
+        UPDATE submissions
+        SET views_error = ${reason.slice(0, 400)}
+        WHERE id = ${row.id}
+      `.catch(() => undefined)
+    }
+  }
+}
+
 export type RefreshViewsScope = 'recent' | 'all' | 'zeros' | 'filtered'
 
 export type RefreshFilters = {

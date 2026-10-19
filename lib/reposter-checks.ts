@@ -1,7 +1,12 @@
 import 'server-only'
 import { sql } from '@/lib/db'
+import { ensureOnce } from '@/lib/ensure-once'
 
 export async function ensureReposterCheckTables() {
+  return ensureOnce('reposter-checks', runEnsureReposterCheckTables)
+}
+
+async function runEnsureReposterCheckTables() {
   await sql`
     CREATE TABLE IF NOT EXISTS reposter_checks (
       reposter_id INTEGER NOT NULL REFERENCES creators(id) ON DELETE CASCADE,

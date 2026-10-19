@@ -2,11 +2,23 @@
 
 import type { ReactNode } from 'react'
 import Link from 'next/link'
+import { useLinkStatus } from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { LogOut } from 'lucide-react'
 import { LanguageToggle } from '@/components/language-toggle'
 import { createT, type Locale } from '@/lib/i18n'
-import { REPOSTER_TAB_ORDER, resolveReposterTab, type ReposterTab } from '@/lib/reposter-tabs'
+import { resolveReposterTab, type ReposterTab } from '@/lib/reposter-tabs'
+
+function TabPending() {
+  const { pending } = useLinkStatus()
+  if (!pending) return null
+  return (
+    <span
+      className="ml-1 inline-block size-1.5 animate-pulse rounded-full bg-current"
+      aria-hidden
+    />
+  )
+}
 
 export function ReposterShell({
   locale,
@@ -66,6 +78,7 @@ export function ReposterShell({
               <Link
                 key={tab.key}
                 href={tab.href}
+                prefetch
                 aria-current={active === tab.key ? 'page' : undefined}
                 className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
                   active === tab.key
@@ -74,6 +87,7 @@ export function ReposterShell({
                 }`}
               >
                 {labels[tab.key]}
+                <TabPending />
               </Link>
             ))}
           </div>

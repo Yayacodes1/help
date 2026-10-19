@@ -258,6 +258,24 @@ export async function deleteWalletAdjustment(id: number) {
   revalidateMarketing()
 }
 
+/** Set Ahmed's current leftover to 0. Does not erase sent money, payments, or spend history. */
+export async function resetAhmedWalletNow() {
+  const by = await requireAdmin()
+  const { left } = await getWalletTotals()
+  const counted = 0
+  const diff = Math.round((counted - left) * 100) / 100
+  if (Math.abs(diff) < 0.009) {
+    return { ok: true as const, diff: 0, counted, previous: left }
+  }
+  const on = new Date().toISOString().slice(0, 10)
+  await sql`
+    INSERT INTO wallet_adjustments (adjusted_on, amount, counted, currency, note, recorded_by)
+    VALUES (${on}, ${diff}, ${counted}, 'SAR', ${'Reset Ahmed has now'}, ${by})
+  `
+  revalidateMarketing()
+  return { ok: true as const, diff, counted, previous: left }
+}
+
 export type MoneyRequestInput = {
   title: string
   neededBy: string | null

@@ -1,5 +1,6 @@
 import 'server-only'
 import { sql } from '@/lib/db'
+import { ensureOnce } from '@/lib/ensure-once'
 import {
   emptyActivityCounts,
   isActivityKind,
@@ -8,6 +9,10 @@ import {
 } from '@/lib/activity-kinds'
 
 export async function ensureActivityTable() {
+  return ensureOnce('activity', runEnsureActivityTable)
+}
+
+async function runEnsureActivityTable() {
   await sql`
     CREATE TABLE IF NOT EXISTS activity_marks (
       creator_id INTEGER NOT NULL REFERENCES creators(id) ON DELETE CASCADE,

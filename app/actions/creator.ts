@@ -1,5 +1,6 @@
 'use server'
 
+import { after } from 'next/server'
 import { sql } from '@/lib/db'
 import {
   getCreatorByLoginHandle,
@@ -12,7 +13,6 @@ import { classifyMediaLinks } from '@/lib/media-url'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { normalizeHandle, parseLoginPlatform } from '@/lib/usernames'
-import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import { OPERATIONAL_TZ, operationalDayFromIso } from '@/lib/operational-day'
 import { findExistingVideos, resolveVideoKey, videoKeyFromUrl } from '@/lib/video-key'
 
@@ -56,7 +56,6 @@ export async function startSubmission(_prev: unknown, formData: FormData) {
 }
 
 export async function submitVideos(username: string, _prev: unknown, formData: FormData) {
-  await ensureCreatorTrackingColumns()
   const creator = await getCreatorByName(username)
   if (!creator) return { ok: false, message: 'اسم المستخدم غير مسجّل.' }
 
@@ -146,30 +145,11 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
     return { ok: false, message: `لم تتم إضافة أي فيديو. Nothing was added.${blockedNote}` }
   }
 
+  const inserted: Array<{ id: number; platform: (typeof fresh)[number]['platform']; url: string }> =
+    []
   for (const row of fresh) {
-    let views = 0
-    let viewsError: string | null = null
-    let platformPostedAt: string | null = null
-    let finalUrl = row.url
-
-    if (process.env.TIKHUB_API_KEY?.trim()) {
-      try {
-        const { fetchViewsDetailed } = await import('@/lib/tikhub')
-        const result = await fetchViewsDetailed(row.platform, row.url)
-        if (result.ok) {
-          views = result.views
-          if (result.resolvedUrl) finalUrl = result.resolvedUrl
-          if (result.postedAt) platformPostedAt = result.postedAt
-        } else {
-          viewsError = result.reason.slice(0, 400)
-        }
-      } catch (e) {
-        viewsError =
-          e instanceof Error ? e.message.slice(0, 400) : 'views fetch failed'
-      }
-    }
-
-    await sql`
+    const finalUrl = row.resolvedUrl || row.url
+    const saved = (await sql`
       INSERT INTO submissions (
         creator_id, project_id, platform, url, video_date, created_at,
         views, views_error, platform_posted_at, video_key
@@ -181,12 +161,24 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
         ${finalUrl},
         ${videoDate}::date,
         ((${videoDate}::date + ${postTime}::time) AT TIME ZONE ${OPERATIONAL_TZ}),
-        ${views},
-        ${viewsError},
-        ${platformPostedAt}::timestamptz,
+        0,
+        NULL,
+        NULL,
         ${row.key ?? videoKeyFromUrl(finalUrl)}
       )
-    `
+      RETURNING id
+    `) as { id: number }[]
+    if (saved[0]) {
+      inserted.push({ id: saved[0].id, platform: row.platform, url: finalUrl })
+    }
+  }
+
+  if (inserted.length > 0 && process.env.TIKHUB_API_KEY?.trim()) {
+    after(() => {
+      void import('@/lib/refresh-views').then(({ hydrateSubmissionViews }) =>
+        hydrateSubmissionViews(inserted),
+      )
+    })
   }
 
   revalidatePath('/submit')

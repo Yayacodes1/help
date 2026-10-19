@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { after } from 'next/server'
 import { LogOut, Send } from 'lucide-react'
 import { SubmitForm } from '@/components/submit-form'
 import { TodayVideos } from '@/components/today-videos'
@@ -7,13 +8,11 @@ import { CreatorStats } from '@/components/creator-stats'
 import { UsernameGate } from '@/components/username-gate'
 import { PanelBoard } from '@/components/admin/panel-board'
 import { LanguageToggle } from '@/components/language-toggle'
-import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import {
   getActiveContract,
   getAllProjects,
   getContractComparisons,
   getCreatorByName,
-  getServerToday,
   getServerNowIso,
   getServerTimeHm,
   getSubmissionsForCreatorOnDate,
@@ -23,10 +22,6 @@ import {
   getPaymentsForCreator,
   goalsForContract,
 } from '@/lib/queries'
-import { getLeagueBoard } from '@/lib/ranking'
-import { RankingBoard } from '@/components/ranking-board'
-import { ContestPodium } from '@/components/contest-podium'
-import { CONTEST, isContestLive } from '@/lib/contest'
 import { findMiyqatProject, isMiyqatProjectName, projectToneClass } from '@/lib/project-scope'
 import { StrikeBanner } from '@/components/strike-banner'
 import { operationalDayFromIso } from '@/lib/operational-day'
@@ -44,7 +39,7 @@ import { getLeaderForCreator } from '@/lib/leaders'
 import { ReposterDashboard } from '@/app/submit/reposter-dashboard'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 30
 
 function isValidDate(value: string | undefined): value is string {
   return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -56,11 +51,6 @@ export default async function SubmitPage({
   searchParams: Promise<{ u?: string; date?: string; panel?: string; tab?: string; taskDay?: string }>
 }) {
   const { u, date: dateParam, panel, tab, taskDay } = await searchParams
-  try {
-    await ensureCreatorTrackingColumns()
-  } catch {
-    /* schema ensure must not block login */
-  }
   const [locale, leaderSession] = await Promise.all([getLocale(), getLeaderSession()])
   const t = createT(locale)
   const creator = u ? await getCreatorByName(u) : null
@@ -72,14 +62,10 @@ export default async function SubmitPage({
   const login = loginHandleFor(creator)
   const username = login.handle || creator.name
   if (creator.role === 'reposter') {
-    try {
-      await syncReposterStrikes({
-        today: operationalDayFromIso(await getServerNowIso()),
-        creatorId: creator.id,
-      })
-    } catch {
-      /* still let them in if strike sync fails */
-    }
+    const todayIso = operationalDayFromIso(await getServerNowIso())
+    after(() => {
+      void syncReposterStrikes({ today: todayIso, creatorId: creator.id }).catch(() => undefined)
+    })
     let grouped = false
     try {
       grouped = (await getLeaderForCreator(creator.id)) != null
@@ -99,8 +85,7 @@ export default async function SubmitPage({
       }
     }
   }
-  const [calendarToday, serverNow, defaultTime] = await Promise.all([
-    getServerToday(),
+  const [serverNow, defaultTime] = await Promise.all([
     getServerNowIso(),
     getServerTimeHm(),
   ])
@@ -137,8 +122,6 @@ export default async function SubmitPage({
     consistency,
     active,
     comparisons,
-    league,
-    contestBoard,
     strikeSummary,
     myPayments,
   ] = await Promise.all([
@@ -148,17 +131,6 @@ export default async function SubmitPage({
     getCreatorConsistency(creator, today),
     getActiveContract(creator.id, today),
     getContractComparisons(creator, today),
-    creator.role === 'reposter'
-      ? getLeagueBoard({ role: 'reposter' }).catch(() => null)
-      : Promise.resolve(null),
-    creator.role === 'reposter' && isContestLive(calendarToday) && miqatId != null
-      ? getLeagueBoard({
-          role: 'reposter',
-          from: CONTEST.from,
-          to: CONTEST.to,
-          projectId: miqatId,
-        }).catch(() => null)
-      : Promise.resolve(null),
     creator.role === 'reposter'
       ? getCreatorStrikeSummary(creator.id, opToday).catch(() => null)
       : Promise.resolve(null),
@@ -396,7 +368,7 @@ export default async function SubmitPage({
                 pasteHint: t('pasteLinksHint'),
                 send: t('submitVideos'),
                 sendTo: t('submitVideosTo'),
-                sending: '…',
+                sending: t('sending'),
                 project: t('submitProject'),
                 projectHint: t('submitProjectHint'),
                 pickProject: t('pickProject'),
@@ -434,48 +406,6 @@ export default async function SubmitPage({
             />
           </section>
         </div>
-
-        {creator.role === 'reposter' && (contestBoard || league) ? (
-          <div className="flex flex-col gap-3">
-            {contestBoard ? (
-              <ContestPodium
-                rows={contestBoard.rows}
-                highlightId={creator.id}
-                labels={{
-                  title: t('contestBoardTitle'),
-                  empty: t('contestBoardEmpty'),
-                  diamond: t('contestDiamond'),
-                  gold: t('contestGold'),
-                  silver: t('contestSilver'),
-                  both: t('contestBoth'),
-                  instagram: t('instagram'),
-                  tiktok: t('tiktok'),
-                }}
-              />
-            ) : null}
-            {league ? (
-              <div className="max-h-[30vh] overflow-auto rounded-2xl border border-border bg-card p-3 shadow-sm">
-                <RankingBoard
-                  board={league}
-                  highlightId={creator.id}
-                  collapsedLimit={5}
-                  showSearch={false}
-                  identity="handle"
-                  labels={{
-                    title: t('rankingTitle'),
-                    empty: t('rankingEmpty'),
-                    expand: t('rankingExpand'),
-                    collapse: t('rankingCollapse'),
-                    search: t('rankingSearch'),
-                    rank: t('rankingRank'),
-                    views: t('views'),
-                    videos: t('videosWord'),
-                  }}
-                />
-              </div>
-            ) : null}
-          </div>
-        ) : null}
 
         <p className="text-xs text-muted-foreground">{t('creatorTapHint')}</p>
 

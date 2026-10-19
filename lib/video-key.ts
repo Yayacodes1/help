@@ -1,6 +1,7 @@
 import 'server-only'
 import { sql } from '@/lib/db'
 import { isTikTokHost } from '@/lib/media-url'
+import { ensureOnce } from '@/lib/ensure-once'
 
 /**
  * One key per video, however the link was written:
@@ -48,8 +49,10 @@ function safeHost(url: string): string {
 }
 
 export async function ensureVideoKeyColumn() {
-  await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS video_key text`
-  await sql`CREATE INDEX IF NOT EXISTS submissions_video_key_idx ON submissions (video_key)`
+  return ensureOnce('video-key', async () => {
+    await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS video_key text`
+    await sql`CREATE INDEX IF NOT EXISTS submissions_video_key_idx ON submissions (video_key)`
+  })
 }
 
 export type ExistingVideo = {

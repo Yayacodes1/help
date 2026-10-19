@@ -8,16 +8,20 @@ import './globals.css'
 const display = Fraunces({
   subsets: ['latin'],
   variable: '--font-display',
+  display: 'swap',
+  preload: false,
 })
 
 const body = Source_Sans_3({
   subsets: ['latin'],
   variable: '--font-body',
+  display: 'swap',
 })
 
 const arabic = Noto_Sans_Arabic({
   subsets: ['arabic'],
   variable: '--font-arabic',
+  display: 'swap',
 })
 
 export const metadata: Metadata = {

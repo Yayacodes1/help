@@ -20,6 +20,7 @@ import {
   fulfillMarketingRequest,
   recordWalletPayments,
   setWalletBalance,
+  resetAhmedWalletNow,
 } from '@/app/actions/marketing'
 import { deletePayment } from '@/app/actions/admin'
 
@@ -127,6 +128,35 @@ export function WalletBoard({
           tone={w.left < 0 ? 'bad' : 'good'}
         />
       </section>
+      <div className="-mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={pending || Math.abs(w.left) < 0.009}
+          onClick={() => {
+            if (
+              !confirm(
+                `Reset what Ahmed has now (${sarMoney(w.left)}) to 0?\nSent money, payments, and other spend stay recorded.`,
+              )
+            ) {
+              return
+            }
+            startTransition(async () => {
+              const res = await resetAhmedWalletNow()
+              done(
+                res.diff === 0
+                  ? 'Ahmed already had 0'
+                  : `Ahmed has now reset to 0 (was ${sarMoney(res.previous)})`,
+              )
+            })
+          }}
+          className={ghostBtn}
+        >
+          Reset Ahmed has now
+        </button>
+        <span className="text-xs text-muted-foreground">
+          Sets leftover to 0 only. Does not delete the ledger.
+        </span>
+      </div>
       <p className="-mt-2 text-xs text-muted-foreground">
         Everything is in riyals (dollars count as {SAR_PER_USD} SAR). Use “How much I have” to set the real amount
         any time. Every payment Ahmed logs comes out of his wallet in that person’s currency. Only Yahya can record

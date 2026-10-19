@@ -1,6 +1,7 @@
 import 'server-only'
 import { cache } from 'react'
 import { sql } from '@/lib/db'
+import { ensureOnce } from '@/lib/ensure-once'
 import { addDays } from '@/lib/campaign'
 import { getAttendanceForDay } from '@/lib/attendance'
 import type { AttendancePerson, AttendanceStatus } from '@/lib/attendance-types'
@@ -51,6 +52,10 @@ function leaderPay(row: LeaderPayRow): LeaderPay {
 }
 
 export async function ensureLeaderTables() {
+  return ensureOnce('leaders', runEnsureLeaderTables)
+}
+
+async function runEnsureLeaderTables() {
   await sql`
     CREATE TABLE IF NOT EXISTS leaders (
       id SERIAL PRIMARY KEY,
@@ -583,7 +588,9 @@ export type CreatorLeaderLink = {
 }
 
 /** Leader this person belongs to: assigned `leader_id`, or the leader who linked them as their reposter. */
-export async function getLeaderForCreator(creatorId: number): Promise<(CreatorLeaderLink & { id: number; name: string }) | null> {
+export const getLeaderForCreator = cache(async function getLeaderForCreator(
+  creatorId: number,
+): Promise<(CreatorLeaderLink & { id: number; name: string }) | null> {
   await ensureLeaderTables()
   const rows = (await sql`
     SELECT l.id, l.name
@@ -605,7 +612,7 @@ export async function getLeaderForCreator(creatorId: number): Promise<(CreatorLe
     teamIds: scope.teamIds,
     ownId: scope.ownId,
   }
-}
+})
 
 export async function getLeaderScope(leaderId: number): Promise<LeaderScope> {
   await ensureLeaderTables()

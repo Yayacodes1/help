@@ -1,7 +1,12 @@
 import { sql } from '@/lib/db'
+import { ensureOnce } from '@/lib/ensure-once'
 
 /** Idempotent additive schema — safe to call on every admin/creator load. */
 export async function ensureCreatorTrackingColumns() {
+  return ensureOnce('schema', runEnsureCreatorTrackingColumns)
+}
+
+async function runEnsureCreatorTrackingColumns() {
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS contract_start date`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS contract_end date`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS last_paid_at date`
@@ -327,6 +332,7 @@ export async function ensureCreatorTrackingColumns() {
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_id text`
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS batch_index integer`
   await sql`CREATE INDEX IF NOT EXISTS submissions_batch_id_idx ON submissions (batch_id)`
+  await sql`CREATE INDEX IF NOT EXISTS submissions_creator_video_date_idx ON submissions (creator_id, video_date)`
   const { ensureVideoKeyColumn } = await import('@/lib/video-key')
   await ensureVideoKeyColumn()
 

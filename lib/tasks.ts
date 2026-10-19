@@ -1,10 +1,15 @@
 import 'server-only'
 import { sql } from '@/lib/db'
+import { ensureOnce } from '@/lib/ensure-once'
 import type { LeaderTask, TaskDaySummary } from '@/lib/task-types'
 
 export type { LeaderTask, TaskDaySummary }
 
 export async function ensureTaskTables() {
+  return ensureOnce('tasks', runEnsureTaskTables)
+}
+
+async function runEnsureTaskTables() {
   await sql`
     CREATE TABLE IF NOT EXISTS leader_tasks (
       id SERIAL PRIMARY KEY,

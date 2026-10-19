@@ -96,6 +96,7 @@ async function tikhubGet(path: string, query: Record<string, string>): Promise<u
       Accept: 'application/json',
     },
     cache: 'no-store',
+    signal: AbortSignal.timeout(12_000),
   })
 
   const body = await res.text().catch(() => '')
@@ -139,6 +140,7 @@ export async function resolveMediaRedirect(url: string): Promise<string> {
     const res = await fetch(url, {
       method: 'GET',
       redirect: 'follow',
+      signal: AbortSignal.timeout(5000),
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',

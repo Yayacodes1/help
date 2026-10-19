@@ -129,12 +129,19 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
               className="mt-1 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-60"
             >
               <Lock className="h-4 w-4" />
-              {leaderPending ? '...' : t('continue')}
+              {leaderPending ? t('sending') : t('continue')}
               <ArrowLeft className={`h-4 w-4 ${rtl ? '' : 'rotate-180'}`} />
             </button>
           </form>
         ) : role === 'creator' || role === 'reposter' ? (
-          <form action={creatorAction} className="mt-5 flex flex-col gap-3">
+          <form
+            action={creatorAction}
+            className="mt-5 flex flex-col gap-3"
+            aria-busy={creatorPending}
+            onSubmit={(e) => {
+              if (creatorPending) e.preventDefault()
+            }}
+          >
             <input type="hidden" name="expected_role" value={role} />
             <CreatorLoginFields locale={locale} />
 
@@ -154,7 +161,7 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
               className="mt-1 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-60"
             >
               <Users className="h-4 w-4" />
-              {creatorPending ? '...' : t('continue')}
+              {creatorPending ? t('sending') : t('continue')}
               <ArrowLeft className={`h-4 w-4 ${rtl ? '' : 'rotate-180'}`} />
             </button>
           </form>

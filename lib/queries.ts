@@ -361,12 +361,22 @@ export async function getCreatorsWithProgressOnDate(
            c.miqat_tiktok_username, c.miqat_instagram_username,
       c.paused_at::text AS paused_at,
       p.name AS project_name,
-      COALESCE(SUM(CASE WHEN s.video_date = ${date}::date AND s.platform = 'instagram' AND (${pid}::int IS NULL OR s.project_id = ${pid}) THEN 1 ELSE 0 END), 0)::int AS today_instagram,
-      COALESCE(SUM(CASE WHEN s.video_date = ${date}::date AND s.platform = 'tiktok' AND (${pid}::int IS NULL OR s.project_id = ${pid}) THEN 1 ELSE 0 END), 0)::int AS today_tiktok,
-      COALESCE(SUM(CASE WHEN s.id IS NOT NULL AND (${pid}::int IS NULL OR s.project_id = ${pid}) THEN 1 ELSE 0 END), 0)::int AS total_videos
+      COALESCE(SUM(CASE WHEN s.platform = 'instagram' THEN 1 ELSE 0 END), 0)::int AS today_instagram,
+      COALESCE(SUM(CASE WHEN s.platform = 'tiktok' THEN 1 ELSE 0 END), 0)::int AS today_tiktok,
+      COALESCE(MAX(tot.total), 0)::int AS total_videos
     FROM creators c
     LEFT JOIN projects p ON p.id = c.project_id
-    LEFT JOIN submissions s ON s.creator_id = c.id
+    LEFT JOIN (
+      SELECT creator_id, COUNT(*)::int AS total
+      FROM submissions
+      WHERE (${pid}::int IS NULL OR project_id = ${pid})
+        AND (${ids}::int[] IS NULL OR creator_id = ANY(${ids}::int[]))
+      GROUP BY creator_id
+    ) tot ON tot.creator_id = c.id
+    LEFT JOIN submissions s
+      ON s.creator_id = c.id
+     AND s.video_date = ${date}::date
+     AND (${pid}::int IS NULL OR s.project_id = ${pid})
     WHERE (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
       AND (${ids}::int[] IS NULL OR c.id = ANY(${ids}::int[]))
       AND (
