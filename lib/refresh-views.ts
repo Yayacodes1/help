@@ -6,6 +6,7 @@ import { detectPlatformFromUrl } from '@/lib/media-url'
 import { getServerToday } from '@/lib/queries'
 import { fetchViewsDetailed } from '@/lib/tikhub'
 import { applyFetchViewsResult } from '@/lib/submission-meta'
+import { publicViewsError } from '@/lib/tikhub-views'
 
 export type RefreshViewsScope = 'recent' | 'all' | 'zeros' | 'filtered'
 
@@ -173,18 +174,20 @@ export async function refreshViews(
 
     const result = await fetchViewsDetailed(platform, row.url)
     if (!result.ok) {
+      const reason = publicViewsError(result.reason, platform)
       failed += 1
-      failReasons.push(result.reason)
+      failReasons.push(reason)
       if (failureSamples.length < 12) {
         failureSamples.push({
           id: row.id,
           url: row.url,
-          reason: result.reason,
+          reason,
         })
       }
+      // Keep the last saved view count. Never write 0 or mark this as an update.
       await sql`
         UPDATE submissions
-        SET views_error = ${result.reason.slice(0, 400)}
+        SET views_error = ${reason.slice(0, 400)}
         WHERE id = ${row.id}
       `
       continue
@@ -203,7 +206,9 @@ export async function refreshViews(
       updated += 1
     } else {
       await sql`
-        UPDATE submissions SET views_error = NULL WHERE id = ${row.id}
+        UPDATE submissions
+        SET views_error = NULL, views_fetched_at = NOW()
+        WHERE id = ${row.id}
       `
       skipped += 1
     }

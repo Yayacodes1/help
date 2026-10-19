@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { RefreshCw } from 'lucide-react'
 import type { Platform } from '@/lib/db'
 import type { RoleFilter } from '@/lib/participant-role'
+import { publicViewsError } from '@/lib/tikhub-views'
 
 const ADMIN_ENDPOINT = '/api/admin/refresh-views'
 
@@ -25,7 +26,10 @@ function mergeFailures(
   list: { reason: string; count: number }[] | undefined,
 ) {
   if (!list) return
-  for (const f of list) into.set(f.reason, (into.get(f.reason) ?? 0) + f.count)
+  for (const f of list) {
+    const reason = publicViewsError(f.reason)
+    into.set(reason, (into.get(reason) ?? 0) + f.count)
+  }
 }
 
 function explainHttpError(status: number, apiError?: string): string {
@@ -232,7 +236,9 @@ export function RefreshViewsButton({
         platformsFixed += data.platformsFixed ?? 0
         mergeFailures(failMap, data.failures)
         for (const s of data.failureSamples ?? []) {
-          if (samples.length < 25) samples.push(s)
+          if (samples.length < 25) {
+            samples.push({ ...s, reason: publicViewsError(s.reason) })
+          }
         }
 
         if (data.checked === 0) break
@@ -353,7 +359,9 @@ export function RefreshVideoButton({
     try {
       const data = await fetchChunk(0, 1, { submissionId }, endpoint)
       if (data.failed > 0) {
-        setError(data.failureSamples?.[0]?.reason || 'Refresh failed')
+        // Row already shows views_error after refresh — don't duplicate it here.
+        setError(null)
+        setStatus(null)
       } else if (data.checked === 0) {
         setError('Video not found for refresh.')
       } else if (data.updated > 0) {

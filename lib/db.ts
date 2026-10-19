@@ -92,6 +92,8 @@ export type Submission = {
   views: number
   /** Last TikHub/views lookup error; null when last fetch succeeded or never tried. */
   views_error: string | null
+  /** When the last successful views lookup ran; unchanged if a later refresh fails. */
+  views_fetched_at: string | null
   /** Chosen posting day + time (creators pick this on submit). */
   created_at: string
   /** When the row was actually sent; null for videos added before this was tracked. */

@@ -1,6 +1,22 @@
 import 'server-only'
 import type { Platform } from '@/lib/db'
 import { isTikTokHost } from '@/lib/media-url'
+import {
+  INSTAGRAM_REFRESH_USER_ERROR,
+  canonicalizeInstagramUrl,
+  extractPostedAt,
+  extractViewCount,
+  parseTikHubEnvelope,
+} from '@/lib/tikhub-views'
+
+export {
+  INSTAGRAM_REFRESH_USER_ERROR,
+  canonicalizeInstagramUrl,
+  extractInstagramCode,
+  extractPostedAt,
+  extractViewCount,
+  publicViewsError,
+} from '@/lib/tikhub-views'
 
 const BASE = 'https://api.tikhub.io'
 
@@ -8,20 +24,6 @@ function getApiKey(): string {
   const key = process.env.TIKHUB_API_KEY?.trim()
   if (!key) throw new Error('TIKHUB_API_KEY is not set')
   return key
-}
-
-export function extractInstagramCode(url: string): string | null {
-  try {
-    const u = new URL(url.trim())
-    const host = u.hostname.replace(/^www\./, '')
-    if (!/(^|\.)instagram\.com$/i.test(host) && !/^instagr\.am$/i.test(host)) {
-      return null
-    }
-    const m = u.pathname.match(/\/(reels?|p|tv)\/([A-Za-z0-9_-]+)/i)
-    return m?.[2] ?? null
-  } catch {
-    return null
-  }
 }
 
 export function extractTikTokAwemeId(url: string): string | null {
@@ -40,163 +42,6 @@ export function extractTikTokAwemeId(url: string): string | null {
   }
 }
 
-function asFiniteCount(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-    return Math.floor(value)
-  }
-  if (typeof value === 'string' && value.trim() !== '') {
-    const n = Number(value)
-    if (Number.isFinite(n) && n >= 0) return Math.floor(n)
-  }
-  return null
-}
-
-const VIEW_KEYS = [
-  'play_count',
-  'playCount',
-  'view_count',
-  'viewCount',
-  'video_view_count',
-  'videoViewCount',
-  'ig_play_count',
-  'plays',
-  'views',
-] as const
-
-function viewsFromObject(obj: Record<string, unknown> | null | undefined): number | null {
-  if (!obj) return null
-  for (const k of VIEW_KEYS) {
-    const n = asFiniteCount(obj[k])
-    if (n != null) return n
-  }
-  return null
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, unknown>
-  }
-  return null
-}
-
-function firstArrayItem(value: unknown): Record<string, unknown> | null {
-  if (Array.isArray(value) && value[0]) return asRecord(value[0])
-  return null
-}
-
-function preferredMediaObjects(payload: unknown): Array<Record<string, unknown> | null> {
-  const root = asRecord(payload)
-  if (!root) return []
-
-  const data = asRecord(root.data) ?? root
-  // Some IG responses nest again: data.data
-  const inner = asRecord(data.data) ?? data
-  const aweme =
-    asRecord(inner.aweme_detail) ??
-    asRecord(data.aweme_detail) ??
-    asRecord(inner.aweme) ??
-    asRecord(data.aweme) ??
-    firstArrayItem(inner.aweme_list) ??
-    firstArrayItem(data.aweme_list) ??
-    asRecord(root.aweme_detail) ??
-    asRecord(root.aweme)
-
-  return [
-    aweme,
-    asRecord(asRecord(inner.itemInfo)?.itemStruct),
-    asRecord(inner.item),
-    asRecord(data.item),
-    asRecord(inner.media),
-    asRecord(data.media),
-    asRecord(inner.video),
-    asRecord(data.video),
-    asRecord(inner.caption),
-    asRecord(data.caption),
-    asRecord(aweme?.statistics),
-    asRecord(aweme?.stats),
-    asRecord(inner.statistics),
-    asRecord(data.statistics),
-    asRecord(inner.stats),
-    asRecord(data.stats),
-    asRecord(inner.metrics),
-    asRecord(data.metrics),
-    asRecord(asRecord(asRecord(inner.itemInfo)?.itemStruct)?.stats),
-    inner,
-    data,
-    root,
-  ]
-}
-
-/**
- * Prefer TikTok `statistics.play_count` / IG metric fields.
- * Avoid walking the whole tree (many unrelated `*_count: 0` fields).
- */
-export function extractViewCount(payload: unknown): number | null {
-  let foundZero: number | null = null
-  for (const obj of preferredMediaObjects(payload)) {
-    const n = viewsFromObject(obj)
-    if (n == null) continue
-    if (n > 0) return n
-    foundZero = n
-  }
-
-  return foundZero
-}
-
-const POSTED_AT_KEYS = [
-  'create_time',
-  'createTime',
-  'create_timestamp',
-  'createTimestamp',
-  'taken_at',
-  'takenAt',
-  'taken_at_timestamp',
-  'takenAtTimestamp',
-  'device_timestamp',
-  'deviceTimestamp',
-  'publish_time',
-  'publishTime',
-  'posted_at',
-  'postedAt',
-  'timestamp',
-] as const
-
-/** Parse unix seconds/ms or ISO-ish strings into an ISO timestamptz string. */
-function isoFromUnknownTime(value: unknown): string | null {
-  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-    const ms = value > 1e12 ? value : value * 1000
-    const d = new Date(ms)
-    return Number.isNaN(d.getTime()) ? null : d.toISOString()
-  }
-  if (typeof value === 'string' && value.trim() !== '') {
-    const trimmed = value.trim()
-    if (/^\d+(\.\d+)?$/.test(trimmed)) {
-      return isoFromUnknownTime(Number(trimmed))
-    }
-    const d = new Date(trimmed)
-    return Number.isNaN(d.getTime()) ? null : d.toISOString()
-  }
-  return null
-}
-
-function postedAtFromObject(obj: Record<string, unknown> | null | undefined): string | null {
-  if (!obj) return null
-  for (const k of POSTED_AT_KEYS) {
-    const iso = isoFromUnknownTime(obj[k])
-    if (iso) return iso
-  }
-  return null
-}
-
-/** Platform publish time from TikHub / TikTok / IG payloads, if present. */
-export function extractPostedAt(payload: unknown): string | null {
-  for (const obj of preferredMediaObjects(payload)) {
-    const iso = postedAtFromObject(obj)
-    if (iso) return iso
-  }
-  return null
-}
-
 function friendlyTikHubError(status: number, body: string): string {
   const lower = body.toLowerCase()
   if (
@@ -211,6 +56,36 @@ function friendlyTikHubError(status: number, body: string): string {
   return `TikHub ${status}: ${body.slice(0, 160)}`
 }
 
+class TikHubHttpError extends Error {
+  status: number
+  requestId?: string
+  path: string
+
+  constructor(message: string, status: number, path: string, requestId?: string) {
+    super(message)
+    this.name = 'TikHubHttpError'
+    this.status = status
+    this.path = path
+    this.requestId = requestId
+  }
+}
+
+function logTikHub(
+  event: string,
+  details: Record<string, unknown>,
+) {
+  const safe: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(details)) {
+    if (/key|token|secret|authorization|bearer/i.test(k)) continue
+    if (typeof v === 'string' && v.length > 240) {
+      safe[k] = `${v.slice(0, 240)}…`
+    } else {
+      safe[k] = v
+    }
+  }
+  console.warn(`[tikhub:${event}]`, safe)
+}
+
 async function tikhubGet(path: string, query: Record<string, string>): Promise<unknown> {
   const u = new URL(path, BASE)
   for (const [k, v] of Object.entries(query)) u.searchParams.set(k, v)
@@ -223,11 +98,39 @@ async function tikhubGet(path: string, query: Record<string, string>): Promise<u
     cache: 'no-store',
   })
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(friendlyTikHubError(res.status, body))
+  const body = await res.text().catch(() => '')
+  let json: unknown = null
+  if (body) {
+    try {
+      json = JSON.parse(body)
+    } catch {
+      json = null
+    }
   }
-  return res.json()
+
+  const envelope = parseTikHubEnvelope(
+    json ?? { message: body.slice(0, 200) },
+    res.status,
+    res.headers.get('x-request-id'),
+  )
+
+  if (!envelope.ok) {
+    logTikHub('request-failed', {
+      path,
+      status: envelope.status,
+      requestId: envelope.requestId,
+      code: envelope.code,
+      message: envelope.message,
+    })
+    throw new TikHubHttpError(
+      friendlyTikHubError(envelope.status, envelope.message || body),
+      envelope.status,
+      path,
+      envelope.requestId,
+    )
+  }
+
+  return envelope.payload
 }
 
 /** Follow vt./vm./tt.site redirects to the canonical TikTok URL (no TikHub charge). */
@@ -389,38 +292,86 @@ async function fetchTikTokViews(url: string): Promise<FetchViewsResult> {
   }
 }
 
+function requestKey(path: string, query: Record<string, string>): string {
+  const params = Object.keys(query)
+    .sort()
+    .map((k) => `${k}=${query[k]}`)
+    .join('&')
+  return `${path}?${params}`
+}
+
 async function fetchInstagramViews(url: string): Promise<FetchViewsResult> {
-  const attempts: string[] = []
+  let working = canonicalizeInstagramUrl(url)
+  if (!working.code) {
+    const resolved = await resolveMediaRedirect(url)
+    if (resolved !== url) working = canonicalizeInstagramUrl(resolved)
+  }
 
-  try {
-    const data = await tikhubGet('/api/v1/instagram/v1/fetch_post_by_url', {
-      post_url: url,
-    })
-    const hit = metaFromPayload(data)
-    if (hit) return hit
-    attempts.push('v1: no view_count')
-  } catch (e) {
-    attempts.push(e instanceof Error ? e.message.slice(0, 80) : 'v1 failed')
+  const failed400 = new Set<string>()
+
+  const tryEndpoint = async (
+    path: string,
+    query: Record<string, string>,
+  ): Promise<FetchViewsOk | 'missing'> => {
+    const key = requestKey(path, query)
+    if (failed400.has(key)) return 'missing'
+    try {
+      const data = await tikhubGet(path, query)
+      const hit = metaFromPayload(data, working.url)
+      if (hit) return hit
+      logTikHub('instagram-missing-count', {
+        path,
+        requestId: undefined,
+        code: working.code,
+        canonicalUrl: working.url,
+      })
+      return 'missing'
+    } catch (e) {
+      if (e instanceof TikHubHttpError && e.status === 400) {
+        failed400.add(key)
+      }
+      logTikHub('instagram-failed', {
+        path,
+        status: e instanceof TikHubHttpError ? e.status : undefined,
+        requestId: e instanceof TikHubHttpError ? e.requestId : undefined,
+        code: working.code,
+        canonicalUrl: working.url,
+        message: e instanceof Error ? e.message : 'failed',
+      })
+      throw e
+    }
   }
 
   try {
-    const data = await tikhubGet('/api/v1/instagram/v1/fetch_post_by_url_v2', {
-      post_url: url,
+    const hit = await tryEndpoint('/api/v1/instagram/v1/fetch_post_by_url', {
+      post_url: working.url,
     })
-    const hit = metaFromPayload(data)
-    if (hit) return hit
-    attempts.push('v2: no view_count')
-  } catch (e) {
-    attempts.push(e instanceof Error ? `v2: ${e.message.slice(0, 60)}` : 'v2 failed')
+    if (hit !== 'missing') return hit
+  } catch {
+    /* V2 below; diagnostics already logged */
   }
 
-  return {
-    ok: false,
-    reason: `instagram: no play/view count (${attempts.slice(0, 3).join(' · ') || 'empty'})`.slice(
-      0,
-      400,
-    ),
+  const codeOrUrl = working.code ?? working.url
+  const v2Key = requestKey('/api/v1/instagram/v2/fetch_post_info', {
+    code_or_url: codeOrUrl,
+  })
+  if (!failed400.has(v2Key)) {
+    try {
+      const hit = await tryEndpoint('/api/v1/instagram/v2/fetch_post_info', {
+        code_or_url: codeOrUrl,
+      })
+      if (hit !== 'missing') {
+        return {
+          ...hit,
+          resolvedUrl: working.url !== url ? working.url : hit.resolvedUrl,
+        }
+      }
+    } catch {
+      /* public message below */
+    }
   }
+
+  return { ok: false, reason: INSTAGRAM_REFRESH_USER_ERROR }
 }
 
 export async function fetchViewsDetailed(
@@ -434,6 +385,12 @@ export async function fetchViewsDetailed(
     if (platform === 'instagram') return await fetchInstagramViews(trimmed)
     return await fetchTikTokViews(trimmed)
   } catch (e) {
+    if (platform === 'instagram') {
+      logTikHub('instagram-unhandled', {
+        message: e instanceof Error ? e.message : 'unknown error',
+      })
+      return { ok: false, reason: INSTAGRAM_REFRESH_USER_ERROR }
+    }
     return {
       ok: false,
       reason: e instanceof Error ? e.message.slice(0, 180) : 'unknown error',

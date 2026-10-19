@@ -26,6 +26,7 @@ export async function applyFetchViewsResult(
       UPDATE submissions
       SET views = ${result.views},
           views_error = NULL,
+          views_fetched_at = NOW(),
           url = ${resolvedUrl},
           video_key = COALESCE(${resolvedKey}, video_key),
           platform_posted_at = ${postedAt}::timestamptz
@@ -38,6 +39,7 @@ export async function applyFetchViewsResult(
       UPDATE submissions
       SET views = ${result.views},
           views_error = NULL,
+          views_fetched_at = NOW(),
           url = ${resolvedUrl},
           video_key = COALESCE(${resolvedKey}, video_key)
       WHERE id = ${id}
@@ -49,6 +51,7 @@ export async function applyFetchViewsResult(
       UPDATE submissions
       SET views = ${result.views},
           views_error = NULL,
+          views_fetched_at = NOW(),
           platform_posted_at = ${postedAt}::timestamptz
       WHERE id = ${id}
     `
@@ -56,7 +59,7 @@ export async function applyFetchViewsResult(
   }
   await sql`
     UPDATE submissions
-    SET views = ${result.views}, views_error = NULL
+    SET views = ${result.views}, views_error = NULL, views_fetched_at = NOW()
     WHERE id = ${id}
   `
 }

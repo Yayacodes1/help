@@ -128,8 +128,10 @@ export async function ensureCreatorTrackingColumns() {
       AND EXISTS (SELECT 1 FROM contracts c WHERE c.creator_id = p.creator_id)
   `
 
-  // Why a views lookup failed (cleared on success).
+  // Why a views lookup failed (cleared on success). Never overwrite views on failure.
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS views_error text`
+  // Last time a views lookup succeeded (left unchanged when a refresh fails).
+  await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS views_fetched_at timestamptz`
   // When TikTok/IG says the video went live (from TikHub). Display + optional video_date source.
   await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS platform_posted_at timestamptz`
   // Real moment the row was sent. Added without a default first so old rows stay NULL instead of "now".

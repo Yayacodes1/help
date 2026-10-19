@@ -12,6 +12,7 @@ import { PLATFORM_META } from '@/lib/platforms'
 import { scopedPersonHref, type LinkScope } from '@/lib/admin-href'
 import { projectToneClass } from '@/lib/project-scope'
 import type { Project } from '@/lib/db'
+import { publicViewsError } from '@/lib/tikhub-views'
 
 export function SubmissionsTable({
   submissions,
@@ -90,7 +91,7 @@ export function SubmissionsTable({
           {submissions.map((s) => {
             const err =
               'views_error' in s && typeof s.views_error === 'string' && s.views_error
-                ? s.views_error
+                ? publicViewsError(s.views_error, s.platform)
                 : null
             const submittedAt = 'submitted_at' in s && s.submitted_at ? s.submitted_at : null
             const late =
