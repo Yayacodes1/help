@@ -101,7 +101,15 @@ export const messages = {
     currentStreak: 'Current streak',
     bestStreak: 'Best streak',
     streakPeriod: 'Contract period',
-    streakPeriodHint: 'Consistency and streaks are scored inside the current contract dates.',
+    streakPeriodHint:
+      'Hit rate uses this contract. Streaks keep going from the previous contract, and Restore last streaks puts the old number back after a miss.',
+    restoreStreaks: 'Restore last streaks',
+    restoreStreaksOne: 'Restore last streak',
+    restoreStreaksHint:
+      'Puts each person’s streak back to the number they had last time. Giving a break does this automatically.',
+    restoreStreaksRestoring: 'Restoring…',
+    restoreStreaksDone: 'Restored',
+    restoreStreaksNone: 'Already on their last streak, or no streak to restore.',
     lastStreakPeriod: 'Last period',
     lastStreakPeriodHint: 'Previous contract window.',
     hitRate: 'Hit rate',
@@ -179,7 +187,7 @@ export const messages = {
     tabTwoday: '2-day',
     quickBreakTitle: 'Give a 2-day break',
     quickBreakHint:
-      'The list starts empty. Click the people you want to give a break to, then give them two days.',
+      'The list starts empty. Click the people you want to give a break to, then give them two days. Their last streak number is put back.',
     quickBreakSearch: 'Search a name…',
     quickBreakEmpty: 'Nobody selected yet. Click names below to add them here.',
     quickBreakGive: 'Give 2-day break',
@@ -588,7 +596,15 @@ export const messages = {
     currentStreak: 'السلسلة الحالية',
     bestStreak: 'أفضل سلسلة',
     streakPeriod: 'فترة العقد',
-    streakPeriodHint: 'الالتزام والسلسلة يُحسبان ضمن تواريخ العقد الحالي.',
+    streakPeriodHint:
+      'نسبة الالتزام لهذا العقد. السلاسل تُكمل من العقد السابق، و«استعادة السلاسل» يُرجع الرقم السابق بعد يوم ضائع.',
+    restoreStreaks: 'استعادة السلاسل السابقة',
+    restoreStreaksOne: 'استعادة السلسلة السابقة',
+    restoreStreaksHint:
+      'يُرجع رقم سلسلة كل شخص كما كان آخر مرة. إعطاء استراحة يفعل ذلك تلقائياً.',
+    restoreStreaksRestoring: 'جارٍ الاستعادة…',
+    restoreStreaksDone: 'تمت الاستعادة',
+    restoreStreaksNone: 'السلسلة الحالية هي السابقة، أو لا توجد سلسلة لاستعادتها.',
     lastStreakPeriod: 'الفترة السابقة',
     lastStreakPeriodHint: 'نافذة العقد السابق.',
     hitRate: 'نسبة الالتزام',
@@ -664,7 +680,8 @@ export const messages = {
     breakRequestDenied: 'مرفوض',
     tabTwoday: 'يومين',
     quickBreakTitle: 'إعطاء استراحة يومين',
-    quickBreakHint: 'القائمة تبدأ فارغة. اضغط على الأشخاص الذين تريد إعطاءهم استراحة ثم أعطيهم يومين.',
+    quickBreakHint:
+      'القائمة تبدأ فارغة. اضغط على الأشخاص الذين تريد إعطاءهم استراحة ثم أعطيهم يومين. يُرجع رقم سلسلتهم السابقة.',
     quickBreakSearch: 'ابحث عن اسم…',
     quickBreakEmpty: 'لا أحد محدد بعد. اضغط على الأسماء بالأسفل لإضافتهم هنا.',
     quickBreakGive: 'إعطاء استراحة يومين',

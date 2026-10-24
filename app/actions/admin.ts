@@ -1533,6 +1533,22 @@ export async function updateContractMaxStrikes(contractId: number, formData: For
   else revalidatePath('/admin')
 }
 
+export async function restoreLastStreaks(creatorIds: number[]) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const ids = creatorIds.filter((id) => Number.isFinite(id) && id > 0)
+  if (ids.length === 0) return { ok: true as const, restored: 0, skipped: 0 }
+  const { restoreCreatorStreaks } = await import('@/lib/streak-restore')
+  const result = await restoreCreatorStreaks(ids)
+  revalidatePath('/admin')
+  revalidatePath('/submit')
+  revalidatePath('/leader')
+  for (const id of ids.slice(0, 40)) {
+    revalidatePath(`/admin/creators/${id}`)
+  }
+  return { ok: true as const, ...result }
+}
+
 /** Board-level break: creator_id + start + days (or end_date). */
 export async function createBoardScheduleBreak(formData: FormData) {
   await requireAdmin()

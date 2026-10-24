@@ -14,6 +14,7 @@ import {
 } from '@/app/actions/admin'
 import { RoleQuickSelect } from '@/components/admin/role-quick-select'
 import { BulkReposterPay } from '@/components/admin/bulk-reposter-pay'
+import { RestoreStreaksButton } from '@/components/admin/restore-streaks-button'
 import { BrandHandleFields, PersonHandlesLine } from '@/components/person-handles'
 import { adminPersonHref } from '@/lib/admin-href'
 import Link from 'next/link'
@@ -271,6 +272,17 @@ export function CreatorsManager({
           <option value="videos">Sort: total videos</option>
           <option value="streak">Sort: streak</option>
         </select>
+        <RestoreStreaksButton
+          creatorIds={selected.length > 0 ? selected : visible.map((c) => c.id)}
+          compact
+          labels={{
+            action: selected.length > 0 ? 'Restore selected streaks' : 'Restore last streaks',
+            hint: 'Puts streaks back to the number they had last time. Giving a break does this automatically.',
+            restoring: 'Restoring…',
+            restored: 'Restored',
+            none: 'Already on their last streak, or no streak to restore.',
+          }}
+        />
         <button
           type="button"
           onClick={() => setAddOpen((v) => !v)}

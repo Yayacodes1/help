@@ -25,8 +25,8 @@ export function BreaksManager({
       <h2 className="text-sm font-semibold">Break / rest days</h2>
       <p className="mt-1 text-xs text-muted-foreground">
         Break and rest are the same: those days do not count as misses and do not add
-        strikes. If the current contract has an end date, it is extended by the length of
-        the break.
+        strikes, and their last streak number is put back. If the current contract has an
+        end date, it is extended by the length of the break.
       </p>
       <form
         className="mt-3 grid gap-2 sm:grid-cols-4"

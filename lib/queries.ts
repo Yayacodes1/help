@@ -572,6 +572,8 @@ export async function getConsistencyForWindow(
     streakFrom?: string | null
     streakEpochStart?: string | null
     streakEpochEnd?: string | null
+    streakCarry?: number | null
+    windowStart?: string | null
   },
   schedule?: PostingSchedule | null,
 ): Promise<ConsistencySummary> {
@@ -590,6 +592,8 @@ export async function getConsistencyForWindow(
     streakFrom: streakOpts?.streakFrom,
     streakEpochStart: streakOpts?.streakEpochStart,
     streakEpochEnd: streakOpts?.streakEpochEnd,
+    streakCarry: streakOpts?.streakCarry,
+    windowStart: streakOpts?.windowStart,
     schedule,
   })
 }
@@ -677,22 +681,57 @@ export async function getCreatorConsistency(
 ): Promise<ConsistencySummary> {
   const active = await getActiveContract(creator.id, today)
   const goals = goalsForContract(creator, active)
-  // Streaks / consistency follow the active contract window (not a global 30-day epoch).
+  // Hit rate follows the active contract. Streaks can look back one contract
+  // and resume from a saved number after a break or manual restore.
   const window = contractWindow(creator, today, active)
 
-  return getConsistencyForWindow(
+  const restoreRows = (await sql`
+    SELECT COALESCE(c.streak_carry, 0)::int AS streak_carry,
+           c.streak_resume_on::text AS streak_resume_on,
+           (
+             SELECT x.start_date::text
+             FROM contracts x
+             WHERE x.creator_id = c.id
+               AND x.start_date < ${window.start}::date
+             ORDER BY x.start_date DESC, x.id DESC
+             LIMIT 1
+           ) AS prev_start
+    FROM creators c
+    WHERE c.id = ${creator.id}
+    LIMIT 1
+  `) as {
+    streak_carry: number
+    streak_resume_on: string | null
+    prev_start: string | null
+  }[]
+  const resumeOn = restoreRows[0]?.streak_resume_on ?? null
+  const carry = restoreRows[0]?.streak_carry ?? 0
+  const prevStart = restoreRows[0]?.prev_start ?? null
+  const fetchStart =
+    prevStart && prevStart < window.start ? prevStart : window.start
+  const streakFrom = resumeOn && resumeOn >= fetchStart ? resumeOn : fetchStart
+  const streakCarry = resumeOn ? carry : 0
+
+  const summary = await getConsistencyForWindow(
     creator,
-    window.start,
+    fetchStart,
     window.end,
     today,
     goals,
     {
-      streakFrom: window.start,
+      streakFrom,
       streakEpochStart: window.start,
       streakEpochEnd: window.end,
+      streakCarry,
+      windowStart: window.start,
     },
     scheduleFromContract(active),
   )
+
+  return {
+    ...summary,
+    days: summary.days.filter((d) => d.date >= window.start),
+  }
 }
 
 export type ContractProgress = {

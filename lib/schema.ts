@@ -15,6 +15,8 @@ async function runEnsureCreatorTrackingColumns() {
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS pay_every_days integer NOT NULL DEFAULT 14`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS notes text`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS paused_at date`
+  await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS streak_carry integer NOT NULL DEFAULT 0`
+  await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS streak_resume_on date`
 
   await sql`
     CREATE TABLE IF NOT EXISTS contracts (

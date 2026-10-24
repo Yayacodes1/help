@@ -38,6 +38,7 @@ import { CreatorsManager } from '@/components/admin/creators-manager'
 import { ProjectSelector } from '@/components/admin/project-selector'
 import { RoleSelector } from '@/components/admin/role-selector'
 import { TodayProgress } from '@/components/admin/today-progress'
+import { RestoreStreaksButton } from '@/components/admin/restore-streaks-button'
 import { DayNavigator } from '@/components/admin/day-navigator'
 import { LogoutButton } from '@/components/admin/logout-button'
 import { AttentionBoard } from '@/components/admin/attention-board'
@@ -1018,7 +1019,21 @@ export default async function AdminPage({
             hint: isToday ? t('goalsForToday') : formatDate(selectedDay),
             children: (
               <div className="flex flex-col gap-3">
-                <DayNavigator selectedDay={selectedDay} today={today} />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <DayNavigator selectedDay={selectedDay} today={today} />
+                  <RestoreStreaksButton
+                    creatorIds={(splitData ? splitData.flatMap((side) => side.creators) : creators).map(
+                      (c) => c.id,
+                    )}
+                    labels={{
+                      action: t('restoreStreaks'),
+                      hint: t('restoreStreaksHint'),
+                      restoring: t('restoreStreaksRestoring'),
+                      restored: t('restoreStreaksDone'),
+                      none: t('restoreStreaksNone'),
+                    }}
+                  />
+                </div>
                 {splitData ? (
                   <SplitColumns
                     sides={splitData.map((side) => ({

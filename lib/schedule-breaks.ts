@@ -51,6 +51,8 @@ export async function applyScheduleBreak(opts: {
       ${creatorId}, ${start}, ${end}, ${reason}, ${daysAdded}, ${extendedContractId}
     )
   `
+  const { restoreCreatorStreak } = await import('@/lib/streak-restore')
+  await restoreCreatorStreak(creatorId, today)
   return { days, daysAdded }
 }
 

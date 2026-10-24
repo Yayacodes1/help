@@ -45,6 +45,7 @@ import { getActivityRange } from '@/lib/activity'
 import { emptyActivityCounts } from '@/lib/activity-kinds'
 import { addDays } from '@/lib/campaign'
 import { ActivityCountsLine } from '@/components/activity-toggles'
+import { RestoreStreaksButton } from '@/components/admin/restore-streaks-button'
 
 export const dynamic = 'force-dynamic'
 
@@ -168,10 +169,23 @@ export default async function CreatorDetailPage({
               : ` · ${t('noContractSet')} · ${t('tracking')} ${formatDate(window.start)} → ${formatDate(window.end)}`}
           </p>
         </div>
-        <LanguageToggle
-          locale={locale}
-          labels={{ english: t('english'), arabic: t('arabic') }}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <RestoreStreaksButton
+            creatorIds={[creator.id]}
+            compact
+            labels={{
+              action: t('restoreStreaksOne'),
+              hint: t('restoreStreaksHint'),
+              restoring: t('restoreStreaksRestoring'),
+              restored: t('restoreStreaksDone'),
+              none: t('restoreStreaksNone'),
+            }}
+          />
+          <LanguageToggle
+            locale={locale}
+            labels={{ english: t('english'), arabic: t('arabic') }}
+          />
+        </div>
       </header>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">

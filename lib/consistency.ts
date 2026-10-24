@@ -86,6 +86,10 @@ export function buildConsistency(options: {
   streakFrom?: string | null
   streakEpochStart?: string | null
   streakEpochEnd?: string | null
+  /** Extra consecutive hits before the scored window. Applied only if the current run is unbroken. */
+  streakCarry?: number | null
+  /** Hit rate / miss counts start here; earlier days are lookback for streaks only. */
+  windowStart?: string | null
   /** Which days need posts; omitted = every day. Weekly plans are scored once per 7-day block. */
   schedule?: PostingSchedule | null
 }): ConsistencySummary {
@@ -145,7 +149,9 @@ export function buildConsistency(options: {
     }
   })
 
-  const pastRequired = days.filter(
+  const windowStart = options.windowStart ?? null
+  const rateDays = windowStart ? days.filter((d) => d.date >= windowStart) : days
+  const pastRequired = rateDays.filter(
     (d) => d.date <= cappedEnd && (d.status === 'hit' || d.status === 'partial' || d.status === 'miss'),
   )
   const hitDays = pastRequired.filter((d) => d.status === 'hit').length
@@ -154,26 +160,14 @@ export function buildConsistency(options: {
   const requiredDays = pastRequired.length
   const hitRate = requiredDays > 0 ? hitDays / requiredDays : 0
 
-  // Current streak: consecutive hits ending at today. Break days are skipped, not a reset.
-  // Epoch day 1 is left out of streak scoring when streakFrom is set.
-  let currentStreak = 0
-  const streakDays = days.filter(
-    (d) =>
-      d.date <= today &&
-      d.status !== 'none' &&
-      d.status !== 'future' &&
-      (streakFrom == null || d.date >= streakFrom),
-  )
-  for (let i = streakDays.length - 1; i >= 0; i--) {
-    if (streakDays[i].status === 'break') continue
-    if (streakDays[i].status === 'hit') currentStreak++
-    else break
-  }
+  const streakDays = streakEligibleDays(days, today, streakFrom)
+  const carry = Math.max(0, Math.floor(options.streakCarry ?? 0))
+  const currentStreak = currentStreakFromDays(streakDays, today, carry)
 
   let bestStreak = 0
   let run = 0
   for (const d of streakDays) {
-    if (d.status === 'break') continue
+    if (d.status === 'break' || isPendingToday(d, today)) continue
     if (d.status === 'hit') {
       run++
       if (run > bestStreak) bestStreak = run
@@ -181,6 +175,7 @@ export function buildConsistency(options: {
       run = 0
     }
   }
+  if (currentStreak > bestStreak) bestStreak = currentStreak
 
   return {
     days,
@@ -195,4 +190,76 @@ export function buildConsistency(options: {
     streakEpochEnd: options.streakEpochEnd ?? undefined,
     streakFrom: streakFrom ?? undefined,
   }
+}
+
+function isPendingToday(day: DayProgress, today: string): boolean {
+  return day.date === today && day.status !== 'hit' && day.status !== 'break'
+}
+
+export function streakEligibleDays(
+  days: DayProgress[],
+  today: string,
+  streakFrom?: string | null,
+): DayProgress[] {
+  return days.filter(
+    (d) =>
+      d.date <= today &&
+      d.status !== 'none' &&
+      d.status !== 'future' &&
+      (streakFrom == null || d.date >= streakFrom),
+  )
+}
+
+/** Consecutive hits ending at today. Breaks and an unfinished today are skipped, not a reset. */
+export function currentStreakFromDays(
+  streakDays: DayProgress[],
+  today: string,
+  carry = 0,
+): number {
+  let currentStreak = 0
+  let broken = false
+  for (let i = streakDays.length - 1; i >= 0; i--) {
+    const day = streakDays[i]
+    if (day.status === 'break' || isPendingToday(day, today)) continue
+    if (day.status === 'hit') currentStreak++
+    else {
+      broken = true
+      break
+    }
+  }
+  if (!broken) currentStreak += Math.max(0, Math.floor(carry))
+  return currentStreak
+}
+
+/**
+ * Number to put back on restore: the live streak if it never dropped, otherwise
+ * the run before the latest miss plus later hits before today (the miss is forgiven).
+ */
+export function lastCompletedStreak(
+  days: DayProgress[],
+  today: string,
+  opts?: { streakFrom?: string | null; resumeOn?: string | null; carry?: number | null },
+): number {
+  const resumeOn = opts?.resumeOn ?? null
+  const carry = Math.max(0, Math.floor(opts?.carry ?? 0))
+  const streakFrom = resumeOn ?? opts?.streakFrom ?? null
+  const streakDays = streakEligibleDays(days, today, streakFrom)
+  let run = resumeOn ? carry : 0
+  let preMiss = 0
+  let afterMissHitsBeforeToday = 0
+  let afterMiss = false
+  for (const d of streakDays) {
+    if (d.status === 'break' || isPendingToday(d, today)) continue
+    if (d.status === 'hit') {
+      run++
+      if (afterMiss && d.date < today) afterMissHitsBeforeToday++
+    } else {
+      preMiss = run
+      run = 0
+      afterMiss = true
+      afterMissHitsBeforeToday = 0
+    }
+  }
+  if (!afterMiss) return run
+  return preMiss + afterMissHitsBeforeToday
 }
