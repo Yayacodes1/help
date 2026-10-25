@@ -302,7 +302,36 @@ export function formatFullList(report: DayReport): string {
   return lines.join('\n')
 }
 
-function arabicTemplate(p: AttendancePerson, report: DayReport, opToday: string): string {
+function videosPostedToday(p: AttendancePerson): number {
+  return Math.max(0, p.todayInstagram) + Math.max(0, p.todayTiktok)
+}
+
+function videosNeededToday(p: AttendancePerson): number {
+  return Math.max(0, p.goalInstagram) + Math.max(0, p.goalTiktok)
+}
+
+/** Copy-ready reminder for a creator who is still behind today (Riyadh). */
+function creatorLiveReminder(p: AttendancePerson, dayLabel: string): string | null {
+  const posted = videosPostedToday(p)
+  const needed = videosNeededToday(p)
+  if (needed > 0 && posted >= needed) return null
+  if (posted <= 0) {
+    return (
+      '💐 رسالة تذكيرية\n' +
+      `مساك الله بالخير أختي ${p.name}، هذي رسالة تذكيرية بأنك ما نزلتي أي مقطع لليوم حتى الآن (${dayLabel}). يرجى نشر المقاطع المطلوبة قبل الساعة 12 منتصف الليل بتوقيت السعودية. وإذا حصل لك أي ظرف أو واجهتك أي مشكلة، ياليت تخبرينا. شاكرين لك تعاونك 🤍`
+    )
+  }
+  return (
+    '💐 رسالة تذكيرية\n' +
+    `مساك الله بالخير أختي ${p.name}،\n` +
+    `هذي رسالة تذكيرية بأنك نزلتي مقطع واحد فقط لليوم حتى الآن (${dayLabel})، وباقي عليك مقطع واحد عشان تكمّلين المطلوب منك لهذا اليوم. يرجى نشر المقطع المتبقي قبل الساعة 12 منتصف الليل بتوقيت السعودية. وإذا حصل لك أي ظرف أو واجهتك أي مشكلة، ياليت تخبرينا. شاكرين لك تعاونك 🤍`
+  )
+}
+
+function arabicTemplate(p: AttendancePerson, report: DayReport, opToday: string): string | null {
+  if (p.role === 'creator' && report.mode === 'live') {
+    return creatorLiveReminder(p, arDay(report.day))
+  }
   const deadline = 'قبل الساعة 12 منتصف الليل بتوقيت السعودية'
   const lines: string[] = []
   if (report.mode === 'live') {
@@ -341,14 +370,30 @@ function escapeHtml(text: string): string {
 /** One copy-ready Telegram message per person of that role who is behind (didn't post first). */
 export function buildMessageTemplates(report: DayReport, role: ReportRole, opToday: string): string[] {
   const behind = report.everyone
-    .filter((p) => p.role === role && (p.status === 'miss' || p.status === 'partial'))
+    .filter((p) => {
+      if (p.role !== role) return false
+      if (p.status !== 'miss' && p.status !== 'partial') return false
+      if (role === 'creator') {
+        const needed = videosNeededToday(p)
+        const posted = videosPostedToday(p)
+        if (needed > 0 && posted >= needed) return false
+      }
+      return true
+    })
     .sort((a, b) => (a.status === b.status ? a.name.localeCompare(b.name) : a.status === 'miss' ? -1 : 1))
   const noun = role === 'creator' ? 'Creator' : 'Reposter'
-  return behind.map((p, i) => {
-    const state = p.status === 'miss' ? "❌ didn't post" : `⚠️ needs ${missingEn(p)}`
+  const rows: Array<{ p: AttendancePerson; body: string }> = []
+  for (const p of behind) {
+    const body = arabicTemplate(p, report, opToday)
+    if (body) rows.push({ p, body })
+  }
+  return rows.map(({ p, body }, i) => {
+    const posted = videosPostedToday(p)
+    const state =
+      p.status === 'miss' || posted <= 0 ? "❌ didn't post" : `⚠️ needs ${missingEn(p)}`
     return (
-      `<b>${i + 1}/${behind.length} · ${escapeHtml(p.name)}</b> · ${noun} · ${state}\n` +
-      `<pre>${escapeHtml(arabicTemplate(p, report, opToday))}</pre>`
+      `<b>${i + 1}/${rows.length} · ${escapeHtml(p.name)}</b> · ${noun} · ${state}\n` +
+      `<pre>${escapeHtml(body)}</pre>`
     )
   })
 }
