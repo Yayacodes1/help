@@ -4,6 +4,12 @@ import { getAttendanceForDay } from '@/lib/attendance'
 import { OPERATIONAL_TZ, lastCompletedOperationalDay } from '@/lib/operational-day'
 import type { AttendancePerson, AttendanceStatus } from '@/lib/attendance-types'
 import { formatPlanCompare, getLeaderBoard, type LeaderBoard, type LeaderScore } from '@/lib/leaders'
+import {
+  peopleInSquad,
+  squadMenuTitle,
+  squadRoleButtons,
+  type ReportSquad,
+} from '@/lib/telegram-groups'
 
 /**
  * `final`: the day that just closed at midnight Riyadh (sent at 12:00 AM).
@@ -168,6 +174,7 @@ export const BUTTON_GUIDE =
   '📋 Full list — names: who posted, partial, didn\'t post (same day). Or type /list\n' +
   '✉️ Creators — a copy-ready Arabic message for each creator who is behind. Or type /messages_creators\n' +
   '✉️ Reposters — the same for reposters. Or type /messages_reposters\n' +
+  '👑 Group Leader — Alpha (Ammar), Beta (Abdul Kareem), Charlie (Lina), Delta (Sultan), or Ungrouped, then Creators or Reposters. Or type /groups\n' +
   '📊 Type /update any time for today so far.\n' +
   '↩️ Reply to a report with /update to refresh last night (late posts included).'
 
@@ -179,6 +186,7 @@ export function reportButtons(mode: ReportMode) {
         { text: '✉️ Creators', callback_data: `msgs:creator:${mode}` },
         { text: '✉️ Reposters', callback_data: `msgs:reposter:${mode}` },
       ],
+      [{ text: '👑 Group Leader', callback_data: `gl:${mode}` }],
     ],
   }
 }
@@ -368,8 +376,13 @@ function escapeHtml(text: string): string {
 }
 
 /** One copy-ready Telegram message per person of that role who is behind (didn't post first). */
-export function buildMessageTemplates(report: DayReport, role: ReportRole, opToday: string): string[] {
-  const behind = report.everyone
+export function buildMessageTemplates(
+  report: DayReport,
+  role: ReportRole,
+  opToday: string,
+  pool: AttendancePerson[] = report.everyone,
+): string[] {
+  const behind = pool
     .filter((p) => {
       if (p.role !== role) return false
       if (p.status !== 'miss' && p.status !== 'partial') return false
@@ -406,30 +419,45 @@ export function buildMessageTemplates(report: DayReport, role: ReportRole, opTod
 export async function sendAttendanceReports(
   opToday: string,
   mode: ReportMode,
-  opts: { chatId?: string | number; view?: ReportView; role?: ReportRole } = {},
+  opts: {
+    chatId?: string | number
+    view?: ReportView
+    role?: ReportRole
+    squad?: ReportSquad
+  } = {},
 ): Promise<{ ok: boolean; day: string; error?: string; skipped?: boolean; messages?: number }> {
   const { telegramConfigured, sendTelegramMessage } = await import('@/lib/telegram')
   const day = mode === 'live' ? opToday : lastCompletedOperationalDay(opToday)
   if (!telegramConfigured()) return { ok: true, day, skipped: true }
-  const { chatId, view = 'summary', role = 'creator' } = opts
+  const { chatId, view = 'summary', role = 'creator', squad } = opts
 
   const report = await buildDayReport(opToday, mode)
-  const buttons = reportButtons(mode)
+  const buttons = squad ? squadRoleButtons(squad, mode) : reportButtons(mode)
+  const scope = squad ? ` · ${squadMenuTitle(squad)}` : ''
 
   if (view === 'summary' || view === 'list') {
     const text = view === 'summary' ? formatSummary(report) : formatFullList(report)
-    const res = await sendTelegramMessage(text, { chatId, replyMarkup: buttons })
+    const res = await sendTelegramMessage(text, { chatId, replyMarkup: reportButtons(mode) })
     return { ok: res.ok, day: report.day, error: res.error }
   }
 
-  const templates = buildMessageTemplates(report, role, opToday)
+  const pool = squad ? peopleInSquad(report.everyone, report.leaders, squad, role) : undefined
   const noun = role === 'creator' ? 'creator' : 'reposter'
+  if (squad && (pool?.length ?? 0) === 0) {
+    const res = await sendTelegramMessage(
+      `✉️ No ${noun}s in ${squadMenuTitle(squad)}.\n\n${BUTTON_GUIDE}`,
+      { chatId, replyMarkup: buttons },
+    )
+    return { ok: res.ok, day: report.day, error: res.error, messages: 0 }
+  }
+
+  const templates = buildMessageTemplates(report, role, opToday, pool)
   const errors: Array<string | undefined> = []
   let sent = 0
 
   if (templates.length > 0) {
     const head = await sendTelegramMessage(
-      `✉️ ${noun.toUpperCase()} MESSAGES · ${dayTitle(report)}\n` +
+      `✉️ ${noun.toUpperCase()} MESSAGES${scope} · ${dayTitle(report)}\n` +
         `${templates.length} ${noun}${templates.length === 1 ? '' : 's'} behind. Tap the grey box to copy.`,
       { chatId },
     )
@@ -446,8 +474,8 @@ export async function sendAttendanceReports(
 
   const footer =
     templates.length === 0
-      ? `✉️ No ${noun} messages needed — every ${noun} is done for ${dayTitle(report)}.`
-      : `✅ That's all ${templates.length} ${noun} messages.`
+      ? `✉️ No ${noun} messages needed${scope} — every ${noun} is done for ${dayTitle(report)}.`
+      : `✅ That's all ${templates.length} ${noun} messages${scope}.`
   const tail = await sendTelegramMessage(`${footer}\n\n${BUTTON_GUIDE}`, { chatId, replyMarkup: buttons })
   errors.push(tail.error)
 

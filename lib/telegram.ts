@@ -84,6 +84,7 @@ export const BOT_COMMANDS = [
   { command: 'list', description: 'Full list of names: who posted, partial, didn\'t (today)' },
   { command: 'messages_creators', description: 'Copy-ready message for each creator behind today' },
   { command: 'messages_reposters', description: 'Copy-ready message for each reposter behind today' },
+  { command: 'groups', description: 'Reminders for Alpha, Beta, Charlie, Delta, or Ungrouped' },
   { command: 'report', description: 'Summary of the last full day' },
   { command: 'help', description: 'What this bot can do' },
 ]
