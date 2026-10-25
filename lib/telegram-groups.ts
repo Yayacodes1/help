@@ -1,11 +1,17 @@
-import type { AttendancePerson } from './attendance-types'
+import type { AttendancePerson, AttendanceStatus } from './attendance-types'
 import { SQUAD_NAMES, squadKeyFromName, squadLeaderTitle, type SquadName } from './squads'
 
 export type ReportSquad = SquadName | 'ungrouped'
 
+export type SquadRosterPerson = {
+  id: number
+  role?: AttendancePerson['role']
+  yesterdayStatus?: AttendanceStatus | null
+}
+
 type SquadRoster = {
-  leaders: Array<{ name: string; squad?: string | null; people: Array<{ id: number }> }>
-  unassigned: { people: Array<{ id: number }> } | null
+  leaders: Array<{ name: string; squad?: string | null; people: SquadRosterPerson[] }>
+  unassigned: { people: SquadRosterPerson[] } | null
 }
 
 export function parseReportSquad(value: string | undefined): ReportSquad | null {
@@ -45,6 +51,13 @@ export function peopleInSquad(
   return everyone.filter((person) => ids.has(person.id) && (role == null || person.role === role))
 }
 
+export function rosterForSquad(board: SquadRoster, squad: ReportSquad): SquadRosterPerson[] {
+  if (squad === 'ungrouped') return board.unassigned?.people ?? []
+  return board.leaders
+    .filter((row) => squadKeyFromName(row.name, row.squad) === squad)
+    .flatMap((row) => row.people)
+}
+
 export function groupLeaderButtons(mode: string) {
   return {
     inline_keyboard: [
@@ -66,8 +79,12 @@ export function squadRoleButtons(squad: ReportSquad, mode: string) {
   return {
     inline_keyboard: [
       [
-        { text: '✉️ Creators', callback_data: `sqm:${token}:creator:${mode}` },
-        { text: '✉️ Reposters', callback_data: `sqm:${token}:reposter:${mode}` },
+        { text: '📊 Update', callback_data: `squ:${token}:${mode}` },
+        { text: '📋 List', callback_data: `sql:${token}:${mode}` },
+      ],
+      [
+        { text: '✉️ Creators reminder', callback_data: `sqm:${token}:creator:${mode}` },
+        { text: '✉️ Reposter reminder', callback_data: `sqm:${token}:reposter:${mode}` },
       ],
       [{ text: '← Groups', callback_data: `gl:${mode}` }],
     ],
@@ -77,7 +94,7 @@ export function squadRoleButtons(squad: ReportSquad, mode: string) {
 export function groupLeaderPrompt(): string {
   return (
     '👑 GROUP LEADER\n' +
-    'Pick a group, then Creators or Reposters. You will get the reminder text for that group only.\n\n' +
+    'Pick a group. Then Update, List, Creators reminder, or Reposter reminder for that group only.\n\n' +
     'Alpha · Ammar\n' +
     'Beta · Abdul Kareem\n' +
     'Charlie · Lina\n' +
@@ -90,7 +107,9 @@ export function squadRolePrompt(squad: ReportSquad): string {
   const title = squadMenuTitle(squad)
   return (
     `👑 ${title}\n` +
-    `✉️ Creators — reminders for ${title} creators who are behind.\n` +
-    `✉️ Reposters — the same for ${title} reposters.`
+    '📊 Update — counts for this group today.\n' +
+    '📋 List — names in this group.\n' +
+    `✉️ Creators reminder — copy-ready texts for ${title} creators who are behind.\n` +
+    `✉️ Reposter reminder — the same for ${title} reposters.`
   )
 }

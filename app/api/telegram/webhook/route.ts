@@ -86,6 +86,16 @@ function parseButton(data: string | undefined): Request_ {
     if (!squad) return null
     return { menu: 'squad', mode: parseMode(b), squad }
   }
+  if (kind === 'squ') {
+    const squad = parseReportSquad(a)
+    if (!squad) return null
+    return { view: 'summary', mode: parseMode(b), squad }
+  }
+  if (kind === 'sql') {
+    const squad = parseReportSquad(a)
+    if (!squad) return null
+    return { view: 'list', mode: parseMode(b), squad }
+  }
   if (kind === 'sqm') {
     const squad = parseReportSquad(a)
     if (!squad || (b !== 'creator' && b !== 'reposter')) return null
@@ -116,7 +126,7 @@ export async function POST(req: Request) {
         ? 'menu' in request
           ? request.menu === 'groups'
             ? 'Pick a group…'
-            : 'Creators or Reposters…'
+            : 'Update, list, or reminders…'
           : request.view === 'messages'
             ? 'Building the messages…'
             : 'Building…'

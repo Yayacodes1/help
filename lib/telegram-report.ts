@@ -6,6 +6,7 @@ import type { AttendancePerson, AttendanceStatus } from '@/lib/attendance-types'
 import { formatPlanCompare, getLeaderBoard, type LeaderBoard, type LeaderScore } from '@/lib/leaders'
 import {
   peopleInSquad,
+  rosterForSquad,
   squadMenuTitle,
   squadRoleButtons,
   type ReportSquad,
@@ -45,16 +46,44 @@ export type DayReport = {
   generatedAt: Date
 }
 
+function addStatus(c: Counts, status: AttendanceStatus) {
+  if (status === 'hit') c.posted++
+  else if (status === 'late') c.late++
+  else if (status === 'partial') c.partial++
+  else if (status === 'break' || status === 'off') c.away++
+  else c.missed++
+}
+
 function countStatuses(people: AttendancePerson[]): Counts {
   const c: Counts = { posted: 0, partial: 0, missed: 0, away: 0, late: 0 }
-  for (const p of people) {
-    if (p.status === 'hit') c.posted++
-    else if (p.status === 'late') c.late++
-    else if (p.status === 'partial') c.partial++
-    else if (p.status === 'break' || p.status === 'off') c.away++
-    else c.missed++
+  for (const p of people) addStatus(c, p.status)
+  return c
+}
+
+function yesterdayCounts(report: DayReport, squad: ReportSquad, role: ReportRole): Counts {
+  const c: Counts = { posted: 0, partial: 0, missed: 0, away: 0, late: 0 }
+  for (const p of rosterForSquad(report.leaders, squad)) {
+    if (p.role !== role || p.yesterdayStatus == null) continue
+    addStatus(c, p.yesterdayStatus)
   }
   return c
+}
+
+function countsLine(c: Counts, label = ''): string {
+  if (c.posted + c.late + c.partial + c.missed + c.away === 0) return `${label}nobody`
+  const away = c.away > 0 ? ` · 🏖 ${c.away}` : ''
+  const late = c.late > 0 ? ` · ⏰ ${c.late} late` : ''
+  return `${label}✅ ${c.posted} posted${late} · ⚠️ ${c.partial} partial · ❌ ${c.missed} didn't${away}`
+}
+
+function onPlanLine(report: DayReport, today: Counts, yesterday: Counts): string | null {
+  const now = onPlanPct(today)
+  if (now == null) return null
+  const before = onPlanPct(yesterday)
+  const diff = before != null ? now - before : null
+  const trend = diff == null ? '' : diff > 0 ? ` ▲${diff}` : diff < 0 ? ` ▼${-diff}` : ' ='
+  const [nowLabel, beforeLabel] = compareLabels(report)
+  return `   On plan: ${now}% ${nowLabel} · ${before ?? '–'}% ${beforeLabel}${trend}`
 }
 
 /** Share of people (not on break) who hit their full plan. */
@@ -174,7 +203,7 @@ export const BUTTON_GUIDE =
   '📋 Full list — names: who posted, partial, didn\'t post (same day). Or type /list\n' +
   '✉️ Creators — a copy-ready Arabic message for each creator who is behind. Or type /messages_creators\n' +
   '✉️ Reposters — the same for reposters. Or type /messages_reposters\n' +
-  '👑 Group Leader — Alpha (Ammar), Beta (Abdul Kareem), Charlie (Lina), Delta (Sultan), or Ungrouped, then Creators or Reposters. Or type /groups\n' +
+  '👑 Group Leader — pick Alpha / Beta / Charlie / Delta, then Update, List, Creators reminder, or Reposter reminder. Or type /groups\n' +
   '📊 Type /update any time for today so far.\n' +
   '↩️ Reply to a report with /update to refresh last night (late posts included).'
 
@@ -310,6 +339,45 @@ export function formatFullList(report: DayReport): string {
   return lines.join('\n')
 }
 
+function formatSquadSummary(report: DayReport, squad: ReportSquad): string {
+  const title = squadMenuTitle(squad)
+  const lines: string[] = [`📊 ${title} · ${dayTitle(report)}`]
+  for (const role of ['creator', 'reposter'] as const) {
+    const people = peopleInSquad(report.everyone, report.leaders, squad, role)
+    const today = countStatuses(people)
+    lines.push('', ROLE_TITLE[role], countsLine(today))
+    const plan = onPlanLine(report, today, yesterdayCounts(report, squad, role))
+    if (plan) lines.push(plan)
+  }
+  return lines.join('\n')
+}
+
+function formatSquadList(report: DayReport, squad: ReportSquad): string {
+  const live = report.mode === 'live'
+  const title = squadMenuTitle(squad)
+  const lines: string[] = [`📋 ${title} · ${dayTitle(report)}`]
+  for (const role of ['creator', 'reposter'] as const) {
+    const byName = [...peopleInSquad(report.everyone, report.leaders, squad, role)].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    )
+    const of = (s: AttendanceStatus) => byName.filter((p) => p.status === s)
+    lines.push('', ROLE_TITLE[role])
+    if (byName.length === 0) {
+      lines.push('nobody')
+      continue
+    }
+    if (of('hit').length) lines.push(`✅ Posted (${of('hit').length}): ${nameList(of('hit'))}`)
+    if (of('late').length) lines.push(`⏰ Late (${of('late').length}): ${nameList(of('late'))}`)
+    if (of('partial').length) lines.push(`⚠️ Partial (${of('partial').length}): ${nameList(of('partial'), true)}`)
+    if (of('miss').length) {
+      lines.push(`❌ ${live ? 'Not yet' : "Didn't post"} (${of('miss').length}): ${nameList(of('miss'))}`)
+    }
+    if (of('break').length) lines.push(`🏖 Break (${of('break').length}): ${nameList(of('break'))}`)
+    if (of('off').length) lines.push(`💤 Off day (${of('off').length}): ${nameList(of('off'))}`)
+  }
+  return lines.join('\n')
+}
+
 function videosPostedToday(p: AttendancePerson): number {
   return Math.max(0, p.todayInstagram) + Math.max(0, p.todayTiktok)
 }
@@ -436,8 +504,14 @@ export async function sendAttendanceReports(
   const scope = squad ? ` · ${squadMenuTitle(squad)}` : ''
 
   if (view === 'summary' || view === 'list') {
-    const text = view === 'summary' ? formatSummary(report) : formatFullList(report)
-    const res = await sendTelegramMessage(text, { chatId, replyMarkup: reportButtons(mode) })
+    const text = squad
+      ? view === 'summary'
+        ? formatSquadSummary(report, squad)
+        : formatSquadList(report, squad)
+      : view === 'summary'
+        ? formatSummary(report)
+        : formatFullList(report)
+    const res = await sendTelegramMessage(text, { chatId, replyMarkup: buttons })
     return { ok: res.ok, day: report.day, error: res.error }
   }
 
