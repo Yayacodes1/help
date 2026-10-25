@@ -14,7 +14,11 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 type Update = {
-  message?: { chat?: { id?: number | string }; text?: string }
+  message?: {
+    chat?: { id?: number | string }
+    text?: string
+    reply_to_message?: { text?: string }
+  }
   callback_query?: { id: string; data?: string; message?: { chat?: { id?: number | string } } }
 }
 
@@ -22,7 +26,8 @@ type Request_ = { view: ReportView; mode: ReportMode; role?: ReportRole } | 'hel
 
 const HELP =
   `${BUTTON_GUIDE}\n` +
-  '📋 Type /report for the last full day.\n\n' +
+  '📋 Type /report for the last full day.\n' +
+  '↩️ Reply to a report and send /update to refresh that last night (not today).\n\n' +
   'Automatic summary: 5:00 PM Riyadh (today so far) and 12:00 AM Riyadh (the day that just ended).'
 
 function secretMatches(header: string | null): boolean {
@@ -89,6 +94,9 @@ export async function POST(req: Request) {
     )
   } else if (update.message?.text) {
     request = parseText(update.message.text)
+    if (request && request !== 'help' && request.mode === 'live' && update.message.reply_to_message?.text) {
+      request = { ...request, mode: 'final' }
+    }
   }
 
   if (request === 'help') {

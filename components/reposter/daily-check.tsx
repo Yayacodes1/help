@@ -6,6 +6,7 @@ import type { AttendanceStatus } from '@/lib/attendance-types'
 
 function statusClass(status: AttendanceStatus): string {
   if (status === 'hit') return 'bg-primary/15 text-primary'
+  if (status === 'late') return 'bg-orange-500/15 text-orange-800 dark:text-orange-200'
   if (status === 'partial') return 'bg-amber-500/15 text-amber-800 dark:text-amber-200'
   if (status === 'miss') return 'bg-destructive/10 text-destructive'
   return 'bg-muted text-muted-foreground'
@@ -50,6 +51,7 @@ export function ReposterDailyCheck({
 }) {
   function word(status: AttendanceStatus) {
     if (status === 'hit') return labels.posted
+    if (status === 'late') return 'Late'
     if (status === 'partial') return labels.partial
     if (status === 'break') return labels.break
     if (status === 'off') return labels.off

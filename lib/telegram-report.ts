@@ -13,7 +13,7 @@ export type ReportMode = 'final' | 'live'
 export type ReportRole = 'creator' | 'reposter'
 export type ReportView = 'summary' | 'list' | 'messages'
 
-type Counts = { posted: number; partial: number; missed: number; away: number }
+type Counts = { posted: number; partial: number; missed: number; away: number; late: number }
 
 /**
  * Goals are a daily total across projects, so plan status is per person (all projects).
@@ -40,9 +40,10 @@ export type DayReport = {
 }
 
 function countStatuses(people: AttendancePerson[]): Counts {
-  const c: Counts = { posted: 0, partial: 0, missed: 0, away: 0 }
+  const c: Counts = { posted: 0, partial: 0, missed: 0, away: 0, late: 0 }
   for (const p of people) {
     if (p.status === 'hit') c.posted++
+    else if (p.status === 'late') c.late++
     else if (p.status === 'partial') c.partial++
     else if (p.status === 'break' || p.status === 'off') c.away++
     else c.missed++
@@ -52,8 +53,8 @@ function countStatuses(people: AttendancePerson[]): Counts {
 
 /** Share of people (not on break) who hit their full plan. */
 function onPlanPct(c: Counts): number | null {
-  const total = c.posted + c.partial + c.missed
-  return total > 0 ? Math.round((c.posted / total) * 100) : null
+  const total = c.posted + c.late + c.partial + c.missed
+  return total > 0 ? Math.round(((c.posted + c.late) / total) * 100) : null
 }
 
 export async function buildDayReport(opToday: string, mode: ReportMode): Promise<DayReport> {
@@ -167,7 +168,8 @@ export const BUTTON_GUIDE =
   '📋 Full list — names: who posted, partial, didn\'t post (same day). Or type /list\n' +
   '✉️ Creators — a copy-ready Arabic message for each creator who is behind. Or type /messages_creators\n' +
   '✉️ Reposters — the same for reposters. Or type /messages_reposters\n' +
-  '📊 Type /update any time for today so far.'
+  '📊 Type /update any time for today so far.\n' +
+  '↩️ Reply to a report with /update to refresh last night (late posts included).'
 
 export function reportButtons(mode: ReportMode) {
   return {
@@ -189,12 +191,13 @@ export function formatSummary(report: DayReport): string {
     for (const g of report.groups.filter((x) => x.role === role)) {
       const c = g.today
       const label = role === 'reposter' ? '' : `${g.label}: `
-      if (c.posted + c.partial + c.missed + c.away === 0) {
+      if (c.posted + c.late + c.partial + c.missed + c.away === 0) {
         lines.push(`${label}nobody`)
         continue
       }
       const away = c.away > 0 ? ` · 🏖 ${c.away}` : ''
-      lines.push(`${label}✅ ${c.posted} posted · ⚠️ ${c.partial} partial · ❌ ${c.missed} didn't${away}`)
+      const late = c.late > 0 ? ` · ⏰ ${c.late} late` : ''
+      lines.push(`${label}✅ ${c.posted} posted${late} · ⚠️ ${c.partial} partial · ❌ ${c.missed} didn't${away}`)
       const now = onPlanPct(c)
       const before = onPlanPct(g.yesterday)
       if (now != null) {
@@ -224,7 +227,8 @@ function compareLabels(report: DayReport): [string, string] {
 
 function leaderScoreLine(rank: string, row: LeaderScore, todayLabel: string, yesterdayLabel: string): string {
   const plan = formatPlanCompare(row.todayPct, row.yesterdayPct, todayLabel, yesterdayLabel)
-  const counts = `✅ ${row.today.posted} · ⚠️ ${row.today.partial} · ❌ ${row.today.missed}`
+  const late = row.today.late > 0 ? ` · ⏰ ${row.today.late}` : ''
+  const counts = `✅ ${row.today.posted}${late} · ⚠️ ${row.today.partial} · ❌ ${row.today.missed}`
   const checked = row.leaderId == null ? '' : ` · checked ${row.checks}/${row.roster}`
   const reposter =
     row.reposterName == null
@@ -275,6 +279,7 @@ export function formatFullList(report: DayReport): string {
         continue
       }
       if (of('hit').length) lines.push(`✅ Posted (${of('hit').length}): ${nameList(of('hit'))}`)
+      if (of('late').length) lines.push(`⏰ Late (${of('late').length}): ${nameList(of('late'))}`)
       if (of('partial').length) lines.push(`⚠️ Partial (${of('partial').length}): ${nameList(of('partial'), true)}`)
       if (of('miss').length) {
         lines.push(`❌ ${live ? 'Not yet' : "Didn't post"} (${of('miss').length}): ${nameList(of('miss'))}`)

@@ -7,6 +7,7 @@ import type { AttendancePerson, AttendanceStatus } from '@/lib/attendance-types'
 
 const STATUS_CLASS: Record<AttendanceStatus, string> = {
   hit: 'border-emerald-500/40 bg-emerald-500/10',
+  late: 'border-orange-500/40 bg-orange-500/10',
   partial: 'border-amber-500/40 bg-amber-500/10',
   miss: 'border-rose-500/40 bg-rose-500/10',
   break: 'border-sky-500/40 bg-sky-500/10',
@@ -15,6 +16,7 @@ const STATUS_CLASS: Record<AttendanceStatus, string> = {
 
 const DOT_CLASS: Record<AttendanceStatus, string> = {
   hit: 'bg-emerald-500',
+  late: 'bg-orange-500',
   partial: 'bg-amber-400',
   miss: 'bg-rose-500',
   break: 'bg-sky-400',
@@ -89,9 +91,10 @@ export function AttentionBoard({
               }
             } else if (p.status === 'miss') {
               missing.push(labels.missing)
-            } else if (p.status === 'hit') {
+            } else if (p.status === 'hit' || p.status === 'late') {
               if (p.goalInstagram > 0) missing.push(`IG ${p.todayInstagram}/${p.goalInstagram}`)
               if (p.goalTiktok > 0) missing.push(`TT ${p.todayTiktok}/${p.goalTiktok}`)
+              if (p.status === 'late') missing.push('late')
             }
 
             return (

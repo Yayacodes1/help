@@ -19,6 +19,7 @@ import {
   type LeaderScore,
   type PlanCounts,
 } from '@/lib/leader-score'
+import { parseSquad } from '@/lib/squads'
 
 export {
   EMPTY_COUNTS,
@@ -69,6 +70,7 @@ async function runEnsureLeaderTables() {
   await sql`ALTER TABLE leaders ADD COLUMN IF NOT EXISTS monthly_pay numeric(10,2)`
   await sql`ALTER TABLE leaders ADD COLUMN IF NOT EXISTS pay_currency text NOT NULL DEFAULT 'SAR'`
   await sql`ALTER TABLE leaders ADD COLUMN IF NOT EXISTS level_since date`
+  await sql`ALTER TABLE leaders ADD COLUMN IF NOT EXISTS squad text`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS leader_id integer`
   try {
     await sql`
@@ -120,9 +122,10 @@ async function runEnsureLeaderTables() {
 }
 
 function countStatuses(people: AttendancePerson[]): PlanCounts {
-  const c: PlanCounts = { posted: 0, partial: 0, missed: 0, away: 0 }
+  const c: PlanCounts = { posted: 0, partial: 0, missed: 0, away: 0, late: 0 }
   for (const p of people) {
     if (p.status === 'hit') c.posted++
+    else if (p.status === 'late') c.late++
     else if (p.status === 'partial') c.partial++
     else if (p.status === 'break' || p.status === 'off') c.away++
     else c.missed++
@@ -138,6 +141,7 @@ type LeaderRow = {
   reposter_tiktok: string | null
   reposter_instagram: string | null
   reposter_login: string | null
+  squad: string | null
 } & LeaderPayRow
 
 type CheckRow = { leader_id: number; creator_id: number; note: string | null }
@@ -155,7 +159,8 @@ async function loadContext(day: string): Promise<{
              r.tiktok_username AS reposter_tiktok,
              r.instagram_username AS reposter_instagram,
              r.login_platform AS reposter_login,
-             l.level, l.monthly_pay::float AS monthly_pay, l.pay_currency, l.level_since::text AS level_since
+             l.level, l.monthly_pay::float AS monthly_pay, l.pay_currency, l.level_since::text AS level_since,
+             l.squad
       FROM leaders l
       LEFT JOIN creators r ON r.id = l.reposter_id
       ORDER BY l.name ASC
@@ -204,9 +209,10 @@ function personRow(
 const STATUS_ORDER: Record<AttendanceStatus, number> = {
   miss: 0,
   partial: 1,
-  hit: 2,
-  break: 3,
-  off: 4,
+  late: 2,
+  hit: 3,
+  break: 4,
+  off: 5,
 }
 
 function sortPeople(people: LeaderRosterPerson[]): LeaderRosterPerson[] {
@@ -234,6 +240,7 @@ function scoreGroup(
     status: AttendanceStatus | null
   },
   pay: LeaderPay | null = null,
+  squad: LeaderScore['squad'] = null,
 ): LeaderScore {
   const today = countStatuses(peopleToday)
   const yesterday = countStatuses(peopleYesterday)
@@ -254,6 +261,7 @@ function scoreGroup(
     reposterStatus: reposter.status,
     pay,
     people,
+    squad,
   }
 }
 
@@ -315,21 +323,30 @@ export function scoreLeaderBoard(
         status: reposter?.status ?? null,
       },
       leaderPay(leader),
+      parseSquad(leader.squad) ?? null,
     )
   })
   leaders.sort(compareScores)
 
   const assigned = new Set(ctx.leaderByCreator.keys())
-  const looseToday = creatorsToday.filter((p) => !assigned.has(p.id))
-  const looseYesterday = creatorsYesterday.filter((p) => !assigned.has(p.id))
+  const looseToday = todayPeople.filter((p) => !assigned.has(p.id))
+  const looseYesterday = yesterdayPeople.filter((p) => !assigned.has(p.id))
   const unassigned =
     looseToday.length > 0
-      ? scoreGroup(null, 'No leader', looseToday, looseYesterday, yesterdayById, new Map(), {
-          id: null,
-          name: null,
-          handle: null,
-          status: null,
-        })
+      ? scoreGroup(
+          null,
+          'No leader',
+          looseToday,
+          looseYesterday,
+          yesterdayById,
+          new Map(),
+          {
+            id: null,
+            name: null,
+            handle: null,
+            status: null,
+          },
+        )
       : null
 
   return {
@@ -430,7 +447,8 @@ export async function getLeaderDirectory(): Promise<LeaderDirectory> {
   const [leaderRows, creatorRows, reposterRows, linkRows] = await Promise.all([
     sql`
       SELECT l.id, l.name, l.reposter_id, r.name AS reposter_name,
-             l.level, l.monthly_pay::float AS monthly_pay, l.pay_currency, l.level_since::text AS level_since
+             l.level, l.monthly_pay::float AS monthly_pay, l.pay_currency, l.level_since::text AS level_since,
+             l.squad
       FROM leaders l
       LEFT JOIN creators r ON r.id = l.reposter_id
       ORDER BY l.name ASC
@@ -457,6 +475,7 @@ export async function getLeaderDirectory(): Promise<LeaderDirectory> {
     name: string
     reposter_id: number | null
     reposter_name: string | null
+    squad: string | null
   } & LeaderPayRow)[]
   const creators = creatorRows as {
     id: number
@@ -482,6 +501,7 @@ export async function getLeaderDirectory(): Promise<LeaderDirectory> {
       reposterId: l.reposter_id,
       reposterName: l.reposter_name,
       creatorIds: idsByLeader.get(l.id) ?? [],
+      squad: parseSquad(l.squad),
       ...leaderPay(l),
     })),
     creators: creators.map((c) => {

@@ -1,5 +1,5 @@
-/** off = not a posting day under the contract schedule. */
-export type AttendanceStatus = 'hit' | 'partial' | 'miss' | 'break' | 'off'
+/** off = not a posting day under the contract schedule. late = hit the goal after midnight Riyadh. */
+export type AttendanceStatus = 'hit' | 'partial' | 'miss' | 'break' | 'off' | 'late'
 
 export type AttendancePerson = {
   id: number

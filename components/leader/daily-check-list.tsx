@@ -5,6 +5,7 @@ import type { AttendanceStatus } from '@/lib/attendance-types'
 
 function statusClass(status: AttendanceStatus): string {
   if (status === 'hit') return 'bg-primary/15 text-primary'
+  if (status === 'late') return 'bg-orange-500/15 text-orange-800 dark:text-orange-200'
   if (status === 'partial') return 'bg-amber-500/15 text-amber-800 dark:text-amber-200'
   if (status === 'miss') return 'bg-destructive/10 text-destructive'
   return 'bg-muted text-muted-foreground'
@@ -86,7 +87,9 @@ export function DailyCheckList({
               <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass(person.status)}`}>
                 {person.status === 'hit'
                   ? labels.posted
-                  : person.status === 'partial'
+                  : person.status === 'late'
+                    ? 'Late'
+                    : person.status === 'partial'
                     ? labels.partial
                     : person.status === 'break'
                       ? labels.onBreak

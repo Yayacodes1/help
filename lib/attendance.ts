@@ -3,6 +3,7 @@ import { sql } from '@/lib/db'
 import { addDays } from '@/lib/campaign'
 import { CORRECTIVE_STRIKE_COUNT, OPERATIONAL_TZ, strikeLimit } from '@/lib/operational-day'
 import type { AttendancePerson, AttendanceStatus } from '@/lib/attendance-types'
+import { withLateStatus, type TimedPost } from '@/lib/attendance-late'
 import { isPostingDay, scheduleFromContract, type ScheduleColumns } from '@/lib/posting-schedule'
 
 export type { AttendancePerson, AttendanceReport, AttendanceStatus } from '@/lib/attendance-types'
@@ -38,7 +39,7 @@ export async function getAttendanceForDay(
   projectId?: number | null,
 ): Promise<AttendancePerson[]> {
   const pid = projectId ?? null
-  const [people, contracts, postRows, breakRows, strikeRows] = (await Promise.all([
+  const [people, contracts, postRows, timedRows, breakRows, strikeRows] = (await Promise.all([
     sql`
       SELECT id, name, role,
              goal_instagram, goal_tiktok
@@ -70,6 +71,14 @@ export async function getAttendanceForDay(
       GROUP BY creator_id
     `,
     sql`
+      SELECT creator_id, platform,
+             to_char(created_at AT TIME ZONE ${OPERATIONAL_TZ}, 'YYYY-MM-DD') AS submit_day
+      FROM submissions
+      WHERE video_date = ${day}::date
+        AND (${pid}::int IS NULL OR project_id = ${pid})
+      ORDER BY created_at ASC, id ASC
+    `,
+    sql`
       SELECT creator_id
       FROM schedule_breaks
       WHERE start_date <= ${day}::date AND end_date >= ${day}::date
@@ -97,12 +106,19 @@ export async function getAttendanceForDay(
       max_strikes: number
     } & ScheduleColumns>,
     Array<{ creator_id: number; ig: number; tt: number }>,
+    Array<{ creator_id: number; platform: string; submit_day: string }>,
     Array<{ creator_id: number }>,
     Array<{ creator_id: number; contract_id: number | null; strike_date: string }>,
   ]
 
   const contractByCreator = new Map(contracts.map((c) => [c.creator_id, c]))
   const postsByCreator = new Map(postRows.map((p) => [p.creator_id, p]))
+  const timedByCreator = new Map<number, TimedPost[]>()
+  for (const row of timedRows) {
+    const list = timedByCreator.get(row.creator_id) ?? []
+    list.push({ platform: row.platform, submitDay: row.submit_day })
+    timedByCreator.set(row.creator_id, list)
+  }
   const onBreak = new Set(breakRows.map((b) => b.creator_id))
 
   const strikesByCreator = new Map<number, { count: number; dates: Set<string> }>()
@@ -147,16 +163,22 @@ export async function getAttendanceForDay(
       contract && (contract.goal_instagram > 0 || contract.goal_tiktok > 0)
         ? contract.goal_tiktok
         : p.goal_tiktok
-    const status = personStatus({
-      onBreak: onBreak.has(p.id),
-      offDay:
-        contract != null &&
-        !isPostingDay(scheduleFromContract(contract), contract.start_date, day),
+    const status = withLateStatus(
+      personStatus({
+        onBreak: onBreak.has(p.id),
+        offDay:
+          contract != null &&
+          !isPostingDay(scheduleFromContract(contract), contract.start_date, day),
+        goalIg,
+        goalTt,
+        ig,
+        tt,
+      }),
+      day,
       goalIg,
       goalTt,
-      ig,
-      tt,
-    })
+      timedByCreator.get(p.id) ?? [],
+    )
     const strikeInfo = strikesByCreator.get(p.id)
     const maxStrikes = strikeLimit(contract?.max_strikes)
     const role = p.role === 'reposter' ? 'reposter' : 'creator'

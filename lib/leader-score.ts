@@ -1,6 +1,7 @@
 import type { AttendanceStatus } from '@/lib/attendance-types'
+import type { SquadName } from '@/lib/squads'
 
-export type PlanCounts = { posted: number; partial: number; missed: number; away: number }
+export type PlanCounts = { posted: number; partial: number; missed: number; away: number; late: number }
 
 export type LeaderRosterPerson = {
   id: number
@@ -36,6 +37,7 @@ export type LeaderScore = {
   /** Null for the "No leader" group. */
   pay: LeaderPay | null
   people: LeaderRosterPerson[]
+  squad: SquadName | null
 }
 
 export type LeaderBoard = {
@@ -71,6 +73,7 @@ export type LeaderDirectory = {
       reposterId: number | null
       reposterName: string | null
       creatorIds: number[]
+      squad: SquadName | null
     } & LeaderPay
   >
   /** Creators and reposters that can be put on a leader's team. */
@@ -85,11 +88,11 @@ export type LeaderDirectory = {
   reposters: Array<{ id: number; name: string }>
 }
 
-export const EMPTY_COUNTS: PlanCounts = { posted: 0, partial: 0, missed: 0, away: 0 }
+export const EMPTY_COUNTS: PlanCounts = { posted: 0, partial: 0, missed: 0, away: 0, late: 0 }
 
 export function onPlanPct(c: PlanCounts): number | null {
-  const total = c.posted + c.partial + c.missed
-  return total > 0 ? Math.round((c.posted / total) * 100) : null
+  const total = c.posted + c.late + c.partial + c.missed
+  return total > 0 ? Math.round(((c.posted + c.late) / total) * 100) : null
 }
 
 /** `72% today · 64% yesterday ▲8` */

@@ -424,6 +424,14 @@ export default async function AdminPage({
 
   // Each tab loads only its own data; these are read only inside that tab's panels.
   const todayData = tab === 'today' ? await loadToday() : null
+  const leadersManage =
+    tab === 'people' && leadersView
+      ? await Promise.all([
+          getLeaderDirectory(),
+          getLeaderBoard(leaderDay),
+          getActivityForDay(leaderDay),
+        ]).then(([directory, board, marks]) => ({ directory, board, marks }))
+      : null
   const analyticsData = tab === 'analytics' ? await loadAnalytics() : null
   const moneyData = tab === 'money' ? await loadMoney() : null
   const twodayData = tab === 'twoday' ? { requests: await listBreakRequests({ limit: 80 }) } : null
@@ -1006,7 +1014,6 @@ export default async function AdminPage({
                 {!leadersView ? (
                   <LeadersBoard board={leaderBoard} isToday={leaderDay === opToday} />
                 ) : null}
-                <LeadersManager directory={leaderDirectory} />
               </div>
             ),
           },
@@ -1452,11 +1459,21 @@ export default async function AdminPage({
           {
             id: 'manage',
             title: t('manage'),
-            summary: splitData
-              ? `${splitSummary((side) => `${side.creators.length}`)} · ${t('roleFilterReposters')} ${sharedReposterActive.length}`
-              : `${creators.length} ${peopleNoun}`,
-            hint: `${projects.length} ${t('projects')}`,
-            children: splitData ? (
+            summary: leadersView
+              ? `${leadersManage?.directory.leaders.length ?? 0} leaders`
+              : splitData
+                ? `${splitSummary((side) => `${side.creators.length}`)} · ${t('roleFilterReposters')} ${sharedReposterActive.length}`
+                : `${creators.length} ${peopleNoun}`,
+            hint: leadersView ? 'Alpha · Beta · Charlie · Delta' : `${projects.length} ${t('projects')}`,
+            children: leadersView && leadersManage ? (
+              <div key="manage-leaders" className="flex flex-col gap-6">
+                <LeaderSquadsBoard
+                  board={leadersManage.board}
+                  marks={leadersManage.marks}
+                />
+                <LeadersManager directory={leadersManage.directory} />
+              </div>
+            ) : splitData ? (
               <div key="manage-split" className="flex flex-col gap-4">
                 <SplitColumns
                   sides={splitData.map((side) => ({

@@ -22,6 +22,7 @@ function Delta({ today, yesterday }: { today: number | null; yesterday: number |
 
 function statusWord(status: AttendanceStatus): string {
   if (status === 'hit') return 'Posted'
+  if (status === 'late') return 'Late'
   if (status === 'partial') return 'Partial'
   if (status === 'break') return 'Break'
   if (status === 'off') return 'Off'

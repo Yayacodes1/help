@@ -23,6 +23,7 @@ const ACTIVITY_DAYS = 30
 
 function statusWord(status: AttendanceStatus | undefined): string {
   if (status === 'hit') return 'Posted'
+  if (status === 'late') return 'Late'
   if (status === 'partial') return 'Partial'
   if (status === 'break') return 'Break'
   if (status === 'off') return 'Off'

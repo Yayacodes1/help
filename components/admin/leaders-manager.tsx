@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react'
 import { createLeader, deleteLeader, updateLeader } from '@/app/actions/leaders-admin'
 import { LEADER_LEVEL_LABELS, LEADER_LEVELS, type LeaderDirectory, type LeaderPay } from '@/lib/leader-score'
+import { SQUAD_NAMES, squadKeyFromName, squadLeaderTitle } from '@/lib/squads'
 
 const initial = { ok: false, message: '' }
 
@@ -89,6 +90,30 @@ function ReposterSelect({
   )
 }
 
+function SquadSelect({
+  name,
+  squad,
+}: {
+  name: string
+  squad: LeaderDirectory['leaders'][number]['squad']
+}) {
+  const guessed = squadKeyFromName(name, squad)
+  const value = guessed === 'other' ? '' : guessed
+  return (
+    <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+      Group
+      <select name="squad" defaultValue={value} className={fieldClass}>
+        <option value="">Unassigned</option>
+        {SQUAD_NAMES.map((squadName) => (
+          <option key={squadName} value={squadName}>
+            {squadName} · {squadLeaderTitle(squadName)}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 function PayFields({ pay }: { pay: LeaderPay | null }) {
   return (
     <div className="grid gap-3 sm:grid-cols-3">
@@ -143,9 +168,9 @@ export function LeadersManager({ directory }: { directory: LeaderDirectory }) {
         </button>
       </div>
       <p className="text-xs text-muted-foreground">
-        Each leader has their own password. Tick the creators and reposters on their team — they show up in that
-        leader&apos;s page right away. The leader sees only their team, and can&apos;t change contracts or amounts.
-        Optionally link the reposter account they post with.
+        Alpha is Ammar, Beta is Abdul Kareem, Charlie is Lina, Delta is Sultan. Assign the group, then tick
+        (or drag on the board above) the creators and reposters on that team. The leader sees only their
+        people and can&apos;t change contracts or amounts.
       </p>
       {adding ? (
         <form action={createAction} className="flex flex-col gap-3 rounded-xl border border-border p-3">
@@ -160,6 +185,7 @@ export function LeadersManager({ directory }: { directory: LeaderDirectory }) {
             </label>
           </div>
           <PayFields pay={null} />
+          <SquadSelect name="" squad={null} />
           <ReposterSelect reposters={directory.reposters} value={null} />
           <CreatorPicker creators={directory.creators} selected={[]} leaderId={null} />
           {createState.message ? <p className="text-sm text-destructive">{createState.message}</p> : null}
@@ -205,6 +231,7 @@ function LeaderEditor({
         </label>
       </div>
       <PayFields pay={leader} />
+      <SquadSelect name={leader.name} squad={leader.squad} />
       <ReposterSelect reposters={directory.reposters} value={leader.reposterId} />
       <CreatorPicker creators={directory.creators} selected={leader.creatorIds} leaderId={leader.id} />
       {state.message ? <p className="text-sm text-destructive">{state.message}</p> : null}

@@ -5,6 +5,7 @@ import { sql } from '@/lib/db'
 import { isAdmin } from '@/lib/admin-auth'
 import { ensureLeaderTables } from '@/lib/leaders'
 import { parseLeaderLevel } from '@/lib/leader-score'
+import { parseSquad, SQUAD_NAMES } from '@/lib/squads'
 import { hashPassword } from '@/lib/passwords'
 
 async function requireAdmin() {
@@ -26,6 +27,19 @@ function parseIds(formData: FormData): number[] {
         .map((n) => Math.floor(n)),
     ),
   ]
+}
+
+function parseSquadField(formData: FormData) {
+  return parseSquad((formData.get('squad') ?? '').toString())
+}
+
+async function setLeaderSquad(leaderId: number, squad: string | null) {
+  if (squad && SQUAD_NAMES.includes(squad as (typeof SQUAD_NAMES)[number])) {
+    await sql`
+      UPDATE leaders SET squad = NULL WHERE squad = ${squad} AND id <> ${leaderId}
+    `
+  }
+  await sql`UPDATE leaders SET squad = ${squad} WHERE id = ${leaderId}`
 }
 
 function parsePay(formData: FormData) {
@@ -84,7 +98,10 @@ export async function createLeader(_prev: unknown, formData: FormData) {
       RETURNING id
     `) as { id: number }[]
     const id = rows[0]?.id
-    if (id) await assignCreators(id, parseIds(formData))
+    if (id) {
+      await setLeaderSquad(id, parseSquadField(formData))
+      await assignCreators(id, parseIds(formData))
+    }
   } catch (error) {
     const message = friendly(error)
     if (message) return { ok: false as const, message }
@@ -127,6 +144,7 @@ export async function updateLeader(_prev: unknown, formData: FormData) {
         WHERE id = ${id}
       `
     }
+    await setLeaderSquad(id, parseSquadField(formData))
     await assignCreators(id, parseIds(formData))
   } catch (error) {
     const message = friendly(error)
@@ -135,6 +153,20 @@ export async function updateLeader(_prev: unknown, formData: FormData) {
   }
   refresh()
   return { ok: true as const, message: '' }
+}
+
+export async function assignPersonToLeader(creatorId: number, leaderId: number | null) {
+  await requireAdmin()
+  await ensureLeaderTables()
+  if (!Number.isFinite(creatorId) || creatorId <= 0) return { ok: false as const }
+  const lid = leaderId != null && Number.isFinite(leaderId) && leaderId > 0 ? Math.floor(leaderId) : null
+  await sql`
+    UPDATE creators
+    SET leader_id = ${lid}
+    WHERE id = ${Math.floor(creatorId)} AND role IN ('creator', 'reposter')
+  `
+  refresh()
+  return { ok: true as const }
 }
 
 export async function deleteLeader(formData: FormData) {
