@@ -1280,7 +1280,7 @@ export default async function AdminPage({
             id: 'breakRequests',
             title: t('breakRequestsTitle'),
             summary: `${twodayData.requests.filter((r) => r.status === 'pending').length}`,
-            hint: t('breakRequestHint'),
+            hint: t('breakRequestsApproveHint'),
             children: (
               <BreakRequestsBoard
                 requests={twodayData.requests}
@@ -1292,6 +1292,10 @@ export default async function AdminPage({
                   approved: t('breakRequestApproved'),
                   denied: t('breakRequestDenied'),
                   from: t('breakRequestsFrom'),
+                  kindBreak: t('breakRequestKindBreak'),
+                  kindPause: t('breakRequestKindPause'),
+                  waitingGive: t('breakRequestWaitingGive'),
+                  applied: t('breakRequestApplied'),
                 }}
               />
             ),

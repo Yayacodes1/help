@@ -1,7 +1,7 @@
 export const LEADER_TABS = {
   today: ['check', 'checkReposters', 'reposterChecks', 'tasks', 'breakRequest', 'progress', 'consistency', 'attention', 'videos'],
   analytics: ['analytics', 'topvideos'],
-  team: ['creators', 'manage'],
+  team: ['creators', 'manage', 'breakRequest'],
 } as const
 
 export type LeaderTab = keyof typeof LEADER_TABS

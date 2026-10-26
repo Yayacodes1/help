@@ -18,6 +18,10 @@ export function BreakRequestsBoard({
     approved: string
     denied: string
     from: string
+    kindBreak: string
+    kindPause: string
+    waitingGive: string
+    applied: string
   }
 }) {
   const [pending, startTransition] = useTransition()
@@ -31,11 +35,14 @@ export function BreakRequestsBoard({
           <p className="text-sm font-medium">
             {row.creator_name}
             <span className="ms-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+              {row.kind === 'pause' ? labels.kindPause : labels.kindBreak}
+              {' · '}
               {row.creator_role}
             </span>
           </p>
           <p className="text-xs text-muted-foreground">
-            {labels.from} {row.leader_name} · {formatDate(row.start_date)} → {formatDate(row.end_date)}
+            {labels.from} {row.leader_name}
+            {row.kind === 'pause' ? '' : ` · ${formatDate(row.start_date)} → ${formatDate(row.end_date)}`}
             {row.reason ? ` · ${row.reason}` : ''}
           </p>
         </div>
@@ -60,7 +67,11 @@ export function BreakRequestsBoard({
           </div>
         ) : (
           <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {row.status === 'approved' ? labels.approved : labels.denied}
+            {row.status === 'approved'
+              ? row.applied_at
+                ? labels.applied
+                : labels.waitingGive
+              : labels.denied}
           </span>
         )}
       </li>

@@ -79,6 +79,29 @@ export default async function LeaderHomePage({
     getLeaderScope(session.id),
   ])
   const t = createT(locale)
+  const breakFormLabels = {
+    hint: t('breakRequestHint'),
+    person: t('breakRequestPerson'),
+    kind: t('breakRequestKind'),
+    kindBreak: t('breakRequestKindBreak'),
+    kindPause: t('breakRequestKindPause'),
+    pauseHint: t('breakRequestPauseHint'),
+    start: t('breakRequestStart'),
+    days: t('breakRequestDays'),
+    reason: t('breakRequestReason'),
+    reasonPh: t('breakRequestReasonPh'),
+    send: t('breakRequestSend'),
+    empty: t('breakRequestEmpty'),
+    pending: t('breakRequestPending'),
+    approved: t('breakRequestApproved'),
+    denied: t('breakRequestDenied'),
+    giveBreak: t('breakRequestGive'),
+    givePause: t('breakRequestGivePause'),
+    waitingGive: t('breakRequestWaitingGive'),
+    applied: t('breakRequestApplied'),
+    creator: t('creatorRole'),
+    reposter: t('reposterRole'),
+  }
   const tab = resolveLeaderTab(sp.tab, sp.panel)
   const { start: monthStart, end: monthEnd } = monthRange(today)
   const date = (value: string | undefined, fallback: string) => (DATE_RE.test(value ?? '') ? value! : fallback)
@@ -177,7 +200,11 @@ export default async function LeaderHomePage({
   }
 
   async function loadTeam() {
-    return getTeamMembers(teamIds, today, { withMoney: true })
+    const [members, breakRequests] = await Promise.all([
+      getTeamMembers(teamIds, today, { withMoney: true }),
+      listBreakRequests({ leaderId: session.id }),
+    ])
+    return { members, breakRequests }
   }
 
   const todayData = tab === 'today' ? await loadToday() : null
@@ -338,7 +365,7 @@ export default async function LeaderHomePage({
       {
         id: 'breakRequest',
         title: t('breakRequestTitle'),
-        summary: `${breakRequests.filter((r) => r.status === 'pending').length}`,
+        summary: `${breakRequests.filter((r) => r.status === 'pending' || (r.status === 'approved' && !r.applied_at)).length}`,
         hint: t('breakRequestHint'),
         children: (
           <BreakRequestForm
@@ -350,21 +377,7 @@ export default async function LeaderHomePage({
               paused: m.paused,
             }))}
             requests={breakRequests}
-            labels={{
-              hint: t('breakRequestHint'),
-              person: t('breakRequestPerson'),
-              start: t('breakRequestStart'),
-              days: t('breakRequestDays'),
-              reason: t('breakRequestReason'),
-              reasonPh: t('breakRequestReasonPh'),
-              send: t('breakRequestSend'),
-              empty: t('breakRequestEmpty'),
-              pending: t('breakRequestPending'),
-              approved: t('breakRequestApproved'),
-              denied: t('breakRequestDenied'),
-              creator: t('creatorRole'),
-              reposter: t('reposterRole'),
-            }}
+            labels={breakFormLabels}
           />
         ),
       },
@@ -531,15 +544,16 @@ export default async function LeaderHomePage({
   }
 
   if (teamData) {
-    const creators = teamData.filter((m) => m.person.role === 'creator' && !m.paused)
-    const active = teamData.filter((m) => !m.paused)
+    const members = teamData.members
+    const creators = members.filter((m) => m.person.role === 'creator' && !m.paused)
+    const active = members.filter((m) => !m.paused)
     panels.push(
       {
         id: 'creators',
         title: t('leaderContentCreators'),
         summary: `${creators.length}`,
         hint: `${formatNumber(creators.reduce((sum, m) => sum + m.monthViews, 0))} ${t('views')}`,
-        children: <CreatorCards members={teamData} locale={locale} />,
+        children: <CreatorCards members={members} locale={locale} />,
       },
       {
         id: 'manage',
@@ -548,7 +562,26 @@ export default async function LeaderHomePage({
         hint: `${t('roleFilterCreators')} ${creators.length} · ${t('roleFilterReposters')} ${
           active.length - creators.length
         }`,
-        children: <ManageList members={teamData} locale={locale} />,
+        children: <ManageList members={members} locale={locale} />,
+      },
+      {
+        id: 'breakRequest',
+        title: t('breakRequestTitle'),
+        summary: `${teamData.breakRequests.filter((r) => r.status === 'pending' || (r.status === 'approved' && !r.applied_at)).length}`,
+        hint: t('breakRequestHint'),
+        children: (
+          <BreakRequestForm
+            today={today}
+            people={members.map((m) => ({
+              id: m.person.id,
+              name: m.person.name,
+              role: m.person.role,
+              paused: m.paused,
+            }))}
+            requests={teamData.breakRequests}
+            labels={breakFormLabels}
+          />
+        ),
       },
     )
   }
@@ -560,7 +593,7 @@ export default async function LeaderHomePage({
         <div className="flex flex-wrap items-center gap-2">
           {teamData ? (
             <CopyTextButton
-              text={teamReport(t, session.name, today, teamData)}
+              text={teamReport(t, session.name, today, teamData.members)}
               label={t('leaderCopyTeamReport')}
               copiedLabel={t('leaderCopied')}
             />

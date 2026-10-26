@@ -507,10 +507,8 @@ export async function deleteCreator(id: number) {
 export async function pauseCreator(id: number) {
   await requireAdmin()
   const today = await getServerToday()
-  await sql`
-    UPDATE creators SET paused_at = ${today}::date
-    WHERE id = ${id} AND paused_at IS NULL
-  `
+  const { pausePerson } = await import('@/lib/pause-person')
+  await pausePerson(id, today)
   revalidatePath('/admin')
   revalidatePath(`/admin/creators/${id}`)
 }
@@ -1338,27 +1336,21 @@ export async function approveBreakRequest(id: number) {
   const { getBreakRequest, setBreakRequestStatus } = await import('@/lib/break-requests')
   const request = await getBreakRequest(id)
   if (!request || request.status !== 'pending') return
-  const { applyScheduleBreak } = await import('@/lib/schedule-breaks')
-  await applyScheduleBreak({
-    creatorId: request.creator_id,
-    start: request.start_date,
-    end: request.end_date,
-    reason: request.reason ?? `Break requested by ${request.leader_name}`,
-  })
   await setBreakRequestStatus(id, 'approved', session.name)
   revalidatePath('/admin')
   revalidatePath('/leader')
-  revalidatePath('/submit')
-  revalidatePath(`/admin/creators/${request.creator_id}`)
+  revalidatePath(`/leader/creators/${request.creator_id}`)
 }
 
 export async function denyBreakRequest(id: number) {
   const session = await getAdminSession()
   if (!session) throw new Error('Unauthorized')
-  const { setBreakRequestStatus } = await import('@/lib/break-requests')
+  const { getBreakRequest, setBreakRequestStatus } = await import('@/lib/break-requests')
+  const request = await getBreakRequest(id)
   await setBreakRequestStatus(id, 'denied', session.name)
   revalidatePath('/admin')
   revalidatePath('/leader')
+  if (request) revalidatePath(`/leader/creators/${request.creator_id}`)
 }
 
 export async function deleteScheduleBreak(id: number, creatorId: number) {

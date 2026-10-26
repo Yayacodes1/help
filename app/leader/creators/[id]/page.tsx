@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { CheckForm } from '@/components/leader/check-form'
+import { BreakRequestForm } from '@/components/leader/break-request-form'
 import { CopyTextButton } from '@/components/leader/copy-text-button'
 import { BonusView, ContractsView } from '@/components/leader/contracts-view'
 import { ConsistencyCalendar } from '@/components/admin/consistency-calendar'
@@ -29,6 +30,7 @@ import {
   goalsForContract,
 } from '@/lib/queries'
 import { getCreatorCommissionSheets } from '@/lib/commission-data'
+import { listBreakRequests } from '@/lib/break-requests'
 import { getCreatorStrikeSummary } from '@/lib/strikes'
 import { formatDate, formatMoney, formatNumber, payCurrency } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
@@ -37,7 +39,7 @@ import { createT } from '@/lib/i18n'
 export const dynamic = 'force-dynamic'
 
 const LEADER_REFRESH = '/api/leader/refresh-views'
-const PANELS = ['check', 'consistency', 'strikes', 'contracts', 'bonus', 'payments', 'videos']
+const PANELS = ['check', 'consistency', 'strikes', 'contracts', 'breakRequest', 'bonus', 'payments', 'videos']
 
 export default async function LeaderCreatorPage({
   params,
@@ -75,6 +77,7 @@ export default async function LeaderCreatorPage({
     strikeSummary,
     project,
     member,
+    breakRequests,
   ] = await Promise.all([
     getLeaderBoard(opToday),
     getCreatorCountsByPlatformOnDate(id, opToday),
@@ -89,6 +92,7 @@ export default async function LeaderCreatorPage({
     creator.role === 'reposter' ? getCreatorStrikeSummary(id, opToday) : Promise.resolve(null),
     creator.project_id ? getProjectById(creator.project_id) : Promise.resolve(null),
     getTeamMembers([id], today, { withMoney: true }).then((rows) => rows[0] ?? null),
+    listBreakRequests({ leaderId: session.id }),
   ])
   const person = board.leaders.find((row) => row.leaderId === session.id)?.people.find((p) => p.id === id) ?? null
   const goals = goalsForContract(creator, active)
@@ -189,6 +193,55 @@ export default async function LeaderCreatorPage({
       hint: active ? `${active.name} · ${t('stillDue')}` : undefined,
       children: <ContractsView comparisons={comparisons} breaks={breaks} currency={currency} locale={locale} />,
     },
+  )
+  if (scope.teamIds.includes(id) && !creator.paused_at) {
+    const forPerson = breakRequests.filter((r) => r.creator_id === id)
+    panels.push({
+      id: 'breakRequest',
+      title: t('breakRequestTitle'),
+      summary: `${forPerson.filter((r) => r.status === 'pending' || (r.status === 'approved' && !r.applied_at)).length}`,
+      hint: t('breakRequestHint'),
+      children: (
+        <BreakRequestForm
+          today={today}
+          defaultCreatorId={id}
+          people={[
+            {
+              id: creator.id,
+              name: creator.name,
+              role: creator.role === 'reposter' ? 'reposter' : 'creator',
+              paused: false,
+            },
+          ]}
+          requests={forPerson}
+          labels={{
+            hint: t('breakRequestHint'),
+            person: t('breakRequestPerson'),
+            kind: t('breakRequestKind'),
+            kindBreak: t('breakRequestKindBreak'),
+            kindPause: t('breakRequestKindPause'),
+            pauseHint: t('breakRequestPauseHint'),
+            start: t('breakRequestStart'),
+            days: t('breakRequestDays'),
+            reason: t('breakRequestReason'),
+            reasonPh: t('breakRequestReasonPh'),
+            send: t('breakRequestSend'),
+            empty: t('breakRequestEmpty'),
+            pending: t('breakRequestPending'),
+            approved: t('breakRequestApproved'),
+            denied: t('breakRequestDenied'),
+            giveBreak: t('breakRequestGive'),
+            givePause: t('breakRequestGivePause'),
+            waitingGive: t('breakRequestWaitingGive'),
+            applied: t('breakRequestApplied'),
+            creator: t('creatorRole'),
+            reposter: t('reposterRole'),
+          }}
+        />
+      ),
+    })
+  }
+  panels.push(
     {
       id: 'bonus',
       title: t('leaderBonus'),
