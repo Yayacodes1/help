@@ -57,8 +57,10 @@ export function FiltersBar({
     const next = new URLSearchParams()
     const project = params.get('project')
     const role = params.get('role')
+    const vSize = params.get('vSize')
     if (project) next.set('project', project)
     if (role) next.set('role', role)
+    if (vSize) next.set('vSize', vSize)
     next.set('panel', 'videos')
     router.push(`${pathname}?${next.toString()}`, { scroll: false })
   }

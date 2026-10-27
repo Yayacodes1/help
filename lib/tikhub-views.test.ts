@@ -5,6 +5,7 @@ import {
   canonicalizeInstagramUrl,
   extractInstagramCode,
   extractViewCount,
+  isTransientViewsError,
   parseTikHubEnvelope,
   publicViewsError,
 } from './tikhub-views.ts'
@@ -101,4 +102,12 @@ test('public Instagram error is one short line', () => {
     publicViewsError('tiktok: no play/view count (share_url failed)', 'tiktok'),
     'tiktok: no play/view count (share_url failed)',
   )
+})
+
+test('transient view errors retry; missing counts do not', () => {
+  assert.equal(isTransientViewsError('TikHub 429: rate limit'), true)
+  assert.equal(isTransientViewsError('fetch failed (timeout)'), true)
+  assert.equal(isTransientViewsError('TikHub 504: timed out'), true)
+  assert.equal(isTransientViewsError('tiktok: no play/view count'), false)
+  assert.equal(isTransientViewsError(INSTAGRAM_REFRESH_USER_ERROR), false)
 })

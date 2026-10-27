@@ -21,7 +21,7 @@ import {
   type AdminSubmissionRow,
   type CreatorProgress,
 } from '@/lib/queries'
-import { parseVideoPage, VIDEO_PAGE_SIZE } from '@/lib/video-page'
+import { VIDEO_PAGE_SIZE, videoPaging } from '@/lib/video-page'
 import {
   defaultAnalyticsRange,
   getDailyAnalytics,
@@ -149,6 +149,8 @@ export default async function AdminPage({
     cmFrom?: string
     cmTo?: string
     cmContract?: string
+    vPage?: string
+    vSize?: string
     /** Side by side: `role<projectId>`, `aFrom<projectId>`, `aTo<projectId>`. */
     [key: string]: string | undefined
   }>
@@ -268,8 +270,7 @@ export default async function AdminPage({
 
   const tab = resolveAdminTab(sp.tab, sp.panel)
   const videosOpen = tab === 'today' && sp.panel === 'videos'
-  const vPage = parseVideoPage(sp.vPage)
-  const vOffset = (vPage - 1) * VIDEO_PAGE_SIZE
+  const { page: vPage, pageSize: vSize, offset: vOffset } = videoPaging(sp)
   const session = await getAdminSession()
   const showBusiness = session?.role === 'owner'
   const projects = projectsEarly
@@ -284,7 +285,7 @@ export default async function AdminPage({
     const [submissions, videoStats, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory, activityMarks] =
       await Promise.all([
         videosOpen
-          ? getAdminSubmissions({ ...filters, limit: VIDEO_PAGE_SIZE, offset: vOffset })
+          ? getAdminSubmissions({ ...filters, limit: vSize, offset: vOffset })
           : Promise.resolve([] as AdminSubmissionRow[]),
         getAdminSubmissionStats(filters),
         getReposterStrikeBoard(opToday),
@@ -538,7 +539,7 @@ export default async function AdminPage({
             ...filters,
             projectId: pid,
             role: sideRoleSql,
-            limit: VIDEO_PAGE_SIZE,
+            limit: vSize,
             offset: vOffset,
           })
         : Promise.resolve([] as AdminSubmissionRow[]),
@@ -1258,6 +1259,7 @@ export default async function AdminPage({
                           noProjectLabel={t('noProject')}
                           refreshLabel={t('refreshThisVideo')}
                           page={vPage}
+                          pageSize={vSize}
                           total={side.videoCount}
                         />
                       ),
@@ -1275,6 +1277,7 @@ export default async function AdminPage({
                     noProjectLabel={t('noProject')}
                     refreshLabel={t('refreshThisVideo')}
                     page={vPage}
+                    pageSize={vSize}
                     total={totalVideos}
                   />
                 )}

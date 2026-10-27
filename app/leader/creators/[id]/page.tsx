@@ -28,9 +28,8 @@ import {
   getServerToday,
   getSubmissionsForCreator,
   goalsForContract,
-  VIDEO_PAGE_SIZE,
 } from '@/lib/queries'
-import { parseVideoPage } from '@/lib/video-page'
+import { videoPaging } from '@/lib/video-page'
 import { getCreatorCommissionSheets } from '@/lib/commission-data'
 import { listBreakRequests } from '@/lib/break-requests'
 import { getCreatorStrikeSummary } from '@/lib/strikes'
@@ -48,7 +47,7 @@ export default async function LeaderCreatorPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ panel?: string; vPage?: string }>
+  searchParams: Promise<{ panel?: string; vPage?: string; vSize?: string }>
 }) {
   const session = await getLeaderSession()
   if (!session) redirect('/login')
@@ -65,8 +64,7 @@ export default async function LeaderCreatorPage({
   const t = createT(locale)
   const currency = payCurrency(creator.role, creator.pay_currency)
   const videosOpen = sp.panel === 'videos'
-  const vPage = parseVideoPage(sp.vPage)
-  const vOffset = (vPage - 1) * VIDEO_PAGE_SIZE
+  const { page: vPage, pageSize: vSize, offset: vOffset } = videoPaging(sp)
 
   const [
     board,
@@ -93,7 +91,7 @@ export default async function LeaderCreatorPage({
     getScheduleBreaks(id),
     getPaymentsForCreator(id),
     videosOpen
-      ? getSubmissionsForCreator(id, { limit: VIDEO_PAGE_SIZE, offset: vOffset })
+      ? getSubmissionsForCreator(id, { limit: vSize, offset: vOffset })
       : Promise.resolve([]),
     getCreatorCommissionSheets(id, today),
     creator.role === 'reposter' ? getCreatorStrikeSummary(id, opToday) : Promise.resolve(null),
@@ -298,6 +296,7 @@ export default async function LeaderCreatorPage({
             refreshEndpoint={LEADER_REFRESH}
             refreshLabel={t('refreshThisVideo')}
             page={vPage}
+            pageSize={vSize}
             total={stats.total_videos}
           />
         </div>

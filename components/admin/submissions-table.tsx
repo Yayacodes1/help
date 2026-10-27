@@ -78,9 +78,14 @@ export function SubmissionsTable({
     total != null && pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1
   if (submissions.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-        {emptyLabel}
-      </p>
+      <div className="flex flex-col gap-2">
+        <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+          {emptyLabel}
+        </p>
+        {page != null && total != null && total > 0 ? (
+          <VideoPager page={page} pageCount={pageCount} total={total} pageSize={pageSize} panel={pagerPanel} />
+        ) : null}
+      </div>
     )
   }
 

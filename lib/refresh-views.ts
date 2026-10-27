@@ -6,7 +6,9 @@ import { detectPlatformFromUrl } from '@/lib/media-url'
 import { getServerToday } from '@/lib/queries'
 import { fetchViewsDetailed } from '@/lib/tikhub'
 import { applyFetchViewsResult } from '@/lib/submission-meta'
-import { publicViewsError } from '@/lib/tikhub-views'
+import { isTransientViewsError, publicViewsError } from '@/lib/tikhub-views'
+
+export { isTransientViewsError } from '@/lib/tikhub-views'
 
 /** Fill view counts after a submit so TikHub never blocks saving the links. */
 export async function hydrateSubmissionViews(
@@ -83,6 +85,94 @@ type Row = {
 
 const DEFAULT_CHUNK = 25
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+export type RefreshOneOutcome = 'updated' | 'skipped' | 'failed'
+
+export type RefreshOneResult = {
+  outcome: RefreshOneOutcome
+  reason?: string
+  views?: number
+  platformsFixed: number
+}
+
+type RefreshRow = {
+  id: number
+  platform: Platform
+  url: string
+  views: number
+  platform_posted_at: string | null
+}
+
+export async function refreshOneSubmission(
+  row: RefreshRow,
+  options: { retryTransient?: boolean } = {},
+): Promise<RefreshOneResult> {
+  const fetchedAt = new Date().toISOString()
+  let platformsFixed = 0
+  const detected = detectPlatformFromUrl(row.url)
+  const platform = detected ?? row.platform
+  if (detected && detected !== row.platform) {
+    await sql`
+      UPDATE submissions SET platform = ${detected} WHERE id = ${row.id}
+    `
+    platformsFixed = 1
+    row.platform = detected
+  }
+
+  const attempt = async (): Promise<RefreshOneResult> => {
+    const result = await fetchViewsDetailed(platform, row.url)
+    if (!result.ok) {
+      const reason = publicViewsError(result.reason, platform)
+      await sql`
+        UPDATE submissions
+        SET views_error = ${reason.slice(0, 400)}
+        WHERE id = ${row.id}
+      `
+      return { outcome: 'failed', reason, platformsFixed }
+    }
+
+    const urlChanged = Boolean(result.resolvedUrl && result.resolvedUrl !== row.url)
+    const viewsChanged = result.views !== row.views
+    const postedAtChanged = Boolean(
+      result.postedAt && result.postedAt !== row.platform_posted_at,
+    )
+
+    if (urlChanged || viewsChanged || postedAtChanged) {
+      const saved = await applyFetchViewsResult(row.id, result, {
+        updateUrl: urlChanged,
+        fetchedAt,
+      })
+      if (!saved) {
+        return { outcome: 'skipped', views: row.views, platformsFixed }
+      }
+      return { outcome: 'updated', views: result.views, platformsFixed }
+    }
+
+    await sql`
+      UPDATE submissions
+      SET views_error = NULL, views_fetched_at = NOW()
+      WHERE id = ${row.id}
+        AND (
+          views_fetched_at IS NULL
+          OR views_fetched_at <= ${fetchedAt}::timestamptz
+        )
+    `
+    return { outcome: 'skipped', views: result.views, platformsFixed }
+  }
+
+  let result = await attempt()
+  if (
+    options.retryTransient !== false &&
+    result.outcome === 'failed' &&
+    result.reason &&
+    isTransientViewsError(result.reason)
+  ) {
+    await new Promise((r) => setTimeout(r, 400))
+    result = await attempt()
+    result.platformsFixed = Math.max(result.platformsFixed, platformsFixed)
+  }
+  return result
+}
 
 function tallyFailures(
   reasons: string[],
@@ -192,55 +282,16 @@ export async function refreshViews(
       await new Promise((r) => setTimeout(r, delayMs))
     }
 
-    const detected = detectPlatformFromUrl(row.url)
-    const platform = detected ?? row.platform
-    if (detected && detected !== row.platform) {
-      await sql`
-        UPDATE submissions SET platform = ${detected} WHERE id = ${row.id}
-      `
-      platformsFixed += 1
-      row.platform = detected
-    }
-
-    const result = await fetchViewsDetailed(platform, row.url)
-    if (!result.ok) {
-      const reason = publicViewsError(result.reason, platform)
+    const one = await refreshOneSubmission(row)
+    platformsFixed += one.platformsFixed
+    if (one.outcome === 'updated') updated += 1
+    else if (one.outcome === 'skipped') skipped += 1
+    else {
       failed += 1
-      failReasons.push(reason)
-      if (failureSamples.length < 12) {
-        failureSamples.push({
-          id: row.id,
-          url: row.url,
-          reason,
-        })
+      if (one.reason) failReasons.push(one.reason)
+      if (one.reason && failureSamples.length < 12) {
+        failureSamples.push({ id: row.id, url: row.url, reason: one.reason })
       }
-      // Keep the last saved view count. Never write 0 or mark this as an update.
-      await sql`
-        UPDATE submissions
-        SET views_error = ${reason.slice(0, 400)}
-        WHERE id = ${row.id}
-      `
-      continue
-    }
-
-    const urlChanged = Boolean(
-      result.resolvedUrl && result.resolvedUrl !== row.url,
-    )
-    const viewsChanged = result.views !== row.views
-    const postedAtChanged = Boolean(
-      result.postedAt && result.postedAt !== row.platform_posted_at,
-    )
-
-    if (urlChanged || viewsChanged || postedAtChanged) {
-      await applyFetchViewsResult(row.id, result, { updateUrl: urlChanged })
-      updated += 1
-    } else {
-      await sql`
-        UPDATE submissions
-        SET views_error = NULL, views_fetched_at = NOW()
-        WHERE id = ${row.id}
-      `
-      skipped += 1
     }
   }
 

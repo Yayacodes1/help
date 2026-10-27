@@ -1,6 +1,12 @@
 export const INSTAGRAM_REFRESH_USER_ERROR =
   "Couldn't refresh Instagram views. Try again later."
 
+export function isTransientViewsError(reason: string): boolean {
+  return /\b(429|502|503|504|timeout|timed out|rate limit|econnreset|fetch failed|network|aborted)\b/i.test(
+    reason,
+  )
+}
+
 export function publicViewsError(
   reason: string,
   platform?: string | null,

@@ -48,7 +48,7 @@ import { listBreakRequests } from '@/lib/break-requests'
 import { CopyTextButton } from '@/components/leader/copy-text-button'
 import { ConsistencyBoard, CreatorCards, ManageList } from '@/components/leader/team-boards'
 import { listLeaderTasks } from '@/lib/tasks'
-import { parseVideoPage, VIDEO_PAGE_SIZE } from '@/lib/video-page'
+import { videoPaging } from '@/lib/video-page'
 import { getReposterChecksForTeam } from '@/lib/reposter-checks'
 export const dynamic = 'force-dynamic'
 
@@ -120,8 +120,7 @@ export default async function LeaderHomePage({
   const teamIds = scope.teamIds
   const inRole = (role: string) => roleFilter === 'all' || role === roleFilter
   const videosOpen = tab === 'today' && sp.panel === 'videos'
-  const vPage = parseVideoPage(sp.vPage)
-  const vOffset = (vPage - 1) * VIDEO_PAGE_SIZE
+  const { page: vPage, pageSize: vSize, offset: vOffset } = videoPaging(sp)
   const videoFilters = {
     projectId,
     role: roleSql,
@@ -144,7 +143,7 @@ export default async function LeaderHomePage({
       }),
       getAttendanceForDay(selectedDay, projectId ?? null),
       videosOpen
-        ? getAdminSubmissions({ ...videoFilters, limit: VIDEO_PAGE_SIZE, offset: vOffset })
+        ? getAdminSubmissions({ ...videoFilters, limit: vSize, offset: vOffset })
         : Promise.resolve([]),
       getAdminSubmissionStats(videoFilters),
       consistencyOpen ? getTeamMembers(teamIds, today) : Promise.resolve([]),
@@ -473,6 +472,7 @@ export default async function LeaderHomePage({
               refreshLabel={t('refreshThisVideo')}
               noProjectLabel={t('noProject')}
               page={vPage}
+              pageSize={vSize}
               total={videoCount}
             />
           </div>

@@ -268,7 +268,7 @@ export type AdminFilters = {
   offset?: number
 }
 
-export { VIDEO_PAGE_SIZE, parseVideoPage } from '@/lib/video-page'
+export { VIDEO_PAGE_SIZE, parseVideoPage, parseVideoPageSize, videoPaging } from '@/lib/video-page'
 
 function submissionFilterArgs(filters: AdminFilters) {
   return {

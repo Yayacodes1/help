@@ -51,7 +51,7 @@ import { createT, type Locale } from '@/lib/i18n'
 import { getCreatorStrikeSummary } from '@/lib/strikes'
 import { getReposterChecksForDay } from '@/lib/reposter-checks'
 import { timed } from '@/lib/ensure-once'
-import { parseVideoPage, VIDEO_PAGE_SIZE } from '@/lib/video-page'
+import { videoPaging } from '@/lib/video-page'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -76,7 +76,7 @@ export async function ReposterDashboard({
   creator: Creator
   username: string
   locale: Locale
-  searchParams: { date?: string; tab?: string; panel?: string; taskDay?: string; u?: string; vPage?: string }
+  searchParams: { date?: string; tab?: string; panel?: string; taskDay?: string; u?: string; vPage?: string; vSize?: string }
 }) {
   const t = createT(locale)
   const started = Date.now()
@@ -135,8 +135,7 @@ export async function ReposterDashboard({
   const panels: PanelItem[] = []
 
   const videosOpen = tab === 'today' && searchParams.panel === 'videos'
-  const vPage = parseVideoPage(searchParams.vPage)
-  const vOffset = (vPage - 1) * VIDEO_PAGE_SIZE
+  const { page: vPage, pageSize: vSize, offset: vOffset } = videoPaging(searchParams)
 
   if (tab === 'today') {
     const [progress, activityMarks, tasks, checked, calendar, handles, myChecks, groupSubs, videoStats] = await Promise.all([
@@ -159,7 +158,7 @@ export async function ReposterDashboard({
             to: date,
             creatorIds: videoIds,
             role: 'creator',
-            limit: VIDEO_PAGE_SIZE,
+            limit: vSize,
             offset: vOffset,
           }).catch(() => [])
         : Promise.resolve([]),
@@ -261,9 +260,9 @@ export async function ReposterDashboard({
             <GroupVideos videos={creatorVideos} emptyLabel={t('groupVideosEmpty')} />
             <VideoPager
               page={vPage}
-              pageCount={Math.max(1, Math.ceil(videoStats.count / VIDEO_PAGE_SIZE))}
+              pageCount={Math.max(1, Math.ceil(videoStats.count / vSize))}
               total={videoStats.count}
-              pageSize={VIDEO_PAGE_SIZE}
+              pageSize={vSize}
             />
           </div>
         ),

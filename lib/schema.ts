@@ -353,4 +353,48 @@ async function runEnsureCreatorTrackingColumns() {
   await ensureStreakSettingsTable()
   const { ensureLeaderTables } = await import('@/lib/leaders')
   await ensureLeaderTables()
+  await ensureRefreshJobTables()
+}
+
+export async function ensureRefreshJobTables() {
+  await sql`
+    CREATE TABLE IF NOT EXISTS refresh_jobs (
+      id SERIAL PRIMARY KEY,
+      actor_kind TEXT NOT NULL,
+      actor_id TEXT,
+      leader_id INTEGER,
+      filters JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status TEXT NOT NULL DEFAULT 'running',
+      total INTEGER NOT NULL DEFAULT 0,
+      processed INTEGER NOT NULL DEFAULT 0,
+      succeeded INTEGER NOT NULL DEFAULT 0,
+      failed INTEGER NOT NULL DEFAULT 0,
+      skipped INTEGER NOT NULL DEFAULT 0,
+      platforms_fixed INTEGER NOT NULL DEFAULT 0,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      finished_at TIMESTAMPTZ,
+      last_error TEXT
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS refresh_jobs_actor_status_idx ON refresh_jobs (actor_kind, status, started_at DESC)`
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS refresh_jobs_one_running_idx
+    ON refresh_jobs (actor_kind, (COALESCE(leader_id, 0)))
+    WHERE status = 'running'
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS refresh_job_items (
+      id SERIAL PRIMARY KEY,
+      job_id INTEGER NOT NULL REFERENCES refresh_jobs(id) ON DELETE CASCADE,
+      submission_id INTEGER NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'pending',
+      error TEXT,
+      views_before INTEGER,
+      views_after INTEGER,
+      started_at TIMESTAMPTZ,
+      UNIQUE (job_id, submission_id)
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS refresh_job_items_pending_idx ON refresh_job_items (job_id, status, submission_id)`
 }

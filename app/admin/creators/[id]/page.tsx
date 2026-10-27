@@ -17,7 +17,6 @@ import {
   getServerToday,
   getSubmissionsForCreator,
   contractWindow,
-  VIDEO_PAGE_SIZE,
   getScheduleBreaks,
   getOperationalToday,
 } from '@/lib/queries'
@@ -47,7 +46,7 @@ import { emptyActivityCounts } from '@/lib/activity-kinds'
 import { addDays } from '@/lib/campaign'
 import { ActivityCountsLine } from '@/components/activity-toggles'
 import { RestoreStreaksButton } from '@/components/admin/restore-streaks-button'
-import { parseVideoPage } from '@/lib/video-page'
+import { videoPaging } from '@/lib/video-page'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,6 +64,7 @@ export default async function CreatorDetailPage({
     cmFrom?: string
     cmTo?: string
     vPage?: string
+    vSize?: string
   }>
 }) {
   if (!(await isAdmin())) redirect('/login')
@@ -92,8 +92,7 @@ export default async function CreatorDetailPage({
   const cmFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.cmFrom ?? '') ? sp.cmFrom! : monthStart
   const cmTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.cmTo ?? '') ? sp.cmTo! : today
   const videosOpen = sp.panel === 'videos'
-  const vPage = parseVideoPage(sp.vPage)
-  const vOffset = (vPage - 1) * VIDEO_PAGE_SIZE
+  const { page: vPage, pageSize: vSize, offset: vOffset } = videoPaging(sp)
 
   const [projects, consistency, stats, submissions, comparisons, active, payments, contracts, paidTotal, breaks, strikeSummary, personPerf, commissionSheets] =
     await Promise.all([
@@ -101,7 +100,7 @@ export default async function CreatorDetailPage({
       getCreatorConsistency(creator, today),
       getCreatorStats(creator.id),
       videosOpen
-        ? getSubmissionsForCreator(creator.id, { limit: VIDEO_PAGE_SIZE, offset: vOffset })
+        ? getSubmissionsForCreator(creator.id, { limit: vSize, offset: vOffset })
         : Promise.resolve([]),
       getContractComparisons(creator, today),
       getActiveContract(creator.id, today),
@@ -409,6 +408,7 @@ export default async function CreatorDetailPage({
                   creator_name: creator.name,
                 }))}
                 page={vPage}
+                pageSize={vSize}
                 total={stats.total_videos}
                 emptyLabel={t('noVideosYet')}
                 labels={{

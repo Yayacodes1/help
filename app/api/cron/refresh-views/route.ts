@@ -47,6 +47,14 @@ async function run(req: Request) {
     }, { status: 500 })
   }
 
+  const { tickAnyRunningRefreshJob } = await import('@/lib/refresh-job')
+  let jobTicks = 0
+  for (let i = 0; i < 8; i++) {
+    const job = await tickAnyRunningRefreshJob()
+    if (!job || job.status !== 'running') break
+    jobTicks += 1
+  }
+
   const url = new URL(req.url)
   const scopeParam = url.searchParams.get('scope')
   // Default: today + yesterday once daily (Hobby allows 1 cron/day). Pass ?scope=all for rare full backfills.
@@ -55,7 +63,7 @@ async function run(req: Request) {
   const result = await refreshViews(scope, { delayMs: 80, limit: 40 })
   revalidatePath('/admin')
   revalidatePath('/submit')
-  return NextResponse.json({ ...result, strikesAdded, streakEpoch, telegram, webhook })
+  return NextResponse.json({ ...result, jobTicks, strikesAdded, streakEpoch, telegram, webhook })
 }
 
 export async function GET(req: Request) {

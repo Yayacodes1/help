@@ -36,6 +36,7 @@ export function CreatorVideosPanel({
   today,
   page,
   total,
+  pageSize = VIDEO_PAGE_SIZE,
   labels,
 }: {
   creatorId: number
@@ -45,6 +46,7 @@ export function CreatorVideosPanel({
   today: string
   page?: number
   total?: number
+  pageSize?: number
   labels: {
     both: string
     instagram: string
@@ -213,7 +215,7 @@ export function CreatorVideosPanel({
         refreshLabel={labels.refreshThisVideo}
         page={page}
         total={total}
-        pageSize={VIDEO_PAGE_SIZE}
+        pageSize={pageSize}
       />
     </div>
   )

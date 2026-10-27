@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { RefreshCw } from 'lucide-react'
 import type { Platform } from '@/lib/db'
@@ -19,17 +19,6 @@ type ChunkResult = {
   hasMore: boolean
   failures?: { reason: string; count: number }[]
   failureSamples?: { id: number; url: string; reason: string }[]
-}
-
-function mergeFailures(
-  into: Map<string, number>,
-  list: { reason: string; count: number }[] | undefined,
-) {
-  if (!list) return
-  for (const f of list) {
-    const reason = publicViewsError(f.reason)
-    into.set(reason, (into.get(reason) ?? 0) + f.count)
-  }
 }
 
 function explainHttpError(status: number, apiError?: string): string {
@@ -135,6 +124,49 @@ async function fetchChunk(
   return data
 }
 
+type JobStatus = {
+  id: number
+  status: 'running' | 'completed' | 'cancelled'
+  total: number
+  processed: number
+  succeeded: number
+  failed: number
+  skipped: number
+  remaining: number
+  percent: number
+  alreadyRunning?: boolean
+  startedAt?: string
+  finishedAt?: string | null
+  failures: { id: number; url: string; reason: string }[]
+}
+
+function formatClock(value?: string | null): string | null {
+  if (!value) return null
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleString()
+}
+
+async function jobRequest(
+  endpoint: string,
+  body: Record<string, unknown>,
+  method: 'GET' | 'POST' = 'POST',
+): Promise<JobStatus | null> {
+  const res = await fetch(endpoint, {
+    method,
+    headers: method === 'POST' ? { 'Content-Type': 'application/json' } : undefined,
+    body: method === 'POST' ? JSON.stringify(body) : undefined,
+    cache: 'no-store',
+  })
+  const data = (await res.json().catch(() => null)) as
+    | { job?: JobStatus | null; error?: string }
+    | null
+  if (!res.ok) {
+    throw new Error(explainHttpError(res.status, data?.error))
+  }
+  return data?.job ?? null
+}
+
 export function RefreshViewsButton({
   label,
   defaultFrom,
@@ -156,146 +188,132 @@ export function RefreshViewsButton({
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [pending, setPending] = useState(false)
+  const jobEndpoint = `${endpoint.replace(/\/$/, '')}/job`
+  const [job, setJob] = useState<JobStatus | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [isError, setIsError] = useState(false)
-  const [sampleFails, setSampleFails] = useState<
-    { id: number; url: string; reason: string }[]
-  >([])
+  const looping = useRef(false)
+  const cancelled = useRef(false)
+  const lastProcessed = useRef(0)
 
-  async function run() {
-    setPending(true)
+  useEffect(() => {
+    cancelled.current = false
+    void jobRequest(jobEndpoint, {}, 'GET')
+      .then((latest) => {
+        if (!cancelled.current && latest) setJob(latest)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled.current = true
+      looping.current = false
+    }
+  }, [jobEndpoint])
+
+  async function drive(current: JobStatus) {
+    if (looping.current) return
+    looping.current = true
+    lastProcessed.current = current.processed
+    let next = current
+    try {
+      while (next.status === 'running') {
+        if (cancelled.current) return
+        next =
+          (await jobRequest(jobEndpoint, { action: 'tick', jobId: next.id })) ?? next
+        if (cancelled.current) return
+        setJob(next)
+        if (next.status !== 'running') break
+        if (next.processed <= lastProcessed.current) {
+          await new Promise((r) => setTimeout(r, 400))
+        }
+        lastProcessed.current = next.processed
+      }
+      setIsError(next.failed > 0)
+      setMessage(
+        next.total === 0
+          ? 'No videos matched these filters.'
+          : `Done — ${next.succeeded + next.skipped} saved, ${next.failed} failed, across ${next.total} videos on every page.`,
+      )
+      router.refresh()
+    } catch (e) {
+      if (cancelled.current) return
+      setIsError(true)
+      setMessage(e instanceof Error ? e.message : 'Refresh failed')
+    } finally {
+      looping.current = false
+    }
+  }
+
+  useEffect(() => {
+    if (job?.status === 'running') void drive(job)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id, job?.status === 'running'])
+
+  async function start(action: 'start' | 'retry' = 'start') {
     setMessage(null)
     setIsError(false)
-    setSampleFails([])
-
     const filters = readFilters(
       searchParams,
-      {
-        from: defaultFrom,
-        to: defaultTo,
-      },
+      { from: defaultFrom, to: defaultTo },
       { creatorId, allDates },
       defaultRole,
     )
-
-    let checked = 0
-    let updated = 0
-    let skipped = 0
-    let failed = 0
-    let platformsFixed = 0
-    let offset = 0
-    let timeouts = 0
-    const failMap = new Map<string, number>()
-    const samples: { id: number; url: string; reason: string }[] = []
-    const limit = 4
-    const filterLine = [
-      filters.from && filters.to ? `Dates ${filters.from} → ${filters.to}` : 'All dates',
-      filters.creatorId ? `creator #${filters.creatorId}` : null,
-      filters.platform ? filters.platform : null,
-    ]
-      .filter(Boolean)
-      .join(' · ')
-
     try {
-      for (let round = 0; round < 500; round++) {
-        setMessage(
-          `Refreshing views (${filterLine})… checked ${checked}, ${updated} updated, ${failed} failed` +
-            (timeouts ? ` · ${timeouts} timeout(s) recovered` : ''),
-        )
-
-        let data: ChunkResult
-        try {
-          data = await fetchChunk(offset, limit, filters, endpoint)
-        } catch (chunkErr) {
-          const why =
-            chunkErr instanceof Error ? chunkErr.message : 'chunk failed'
-          const timedOut = /\b(502|503|504|timed out|timeout)\b/i.test(why)
-
-          if (timedOut && timeouts < 10) {
-            timeouts += 1
-            setMessage(
-              `Timed out on a batch — retrying this same batch… (${timeouts})`,
-            )
-            await new Promise((r) => setTimeout(r, 700))
-            try {
-              data = await fetchChunk(offset, 2, filters, endpoint)
-            } catch {
-              await new Promise((r) => setTimeout(r, 900))
-              data = await fetchChunk(offset, 1, filters, endpoint)
-            }
-          } else {
-            throw chunkErr instanceof Error ? chunkErr : new Error(why)
-          }
-        }
-
-        checked += data.checked
-        updated += data.updated
-        skipped += data.skipped
-        failed += data.failed
-        platformsFixed += data.platformsFixed ?? 0
-        mergeFailures(failMap, data.failures)
-        for (const s of data.failureSamples ?? []) {
-          if (samples.length < 25) {
-            samples.push({ ...s, reason: publicViewsError(s.reason) })
-          }
-        }
-
-        if (data.checked === 0) break
-        if (!data.hasMore || data.nextOffset == null) break
-        offset = data.nextOffset
+      const started =
+        action === 'retry' && job
+          ? await jobRequest(jobEndpoint, { action: 'retry', jobId: job.id })
+          : await jobRequest(jobEndpoint, { action: 'start', ...filters })
+      if (!started) throw new Error('Could not start refresh.')
+      setJob(started)
+      if (started.alreadyRunning) {
+        setMessage('A refresh is already running. Continuing that job across every page.')
       }
-
-      const topFails = [...failMap.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 3)
-        .map(([reason, count]) => `${count}× ${reason}`)
-        .join(' · ')
-
-      setSampleFails(samples)
-      setMessage(
-        [
-          `Done (${filterLine})`,
-          `checked ${checked}: ${updated} updated, ${skipped} unchanged, ${failed} failed`,
-          platformsFixed ? `${platformsFixed} platforms fixed from URLs` : null,
-          timeouts ? `${timeouts} host timeout(s) recovered` : null,
-          topFails ? `Top fails: ${topFails}` : null,
-          failed > 0
-            ? 'Red text under Views = reason for that video.'
-            : null,
-        ]
-          .filter(Boolean)
-          .join(' — '),
-      )
-      setIsError(failed > 0 || timeouts > 0)
-      router.refresh()
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Refresh failed'
       setIsError(true)
-      setMessage(
-        [
-          msg,
-          checked
-            ? `Partial: checked ${checked}, ${updated} updated, ${failed} failed. Click Refresh again to continue.`
-            : 'Nothing updated. Fix the error, then try again.',
-        ].join(' '),
-      )
-      router.refresh()
-    } finally {
-      setPending(false)
+      setMessage(e instanceof Error ? e.message : 'Refresh failed')
     }
   }
+
+  const running = job?.status === 'running'
+  const successful = job ? job.succeeded + job.skipped : 0
+  const startedLabel = formatClock(job?.startedAt)
+  const finishedLabel = formatClock(job?.finishedAt)
 
   return (
     <div className="flex flex-col gap-2">
       <button
         type="button"
-        disabled={pending}
-        onClick={() => void run()}
+        disabled={running}
+        onClick={() => void start('start')}
         className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-60"
       >
-        {pending ? 'Refreshing views…' : label}
+        {running ? 'Refreshing all views…' : label}
       </button>
+      <p className="text-xs text-muted-foreground">
+        {allDates || creatorId
+          ? "Pulls current views for this person's videos on every page, not only the ones on screen."
+          : 'Refreshes every video matching the filters above, across every page — not only this page.'}
+      </p>
+      {job && (running || job.processed > 0 || job.total > 0) ? (
+        <div className="max-w-xl rounded-lg border border-border bg-card p-3">
+          <p className="text-sm font-medium">Refreshing all video views</p>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full bg-primary transition-[width] duration-300"
+              style={{ width: `${job.percent}%` }}
+            />
+          </div>
+          <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs tabular-nums text-muted-foreground">
+            <div>Total videos: {job.total.toLocaleString()}</div>
+            <div>Processed: {job.processed.toLocaleString()}</div>
+            <div>Successfully refreshed: {successful.toLocaleString()}</div>
+            <div>Failed: {job.failed.toLocaleString()}</div>
+            <div>Remaining: {job.remaining.toLocaleString()}</div>
+            <div>Progress: {job.percent}%</div>
+            {startedLabel ? <div>Started: {startedLabel}</div> : null}
+            {finishedLabel ? <div>Finished: {finishedLabel}</div> : running ? <div>Finished: in progress</div> : null}
+          </dl>
+        </div>
+      ) : null}
       {message ? (
         <p
           className={`max-w-3xl text-xs break-words ${
@@ -305,19 +323,22 @@ export function RefreshViewsButton({
         >
           {message}
         </p>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          {allDates || creatorId
-            ? 'Pulls current views for this creator\'s videos. Fixes IG↔TT from each URL.'
-            : 'Uses the date / creator / platform filters above. Fixes IG↔TT from each URL, then pulls current views. A daily cron also refreshes today + yesterday once per day (Vercel Hobby limit).'}
-        </p>
-      )}
-      {sampleFails.length > 0 && (
+      ) : null}
+      {job && job.failed > 0 && job.failures.length > 0 ? (
         <ul className="max-w-3xl space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-muted-foreground">
-          <li className="font-medium text-destructive">
-            Why some videos failed
+          <li className="flex flex-wrap items-center justify-between gap-2 font-medium text-destructive">
+            <span>Failed videos</span>
+            {!running ? (
+              <button
+                type="button"
+                onClick={() => void start('retry')}
+                className="rounded-md border border-destructive/40 px-2 py-1 text-[11px] font-medium text-destructive hover:bg-destructive/10"
+              >
+                Retry failed videos
+              </button>
+            ) : null}
           </li>
-          {sampleFails.map((s) => (
+          {job.failures.map((s) => (
             <li key={`${s.id}-${s.reason}`} className="break-all">
               <a
                 href={s.url}
@@ -329,11 +350,11 @@ export function RefreshViewsButton({
                 #{s.id}
               </a>
               {': '}
-              {s.reason}
+              {publicViewsError(s.reason)}
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
     </div>
   )
 }
