@@ -17,6 +17,7 @@ import {
   getServerToday,
   getSubmissionsForCreator,
   contractWindow,
+  VIDEO_PAGE_SIZE,
   getScheduleBreaks,
   getOperationalToday,
 } from '@/lib/queries'
@@ -46,6 +47,7 @@ import { emptyActivityCounts } from '@/lib/activity-kinds'
 import { addDays } from '@/lib/campaign'
 import { ActivityCountsLine } from '@/components/activity-toggles'
 import { RestoreStreaksButton } from '@/components/admin/restore-streaks-button'
+import { parseVideoPage } from '@/lib/video-page'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,6 +64,7 @@ export default async function CreatorDetailPage({
     cmContract?: string
     cmFrom?: string
     cmTo?: string
+    vPage?: string
   }>
 }) {
   if (!(await isAdmin())) redirect('/login')
@@ -88,13 +91,18 @@ export default async function CreatorDetailPage({
   const monthStart = `${today.slice(0, 7)}-01`
   const cmFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.cmFrom ?? '') ? sp.cmFrom! : monthStart
   const cmTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.cmTo ?? '') ? sp.cmTo! : today
+  const videosOpen = sp.panel === 'videos'
+  const vPage = parseVideoPage(sp.vPage)
+  const vOffset = (vPage - 1) * VIDEO_PAGE_SIZE
 
   const [projects, consistency, stats, submissions, comparisons, active, payments, contracts, paidTotal, breaks, strikeSummary, personPerf, commissionSheets] =
     await Promise.all([
       getAllProjects(),
       getCreatorConsistency(creator, today),
       getCreatorStats(creator.id),
-      getSubmissionsForCreator(creator.id),
+      videosOpen
+        ? getSubmissionsForCreator(creator.id, { limit: VIDEO_PAGE_SIZE, offset: vOffset })
+        : Promise.resolve([]),
       getContractComparisons(creator, today),
       getActiveContract(creator.id, today),
       getPaymentsForCreator(creator.id),
@@ -125,7 +133,7 @@ export default async function CreatorDetailPage({
   const currency = payCurrency(creator.role, creator.pay_currency)
   const pay = await getPaySummary(creator, today)
   const window = contractWindow(creator, today, active)
-  const totalViews = submissions.reduce((sum, s) => sum + (s.views ?? 0), 0)
+  const totalViews = stats.views
   const latestPayment = payments[0] ?? null
   const activeCompare = comparisons.find((c) => c.isActive)
 
@@ -400,6 +408,8 @@ export default async function CreatorDetailPage({
                   ...s,
                   creator_name: creator.name,
                 }))}
+                page={vPage}
+                total={stats.total_videos}
                 emptyLabel={t('noVideosYet')}
                 labels={{
                   both: t('platformBoth'),

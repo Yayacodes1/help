@@ -1,18 +1,23 @@
 import { Suspense } from 'react'
+import dynamic from 'next/dynamic'
 import { SubmitForm, type BrandProject } from '@/components/submit-form'
 import { DateSelect } from '@/components/date-select'
 import { PanelBoard, type PanelItem } from '@/components/admin/panel-board'
-import { AnalyticsPanel } from '@/components/admin/analytics-panel'
 import { ReposterShell } from '@/components/reposter/reposter-shell'
 import { ReposterDailyCheck } from '@/components/reposter/daily-check'
 import { TaskBoard } from '@/components/reposter/task-board'
 import { ReposterTeamList } from '@/components/reposter/team-list'
 import { GroupVideos } from '@/components/reposter/group-videos'
+import { VideoPager } from '@/components/admin/video-pager'
 import { ContestPodium } from '@/components/contest-podium'
 import { RankingBoard } from '@/components/ranking-board'
 import { StrikeBanner } from '@/components/strike-banner'
+const AnalyticsPanel = dynamic(() =>
+  import('@/components/admin/analytics-panel').then((m) => m.AnalyticsPanel),
+)
 import {
   getAdminSubmissions,
+  getAdminSubmissionStats,
   getAllProjects,
   getCreatorCountsByPlatformOnDate,
   getCreatorsWithProgressOnDate,
@@ -46,6 +51,7 @@ import { createT, type Locale } from '@/lib/i18n'
 import { getCreatorStrikeSummary } from '@/lib/strikes'
 import { getReposterChecksForDay } from '@/lib/reposter-checks'
 import { timed } from '@/lib/ensure-once'
+import { parseVideoPage, VIDEO_PAGE_SIZE } from '@/lib/video-page'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -70,7 +76,7 @@ export async function ReposterDashboard({
   creator: Creator
   username: string
   locale: Locale
-  searchParams: { date?: string; tab?: string; panel?: string; taskDay?: string; u?: string }
+  searchParams: { date?: string; tab?: string; panel?: string; taskDay?: string; u?: string; vPage?: string }
 }) {
   const t = createT(locale)
   const started = Date.now()
@@ -128,8 +134,12 @@ export async function ReposterDashboard({
 
   const panels: PanelItem[] = []
 
+  const videosOpen = tab === 'today' && searchParams.panel === 'videos'
+  const vPage = parseVideoPage(searchParams.vPage)
+  const vOffset = (vPage - 1) * VIDEO_PAGE_SIZE
+
   if (tab === 'today') {
-    const [progress, activityMarks, tasks, checked, calendar, handles, myChecks, groupSubs] = await Promise.all([
+    const [progress, activityMarks, tasks, checked, calendar, handles, myChecks, groupSubs, videoStats] = await Promise.all([
       teamIds.length > 0
         ? timed('reposter-team-progress', () =>
             getCreatorsWithProgressOnDate(date, undefined, 'creator', {
@@ -143,7 +153,21 @@ export async function ReposterDashboard({
       link ? getTaskCalendar(creator.id, link.leaderId, today).catch(() => []) : Promise.resolve([]),
       getLoginHandles(videoIds).catch(() => new Map()),
       getReposterChecksForDay(creator.id, date).catch(() => new Set<number>()),
-      getAdminSubmissions({ from: date, to: date, creatorIds: videoIds, role: 'creator' }).catch(() => []),
+      videosOpen
+        ? getAdminSubmissions({
+            from: date,
+            to: date,
+            creatorIds: videoIds,
+            role: 'creator',
+            limit: VIDEO_PAGE_SIZE,
+            offset: vOffset,
+          }).catch(() => [])
+        : Promise.resolve([]),
+      getAdminSubmissionStats({ from: date, to: date, creatorIds: videoIds, role: 'creator' }).catch(() => ({
+        count: 0,
+        views: 0,
+        creatorViews: 0,
+      })),
     ])
     const checkPeople = progress
       .filter((p) => p.role === 'creator' && !p.paused_at)
@@ -226,7 +250,7 @@ export async function ReposterDashboard({
       {
         id: 'videos',
         title: t('videos'),
-        summary: `${creatorVideos.length}`,
+        summary: `${videoStats.count}`,
         hint: date,
         children: (
           <div className="flex flex-col gap-3">
@@ -235,6 +259,12 @@ export async function ReposterDashboard({
               <DateSelect date={date} />
             </div>
             <GroupVideos videos={creatorVideos} emptyLabel={t('groupVideosEmpty')} />
+            <VideoPager
+              page={vPage}
+              pageCount={Math.max(1, Math.ceil(videoStats.count / VIDEO_PAGE_SIZE))}
+              total={videoStats.count}
+              pageSize={VIDEO_PAGE_SIZE}
+            />
           </div>
         ),
       },
@@ -262,6 +292,8 @@ export async function ReposterDashboard({
       views_tiktok: 0,
       zero_view_videos: 0,
     }
+    const creatorsOpen = searchParams.panel !== 'analyticsReposters'
+    const repostersOpen = searchParams.panel === 'analyticsReposters'
     const [
       dailyCreators,
       byCreatorDaily,
@@ -274,13 +306,13 @@ export async function ReposterDashboard({
       league,
       contestBoard,
     ] = await Promise.all([
-      getDailyAnalytics(creatorRange).catch(() => []),
-      getDailyViewsByCreator(creatorRange).catch(() => []),
-      getViewsLeaderboard({ ...creatorRange, limit: 40 }).catch(() => []),
+      creatorsOpen ? getDailyAnalytics(creatorRange).catch(() => []) : Promise.resolve([]),
+      creatorsOpen ? getDailyViewsByCreator(creatorRange).catch(() => []) : Promise.resolve([]),
+      creatorsOpen ? getViewsLeaderboard({ ...creatorRange, limit: 40 }).catch(() => []) : Promise.resolve([]),
       getViewsSummary(creatorRange).catch(() => emptySummary),
-      getDailyAnalytics(reposterRange).catch(() => []),
-      getDailyViewsByCreator(reposterRange).catch(() => []),
-      getViewsLeaderboard({ ...reposterRange, limit: 40 }).catch(() => []),
+      repostersOpen ? getDailyAnalytics(reposterRange).catch(() => []) : Promise.resolve([]),
+      repostersOpen ? getDailyViewsByCreator(reposterRange).catch(() => []) : Promise.resolve([]),
+      repostersOpen ? getViewsLeaderboard({ ...reposterRange, limit: 40 }).catch(() => []) : Promise.resolve([]),
       getViewsSummary(reposterRange).catch(() => emptySummary),
       getLeagueBoard({ role: 'reposter' }).catch(() => null),
       isContestLive(today) && miqatId != null

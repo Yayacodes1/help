@@ -44,7 +44,7 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
   --font-sans: var(--font-body);
-  --font-display: var(--font-display);
+  --font-display: var(--font-body);
 }
 
 :root {
@@ -169,4 +169,32 @@
 
 .dark .recharts-cartesian-axis-tick-value {
   fill: var(--muted-foreground);
+}
+
+.video-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 4.75rem;
+}
+
+button,
+a,
+[role='button'],
+[role='tab'] {
+  touch-action: manipulation;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .fade-in,
+  .slide-in-from-top-1,
+  .slide-in-from-top-2 {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .animate-in {
+    animation-duration: 1ms !important;
+  }
 }

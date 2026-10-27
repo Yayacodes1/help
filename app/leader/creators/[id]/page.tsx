@@ -28,7 +28,9 @@ import {
   getServerToday,
   getSubmissionsForCreator,
   goalsForContract,
+  VIDEO_PAGE_SIZE,
 } from '@/lib/queries'
+import { parseVideoPage } from '@/lib/video-page'
 import { getCreatorCommissionSheets } from '@/lib/commission-data'
 import { listBreakRequests } from '@/lib/break-requests'
 import { getCreatorStrikeSummary } from '@/lib/strikes'
@@ -46,7 +48,7 @@ export default async function LeaderCreatorPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ panel?: string }>
+  searchParams: Promise<{ panel?: string; vPage?: string }>
 }) {
   const session = await getLeaderSession()
   if (!session) redirect('/login')
@@ -62,6 +64,9 @@ export default async function LeaderCreatorPage({
   const [locale, today, opToday] = await Promise.all([getLocale(), getServerToday(), getOperationalToday()])
   const t = createT(locale)
   const currency = payCurrency(creator.role, creator.pay_currency)
+  const videosOpen = sp.panel === 'videos'
+  const vPage = parseVideoPage(sp.vPage)
+  const vOffset = (vPage - 1) * VIDEO_PAGE_SIZE
 
   const [
     board,
@@ -87,7 +92,9 @@ export default async function LeaderCreatorPage({
     getContractComparisons(creator, today),
     getScheduleBreaks(id),
     getPaymentsForCreator(id),
-    getSubmissionsForCreator(id),
+    videosOpen
+      ? getSubmissionsForCreator(id, { limit: VIDEO_PAGE_SIZE, offset: vOffset })
+      : Promise.resolve([]),
     getCreatorCommissionSheets(id, today),
     creator.role === 'reposter' ? getCreatorStrikeSummary(id, opToday) : Promise.resolve(null),
     creator.project_id ? getProjectById(creator.project_id) : Promise.resolve(null),
@@ -97,7 +104,7 @@ export default async function LeaderCreatorPage({
   const person = board.leaders.find((row) => row.leaderId === session.id)?.people.find((p) => p.id === id) ?? null
   const goals = goalsForContract(creator, active)
   const activeCompare = comparisons.find((c) => c.isActive) ?? null
-  const totalViews = submissions.reduce((sum, s) => sum + (s.views ?? 0), 0)
+  const totalViews = stats.views
   const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0)
   const bonusEarned =
     commission.sheets.reduce((sum, s) => sum + s.earnedSar, 0) + commission.outside.earnedSar
@@ -290,6 +297,8 @@ export default async function LeaderCreatorPage({
             linkScope="leader"
             refreshEndpoint={LEADER_REFRESH}
             refreshLabel={t('refreshThisVideo')}
+            page={vPage}
+            total={stats.total_videos}
           />
         </div>
       ),

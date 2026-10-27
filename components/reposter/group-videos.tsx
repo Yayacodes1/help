@@ -34,7 +34,7 @@ export function GroupVideos({
         return (
           <li
             key={video.id}
-            className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm"
+            className="video-row flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm"
           >
             <span className="min-w-0 flex-1 font-medium">@{video.handle}</span>
             <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">

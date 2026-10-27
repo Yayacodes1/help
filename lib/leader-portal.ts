@@ -8,9 +8,8 @@ import type { DayProgress } from '@/lib/consistency'
 import { formatDate, formatMoney, formatNumber, payCurrency } from '@/lib/format'
 import type { createT } from '@/lib/i18n'
 import {
-  getActiveContract,
   getContractComparisons,
-  getCreatorConsistency,
+  getConsistencyForCreators,
   type ContractCompareRow,
   type CreatorWithProject,
 } from '@/lib/queries'
@@ -74,29 +73,31 @@ export async function getTeamMembers(
   ])
   const monthById = new Map(monthRows.map((row) => [row.creator_id, row]))
 
+  const packed = await getConsistencyForCreators(people, today)
+
   return Promise.all(
     people.map(async (person) => {
-      const [active, consistency, comparisons, commission] = await Promise.all([
-        getActiveContract(person.id, today),
-        getCreatorConsistency(person, today),
+      const row = packed.get(person.id)
+      const [comparisons, commission] = await Promise.all([
         opts.withMoney ? getContractComparisons(person, today) : Promise.resolve(null),
         opts.withMoney ? getCreatorCommissionSheets(person.id, today) : Promise.resolve(null),
       ])
-      const scored = consistency.days.filter((d) => d.date <= today && d.status !== 'future')
+      const consistency = row?.consistency
+      const scored = (consistency?.days ?? []).filter((d) => d.date <= today && d.status !== 'future')
       const month = monthById.get(person.id)
       const allSheets = commission ? [...commission.sheets.map((s) => s.earnedSar), commission.outside.earnedSar] : []
       return {
         person,
         paused: person.paused_at != null,
         currency: payCurrency(person.role, person.pay_currency),
-        active,
-        currentStreak: consistency.currentStreak,
-        bestStreak: consistency.bestStreak,
-        hitRate: consistency.hitRate,
-        hitDays: consistency.hitDays,
-        partialDays: consistency.partialDays,
-        missDays: consistency.missDays,
-        requiredDays: consistency.requiredDays,
+        active: row?.active ?? null,
+        currentStreak: consistency?.currentStreak ?? 0,
+        bestStreak: consistency?.bestStreak ?? 0,
+        hitRate: consistency?.hitRate ?? 0,
+        hitDays: consistency?.hitDays ?? 0,
+        partialDays: consistency?.partialDays ?? 0,
+        missDays: consistency?.missDays ?? 0,
+        requiredDays: consistency?.requiredDays ?? 0,
         recent: scored.slice(-14),
         monthViews: month?.views ?? 0,
         monthVideos: month?.videos ?? 0,

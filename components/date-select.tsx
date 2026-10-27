@@ -19,6 +19,7 @@ export function DateSelect({
     if (!value) return
     const next = new URLSearchParams(params.toString())
     next.set('date', value)
+    next.delete('vPage')
     router.push(`?${next.toString()}`)
   }
 

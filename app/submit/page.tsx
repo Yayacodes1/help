@@ -20,6 +20,7 @@ import {
   getCreatorStats,
   getCreatorConsistency,
   getPaymentsForCreator,
+  getCreatorPaidTotal,
   goalsForContract,
 } from '@/lib/queries'
 import { findMiyqatProject, isMiyqatProjectName, projectToneClass } from '@/lib/project-scope'
@@ -48,9 +49,9 @@ function isValidDate(value: string | undefined): value is string {
 export default async function SubmitPage({
   searchParams,
 }: {
-  searchParams: Promise<{ u?: string; date?: string; panel?: string; tab?: string; taskDay?: string }>
+  searchParams: Promise<{ u?: string; date?: string; panel?: string; tab?: string; taskDay?: string; vPage?: string }>
 }) {
-  const { u, date: dateParam, panel, tab, taskDay } = await searchParams
+  const { u, date: dateParam, panel, tab, taskDay, vPage } = await searchParams
   const [locale, leaderSession] = await Promise.all([getLocale(), getLeaderSession()])
   const t = createT(locale)
   const creator = u ? await getCreatorByName(u) : null
@@ -78,7 +79,7 @@ export default async function SubmitPage({
           creator,
           username,
           locale,
-          searchParams: { u, date: dateParam, panel, tab, taskDay },
+          searchParams: { u, date: dateParam, panel, tab, taskDay, vPage },
         })
       } catch {
         /* grouped dashboard failed — still let them in on the upload page */
@@ -124,19 +125,21 @@ export default async function SubmitPage({
     comparisons,
     strikeSummary,
     myPayments,
+    loadedPaidTotal,
   ] = await Promise.all([
     getCreatorCountsByPlatformOnDate(creator.id, date),
     getSubmissionsForCreatorOnDate(creator.id, date),
     getCreatorStats(creator.id),
     getCreatorConsistency(creator, today),
     getActiveContract(creator.id, today),
-    getContractComparisons(creator, today),
+    panel === 'contract' ? getContractComparisons(creator, today) : Promise.resolve([]),
     creator.role === 'reposter'
       ? getCreatorStrikeSummary(creator.id, opToday).catch(() => null)
       : Promise.resolve(null),
-    getPaymentsForCreator(creator.id),
+    panel === 'payments' ? getPaymentsForCreator(creator.id) : Promise.resolve([]),
+    getCreatorPaidTotal(creator.id),
   ])
-  const paidTotal = myPayments.reduce((sum, p) => sum + p.amount, 0)
+  const paidTotal = loadedPaidTotal
 
   const dailyGoals = goalsForContract(creator, active)
   const goalShape = {
@@ -417,8 +420,8 @@ export default async function SubmitPage({
             {
               id: 'contract',
               title: t('panelContract'),
-              summary: activeCompare
-                ? `${Math.round(activeCompare.displayRate * 100)}%`
+              summary: active
+                ? `${Math.round((activeCompare?.displayRate ?? consistency.hitRate) * 100)}%`
                 : t('none'),
               hint: active?.name ?? t('noCurrentContract'),
               children: (
@@ -469,7 +472,9 @@ export default async function SubmitPage({
               summary: formatMoney(paidTotal, payCurrency(creator.role, creator.pay_currency)),
               hint: myPayments[0]
                 ? `${t('lastPaid')} ${formatDate(myPayments[0].paid_on)}`
-                : t('paymentsNone'),
+                : paidTotal > 0
+                  ? undefined
+                  : t('paymentsNone'),
               children: (
                 <div className="flex flex-col gap-3">
                   <p className="text-xs text-muted-foreground">{t('paymentsCheckHint')}</p>

@@ -36,6 +36,7 @@ export function FiltersBar({
     const next = new URLSearchParams(params.toString())
     if (value) next.set(key, value)
     else next.delete(key)
+    next.delete('vPage')
     next.set('panel', 'videos')
     router.push(`${pathname}?${next.toString()}`, { scroll: false })
   }
@@ -46,6 +47,7 @@ export function FiltersBar({
     else next.delete('from')
     if (nextTo) next.set('to', nextTo)
     else next.delete('to')
+    next.delete('vPage')
     next.set('panel', 'videos')
     router.push(`${pathname}?${next.toString()}`, { scroll: false })
   }

@@ -7,6 +7,7 @@ import { getTeamMembers, teamReport } from '@/lib/leader-portal'
 import {
   attachTracking,
   getAdminSubmissions,
+  getAdminSubmissionStats,
   getAllProjects,
   getCreatorsWithProgressOnDate,
   getLoginHandles,
@@ -47,6 +48,7 @@ import { listBreakRequests } from '@/lib/break-requests'
 import { CopyTextButton } from '@/components/leader/copy-text-button'
 import { ConsistencyBoard, CreatorCards, ManageList } from '@/components/leader/team-boards'
 import { listLeaderTasks } from '@/lib/tasks'
+import { parseVideoPage, VIDEO_PAGE_SIZE } from '@/lib/video-page'
 import { getReposterChecksForTeam } from '@/lib/reposter-checks'
 export const dynamic = 'force-dynamic'
 
@@ -117,10 +119,23 @@ export default async function LeaderHomePage({
   const dayLabel = isToday ? t('today') : formatDate(selectedDay)
   const teamIds = scope.teamIds
   const inRole = (role: string) => roleFilter === 'all' || role === roleFilter
+  const videosOpen = tab === 'today' && sp.panel === 'videos'
+  const vPage = parseVideoPage(sp.vPage)
+  const vOffset = (vPage - 1) * VIDEO_PAGE_SIZE
+  const videoFilters = {
+    projectId,
+    role: roleSql,
+    creatorId: Number.isFinite(Number(sp.creator)) && Number(sp.creator) > 0 ? Number(sp.creator) : undefined,
+    platform,
+    from: date(sp.from, monthStart),
+    to: date(sp.to, monthEnd),
+    creatorIds: scope.videoIds,
+  }
+
+  const consistencyOpen = tab === 'today' && sp.panel === 'consistency'
 
   async function loadToday() {
-    const creatorRaw = Number(sp.creator)
-    const [board, progress, attendance, submissions, members, activityMarks, tasks, breakRequests] = await Promise.all([
+    const [board, progress, attendance, submissions, videoStats, members, activityMarks, tasks, breakRequests] = await Promise.all([
       getLeaderBoard(opToday),
       getCreatorsWithProgressOnDate(selectedDay, projectId, roleSql, {
         creatorIds: teamIds,
@@ -128,16 +143,11 @@ export default async function LeaderHomePage({
         includeAllReposters: true,
       }),
       getAttendanceForDay(selectedDay, projectId ?? null),
-      getAdminSubmissions({
-        projectId,
-        role: roleSql,
-        creatorId: Number.isFinite(creatorRaw) && creatorRaw > 0 ? creatorRaw : undefined,
-        platform,
-        from: date(sp.from, monthStart),
-        to: date(sp.to, monthEnd),
-        creatorIds: scope.videoIds,
-      }),
-      getTeamMembers(teamIds, today),
+      videosOpen
+        ? getAdminSubmissions({ ...videoFilters, limit: VIDEO_PAGE_SIZE, offset: vOffset })
+        : Promise.resolve([]),
+      getAdminSubmissionStats(videoFilters),
+      consistencyOpen ? getTeamMembers(teamIds, today) : Promise.resolve([]),
       getActivityForDay(selectedDay, teamIds),
       listLeaderTasks(session!.id, { today: opToday }),
       listBreakRequests({ leaderId: session!.id }),
@@ -155,8 +165,8 @@ export default async function LeaderHomePage({
       everyone: tracked,
       attention: attendance.filter((p) => ids.has(p.id) && inRole(p.role)),
       submissions,
+      videoStats,
       members: members.filter((m) => inRole(m.person.role)),
-      breakPeople: members,
       activityMarks,
       tasks,
       breakRequests,
@@ -202,7 +212,7 @@ export default async function LeaderHomePage({
   async function loadTeam() {
     const [members, breakRequests] = await Promise.all([
       getTeamMembers(teamIds, today, { withMoney: true }),
-      listBreakRequests({ leaderId: session.id }),
+      listBreakRequests({ leaderId: session!.id }),
     ])
     return { members, breakRequests }
   }
@@ -241,8 +251,8 @@ export default async function LeaderHomePage({
       everyone,
       attention,
       submissions,
+      videoStats,
       members,
-      breakPeople,
       activityMarks,
       tasks,
       breakRequests,
@@ -281,12 +291,17 @@ export default async function LeaderHomePage({
     const postedTotal = people.reduce((sum, c) => sum + c.today_instagram + c.today_tiktok, 0)
     const postedPeople = people.filter((c) => c.today_instagram + c.today_tiktok > 0).length
     const behind = attention.filter((p) => p.status === 'miss' || p.status === 'partial').length
-    const views = submissions.reduce((sum, s) => sum + (s.views ?? 0), 0)
+    const views = videoStats.views
+    const videoCount = videoStats.count
     const activeMembers = members.filter((m) => !m.paused)
+    const trackedActive = people.filter((c) => !c.paused_at)
     const avgHit =
       activeMembers.length > 0
         ? Math.round((activeMembers.reduce((sum, m) => sum + m.hitRate, 0) / activeMembers.length) * 100)
-        : null
+        : trackedActive.length > 0
+          ? Math.round((trackedActive.reduce((sum, c) => sum + c.hit_rate, 0) / trackedActive.length) * 100)
+          : null
+    const consistencyPeople = activeMembers.length > 0 ? activeMembers.length : trackedActive.length
 
     panels.push(
       {
@@ -370,11 +385,11 @@ export default async function LeaderHomePage({
         children: (
           <BreakRequestForm
             today={today}
-            people={breakPeople.map((m) => ({
-              id: m.person.id,
-              name: m.person.name,
-              role: m.person.role,
-              paused: m.paused,
+            people={everyone.map((c) => ({
+              id: c.id,
+              name: c.name,
+              role: c.role,
+              paused: c.paused_at != null,
             }))}
             requests={breakRequests}
             labels={breakFormLabels}
@@ -403,7 +418,7 @@ export default async function LeaderHomePage({
         id: 'consistency',
         title: t('consistency'),
         summary: avgHit == null ? '—' : `${avgHit}%`,
-        hint: `${activeMembers.length} ${t('people')}`,
+        hint: `${consistencyPeople} ${t('people')}`,
         children: <ConsistencyBoard members={members} locale={locale} />,
       },
       {
@@ -426,9 +441,9 @@ export default async function LeaderHomePage({
       {
         id: 'videos',
         title: t('videos'),
-        summary: `${submissions.length}`,
+        summary: `${videoCount}`,
         hint: `${formatNumber(views)} ${t('views')}`,
-        children: (
+        children: videosOpen ? (
           <div className="flex flex-col gap-3">
             <FiltersBar
               creators={everyone}
@@ -457,9 +472,11 @@ export default async function LeaderHomePage({
               refreshEndpoint={LEADER_REFRESH}
               refreshLabel={t('refreshThisVideo')}
               noProjectLabel={t('noProject')}
+              page={vPage}
+              total={videoCount}
             />
           </div>
-        ),
+        ) : null,
       },
     )
   }

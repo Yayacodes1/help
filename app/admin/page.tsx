@@ -1,4 +1,5 @@
 import { Suspense } from 'react'
+import nextDynamic from 'next/dynamic'
 import { redirect } from 'next/navigation'
 import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import { ADMIN_TABS, resolveAdminTab } from '@/lib/admin-tabs'
@@ -7,6 +8,7 @@ import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import {
   attachTracking,
   getAdminSubmissions,
+  getAdminSubmissionStats,
   getAllPaidTotal,
   getAllProjects,
   getCreatorsWithProgressOnDate,
@@ -19,6 +21,7 @@ import {
   type AdminSubmissionRow,
   type CreatorProgress,
 } from '@/lib/queries'
+import { parseVideoPage, VIDEO_PAGE_SIZE } from '@/lib/video-page'
 import {
   defaultAnalyticsRange,
   getDailyAnalytics,
@@ -46,9 +49,7 @@ import { PanelBoard } from '@/components/admin/panel-board'
 import { SubmissionsTable } from '@/components/admin/submissions-table'
 import { PaymentsPeriodPanel } from '@/components/admin/payments-period-panel'
 import { PaymentDuePanel } from '@/components/admin/payment-due-panel'
-import { AssistantChat } from '@/components/admin/assistant-chat'
 import { AssistantDrawer } from '@/components/admin/assistant-drawer'
-import { AnalyticsPanel } from '@/components/admin/analytics-panel'
 import { AnalyticsSheet } from '@/components/admin/analytics-sheet'
 import { TopVideosPanel } from '@/components/admin/top-videos-panel'
 import { WalletBoard } from '@/components/marketing/wallet-board'
@@ -66,6 +67,13 @@ import type { Platform, Project } from '@/lib/db'
 import { isLeadersView, parseRoleFilter, roleFilterToSql } from '@/lib/participant-role'
 import { getLeagueBoard } from '@/lib/ranking'
 import { RankingBoard } from '@/components/ranking-board'
+
+const AnalyticsPanel = nextDynamic(() =>
+  import('@/components/admin/analytics-panel').then((m) => m.AnalyticsPanel),
+)
+const AssistantChat = nextDynamic(() =>
+  import('@/components/admin/assistant-chat').then((m) => m.AssistantChat),
+)
 import { RankingFilters } from '@/components/admin/ranking-filters'
 import { StrikesPanel } from '@/components/admin/strikes-panel'
 import { ContractReviewsPanel } from '@/components/admin/contract-reviews-panel'
@@ -259,6 +267,9 @@ export default async function AdminPage({
   const includeAllCreators = miyqatScope
 
   const tab = resolveAdminTab(sp.tab, sp.panel)
+  const videosOpen = tab === 'today' && sp.panel === 'videos'
+  const vPage = parseVideoPage(sp.vPage)
+  const vOffset = (vPage - 1) * VIDEO_PAGE_SIZE
   const session = await getAdminSession()
   const showBusiness = session?.role === 'owner'
   const projects = projectsEarly
@@ -270,9 +281,12 @@ export default async function AdminPage({
   const activeBase = creatorsBase.filter((c) => !c.paused_at)
 
   async function loadToday() {
-    const [submissions, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory, activityMarks] =
+    const [submissions, videoStats, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory, activityMarks] =
       await Promise.all([
-        getAdminSubmissions(filters),
+        videosOpen
+          ? getAdminSubmissions({ ...filters, limit: VIDEO_PAGE_SIZE, offset: vOffset })
+          : Promise.resolve([] as AdminSubmissionRow[]),
+        getAdminSubmissionStats(filters),
         getReposterStrikeBoard(opToday),
         getAttendanceForDay(selectedDay),
         getPendingContractReviews(),
@@ -280,7 +294,16 @@ export default async function AdminPage({
         getLeaderDirectory(),
         getActivityForDay(selectedDay),
       ])
-    return { submissions, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory, activityMarks }
+    return {
+      submissions,
+      videoStats,
+      strikeBoard,
+      attendance,
+      contractReviews,
+      leaderBoard,
+      leaderDirectory,
+      activityMarks,
+    }
   }
 
   async function loadAnalytics() {
@@ -337,6 +360,7 @@ export default async function AdminPage({
             projectId,
             from: pvFrom,
             to: pvTo,
+            limit: VIDEO_PAGE_SIZE,
           })
         : Promise.resolve([]),
       sheetOpen
@@ -435,7 +459,7 @@ export default async function AdminPage({
   const analyticsData = tab === 'analytics' ? await loadAnalytics() : null
   const moneyData = tab === 'money' ? await loadMoney() : null
   const twodayData = tab === 'twoday' ? { requests: await listBreakRequests({ limit: 80 }) } : null
-  const { submissions, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory, activityMarks } =
+  const { submissions, videoStats, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory, activityMarks } =
     todayData ?? ({} as Awaited<ReturnType<typeof loadToday>>)
   const activity = activityMarks ? { day: selectedDay, marks: activityMarks } : undefined
   const {
@@ -502,16 +526,25 @@ export default async function AdminPage({
     const sideFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp[`aFrom${pid}`] ?? '') ? sp[`aFrom${pid}`]! : aFrom
     const sideTo = /^\d{4}-\d{2}-\d{2}$/.test(sp[`aTo${pid}`] ?? '') ? sp[`aTo${pid}`]! : aTo
     const range = { from: sideFrom, to: sideTo, projectId: pid, role: sideRoleSql }
-    const [base, sideAttendance, sideSubmissions, sideAnalytics] = await Promise.all([
+    const [base, sideAttendance, sideSubmissions, sideVideoStats, sideAnalytics] = await Promise.all([
       wantsPeople
         ? getCreatorsWithProgressOnDate(selectedDay, pid, sideRoleSql, { projectMembersOnly: true })
         : Promise.resolve([] as CreatorProgress[]),
       tab === 'today'
         ? getAttendanceForDay(selectedDay, pid)
         : Promise.resolve([] as AttendancePerson[]),
-      tab === 'today'
-        ? getAdminSubmissions({ ...filters, projectId: pid, role: sideRoleSql })
+      videosOpen
+        ? getAdminSubmissions({
+            ...filters,
+            projectId: pid,
+            role: sideRoleSql,
+            limit: VIDEO_PAGE_SIZE,
+            offset: vOffset,
+          })
         : Promise.resolve([] as AdminSubmissionRow[]),
+      tab === 'today'
+        ? getAdminSubmissionStats({ ...filters, projectId: pid, role: sideRoleSql })
+        : Promise.resolve({ count: 0, views: 0, creatorViews: 0 }),
       tab === 'analytics'
         ? Promise.all([
             getDailyAnalytics(range),
@@ -558,7 +591,8 @@ export default async function AdminPage({
       attention,
       attentionCount: attention.filter((p) => p.status === 'miss' || p.status === 'partial').length,
       submissions: sideSubmissions,
-      views: sideSubmissions.reduce((sum, v) => sum + (v.views ?? 0), 0),
+      videoCount: sideVideoStats.count,
+      views: sideVideoStats.views,
       analytics: sideAnalytics,
     }
   }
@@ -608,13 +642,10 @@ export default async function AdminPage({
   const openMarketingRequests = (marketingRequests ?? []).filter((r) => r.status === 'open').length
   const walletLeft = walletTotals?.left ?? 0
 
-  const totalViews = (submissions ?? []).reduce((sum, s) => sum + (s.views ?? 0), 0)
-  const creatorViews = (submissions ?? []).reduce(
-    (sum, s) => sum + (s.creator_role === 'reposter' ? 0 : s.views ?? 0),
-    0,
-  )
+  const totalViews = videoStats?.views ?? 0
+  const creatorViews = videoStats?.creatorViews ?? 0
   const reposterViews = totalViews - creatorViews
-  const totalVideos = submissions?.length ?? 0
+  const totalVideos = videoStats?.count ?? 0
 
   const goalTotal = creators.reduce(
     (sum, c) => sum + c.goal_instagram + c.goal_tiktok,
@@ -1173,10 +1204,10 @@ export default async function AdminPage({
             id: 'videos',
             title: t('videos'),
             summary: splitData
-              ? splitSummary((side) => `${side.submissions.length}`)
+              ? splitSummary((side) => `${side.videoCount}`)
               : `${totalVideos}`,
             hint: `${formatNumber(totalViews)} ${t('views')}`,
-            children: (
+            children: videosOpen ? (
               <div className="flex flex-col gap-3">
                 <FiltersBar
                   creators={everyone}
@@ -1190,7 +1221,7 @@ export default async function AdminPage({
                     chooseProject: t('chooseProject'),
                   }}
                 />
-                {miyqatScope && roleFilter === 'creator' && submissions.length === 0 ? (
+                {miyqatScope && roleFilter === 'creator' && totalVideos === 0 ? (
                   <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                     {t('miqatRoleHint')}
                   </p>
@@ -1213,7 +1244,7 @@ export default async function AdminPage({
                     sides={splitData.map((side) => ({
                       key: side.project.id,
                       title: side.project.name,
-                      summary: `${side.submissions.length} ${t('videos')} · ${formatNumber(side.views)} ${t('views')}`,
+                      summary: `${side.videoCount} ${t('videos')} · ${formatNumber(side.views)} ${t('views')}`,
                       controls: sideControls(side),
                       children: (
                         <SubmissionsTable
@@ -1226,13 +1257,15 @@ export default async function AdminPage({
                           projects={projects}
                           noProjectLabel={t('noProject')}
                           refreshLabel={t('refreshThisVideo')}
+                          page={vPage}
+                          total={side.videoCount}
                         />
                       ),
                     }))}
                   />
                 ) : (
                   <SubmissionsTable
-                    submissions={submissions}
+                    submissions={submissions ?? []}
                     emptyLabel={t('noVideosMatch')}
                     linkRole={roleFilter}
                     projectId={projectId}
@@ -1241,10 +1274,12 @@ export default async function AdminPage({
                     projects={projects}
                     noProjectLabel={t('noProject')}
                     refreshLabel={t('refreshThisVideo')}
+                    page={vPage}
+                    total={totalVideos}
                   />
                 )}
               </div>
-            ),
+            ) : null,
           },
           ] : []),
           ...(twodayData ? [

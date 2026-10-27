@@ -13,10 +13,16 @@ import { scopedPersonHref, type LinkScope } from '@/lib/admin-href'
 import { projectToneClass } from '@/lib/project-scope'
 import type { Project } from '@/lib/db'
 import { publicViewsError } from '@/lib/tikhub-views'
+import { VideoPager } from '@/components/admin/video-pager'
+import { VIDEO_PAGE_SIZE } from '@/lib/video-page'
 
 export function SubmissionsTable({
   submissions,
   emptyLabel = 'No videos match these filters.',
+  page,
+  total,
+  pageSize = VIDEO_PAGE_SIZE,
+  pagerPanel = 'videos',
   showCreator = true,
   showProject = true,
   editableViews = true,
@@ -62,8 +68,14 @@ export function SubmissionsTable({
   refreshLabel?: string
   linkScope?: LinkScope
   refreshEndpoint?: string
+  page?: number
+  total?: number
+  pageSize?: number
+  pagerPanel?: string
 }) {
   const manageVideos = allowManageVideos || editableViews
+  const pageCount =
+    total != null && pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1
   if (submissions.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -73,6 +85,7 @@ export function SubmissionsTable({
   }
 
   return (
+    <div className="flex flex-col gap-2">
     <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full text-sm">
         <thead>
@@ -98,7 +111,7 @@ export function SubmissionsTable({
               submittedAt != null &&
               calendarDayInTimeZone(String(submittedAt), OPERATIONAL_TZ) > s.video_date
             return (
-              <tr key={s.id} className="border-b border-border last:border-0">
+              <tr key={s.id} className="video-row border-b border-border last:border-0">
                 {showCreator && (
                   <td className="whitespace-nowrap px-4 py-3 font-medium">
                     {'creator_id' in s && s.creator_id != null ? (
@@ -222,6 +235,10 @@ export function SubmissionsTable({
           })}
         </tbody>
       </table>
+    </div>
+    {page != null && total != null ? (
+      <VideoPager page={page} pageCount={pageCount} total={total} pageSize={pageSize} panel={pagerPanel} />
+    ) : null}
     </div>
   )
 }

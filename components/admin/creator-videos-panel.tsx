@@ -6,6 +6,7 @@ import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { AddCreatorVideoForm } from '@/components/admin/add-creator-video-form'
 import { formatNumber } from '@/lib/format'
 import { sortProjects } from '@/lib/project-order'
+import { VIDEO_PAGE_SIZE } from '@/lib/video-page'
 
 type PlatformFilter = 'both' | 'instagram' | 'tiktok'
 
@@ -33,6 +34,8 @@ export function CreatorVideosPanel({
   projects,
   emptyLabel,
   today,
+  page,
+  total,
   labels,
 }: {
   creatorId: number
@@ -40,6 +43,8 @@ export function CreatorVideosPanel({
   projects: ProjectOption[]
   emptyLabel: string
   today: string
+  page?: number
+  total?: number
   labels: {
     both: string
     instagram: string
@@ -206,6 +211,9 @@ export function CreatorVideosPanel({
         editableProject
         projects={orderedProjects}
         refreshLabel={labels.refreshThisVideo}
+        page={page}
+        total={total}
+        pageSize={VIDEO_PAGE_SIZE}
       />
     </div>
   )

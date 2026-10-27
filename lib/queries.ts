@@ -15,6 +15,7 @@ import {
   videoCompletionRate,
   type PlatformsMode,
 } from '@/lib/platforms-mode'
+import { VIDEO_PAGE_SIZE } from '@/lib/video-page'
 import {
   buildContractHalves,
   contractHalfWindows,
@@ -188,7 +189,12 @@ export async function getProjectById(id: number): Promise<Project | null> {
   return rows[0] ?? null
 }
 
-export async function getSubmissionsForCreator(creatorId: number): Promise<Array<Submission & { project_name: string | null }>> {
+export async function getSubmissionsForCreator(
+  creatorId: number,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<Array<Submission & { project_name: string | null }>> {
+  const limit = Math.min(Math.max(Math.floor(opts.limit ?? VIDEO_PAGE_SIZE), 1), 200)
+  const offset = Math.max(Math.floor(opts.offset ?? 0), 0)
   return (await sql`
     SELECT s.id, s.creator_id, s.project_id, s.platform, s.url, s.video_date::text AS video_date,
            s.views, s.views_error, s.created_at, s.submitted_at, s.platform_posted_at, s.batch_id, s.batch_index,
@@ -197,7 +203,15 @@ export async function getSubmissionsForCreator(creatorId: number): Promise<Array
     LEFT JOIN projects p ON p.id = s.project_id
     WHERE s.creator_id = ${creatorId}
     ORDER BY s.video_date DESC, s.created_at DESC
+    LIMIT ${limit} OFFSET ${offset}
   `) as Array<Submission & { project_name: string | null }>
+}
+
+export async function countSubmissionsForCreator(creatorId: number): Promise<number> {
+  const rows = (await sql`
+    SELECT COUNT(*)::int AS count FROM submissions WHERE creator_id = ${creatorId}
+  `) as { count: number }[]
+  return Number(rows[0]?.count ?? 0)
 }
 
 export async function getSubmissionsForCreatorOnDate(
@@ -250,16 +264,58 @@ export type AdminFilters = {
   to?: string
   /** Only these people (a leader's team); omitted = everyone. */
   creatorIds?: number[] | null
+  limit?: number
+  offset?: number
+}
+
+export { VIDEO_PAGE_SIZE, parseVideoPage } from '@/lib/video-page'
+
+function submissionFilterArgs(filters: AdminFilters) {
+  return {
+    projectId: filters.projectId ?? null,
+    role: filters.role ?? null,
+    creatorId: filters.creatorId ?? null,
+    ids: filters.creatorIds ?? null,
+    platform: filters.platform ?? null,
+    from: filters.from ?? null,
+    to: filters.to ?? null,
+  }
+}
+
+export async function getAdminSubmissionStats(
+  filters: AdminFilters = {},
+): Promise<{ count: number; views: number; creatorViews: number }> {
+  const { projectId, role, creatorId, ids, platform, from, to } = submissionFilterArgs(filters)
+  const rows = (await sql`
+    SELECT
+      COUNT(*)::int AS count,
+      COALESCE(SUM(s.views), 0)::bigint AS views,
+      COALESCE(SUM(CASE WHEN c.role = 'reposter' THEN 0 ELSE s.views END), 0)::bigint AS creator_views
+    FROM submissions s
+    JOIN creators c ON c.id = s.creator_id
+    WHERE (${projectId}::int IS NULL OR s.project_id = ${projectId})
+      AND (${role}::text IS NULL OR c.role = ${role})
+      AND (${creatorId}::int IS NULL OR s.creator_id = ${creatorId})
+      AND (${ids}::int[] IS NULL OR s.creator_id = ANY(${ids}::int[]))
+      AND (${platform}::text IS NULL OR s.platform = ${platform})
+      AND (${from}::date IS NULL OR s.video_date >= ${from})
+      AND (${to}::date IS NULL OR s.video_date <= ${to})
+  `) as { count: number; views: string | number; creator_views: string | number }[]
+  const row = rows[0]
+  return {
+    count: Number(row?.count ?? 0),
+    views: Number(row?.views ?? 0),
+    creatorViews: Number(row?.creator_views ?? 0),
+  }
 }
 
 export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<AdminSubmissionRow[]> {
-  const projectId = filters.projectId ?? null
-  const role = filters.role ?? null
-  const creatorId = filters.creatorId ?? null
-  const ids = filters.creatorIds ?? null
-  const platform = filters.platform ?? null
-  const from = filters.from ?? null
-  const to = filters.to ?? null
+  const { projectId, role, creatorId, ids, platform, from, to } = submissionFilterArgs(filters)
+  const limit =
+    filters.limit != null
+      ? Math.min(Math.max(Math.floor(filters.limit), 1), 200)
+      : 200
+  const offset = Math.max(Math.floor(filters.offset ?? 0), 0)
 
   return (await sql`
     SELECT
@@ -290,6 +346,7 @@ export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<A
       AND (${from}::date IS NULL OR s.video_date >= ${from})
       AND (${to}::date IS NULL OR s.video_date <= ${to})
     ORDER BY s.video_date DESC, s.created_at DESC
+    LIMIT ${limit} OFFSET ${offset}
   `) as AdminSubmissionRow[]
 }
 
@@ -405,6 +462,7 @@ export type CreatorStats = {
   instagram_videos: number
   tiktok_videos: number
   active_days: number
+  views: number
 }
 
 export async function getCreatorStats(creatorId: number): Promise<CreatorStats> {
@@ -413,11 +471,25 @@ export async function getCreatorStats(creatorId: number): Promise<CreatorStats> 
       COUNT(*)::int AS total_videos,
       COALESCE(SUM(CASE WHEN platform = 'instagram' THEN 1 ELSE 0 END), 0)::int AS instagram_videos,
       COALESCE(SUM(CASE WHEN platform = 'tiktok' THEN 1 ELSE 0 END), 0)::int AS tiktok_videos,
-      COUNT(DISTINCT video_date)::int AS active_days
+      COUNT(DISTINCT video_date)::int AS active_days,
+      COALESCE(SUM(views), 0)::bigint AS views
     FROM submissions
     WHERE creator_id = ${creatorId}
-  `) as CreatorStats[]
-  return rows[0] ?? { total_videos: 0, instagram_videos: 0, tiktok_videos: 0, active_days: 0 }
+  `) as {
+    total_videos: number
+    instagram_videos: number
+    tiktok_videos: number
+    active_days: number
+    views: string | number
+  }[]
+  const row = rows[0]
+  return {
+    total_videos: Number(row?.total_videos ?? 0),
+    instagram_videos: Number(row?.instagram_videos ?? 0),
+    tiktok_videos: Number(row?.tiktok_videos ?? 0),
+    active_days: Number(row?.active_days ?? 0),
+    views: Number(row?.views ?? 0),
+  }
 }
 
 export type DailyCount = { video_date: string; count: number }
@@ -1541,9 +1613,8 @@ export type PaySummary = {
   overdueDays: number
 }
 
-export async function getPaySummary(creator: Creator, today: string): Promise<PaySummary> {
+function paySummaryFrom(creator: Creator, today: string, active: Contract | null): PaySummary {
   const payEveryDays = creator.pay_every_days > 0 ? creator.pay_every_days : 14
-  const active = await getActiveContract(creator.id, today)
   const nextPayAt = nextPayDate(
     creator.last_paid_at,
     payEveryDays,
@@ -1569,6 +1640,183 @@ export async function getPaySummary(creator: Creator, today: string): Promise<Pa
   }
 }
 
+export async function getPaySummary(creator: Creator, today: string): Promise<PaySummary> {
+  const active = await getActiveContract(creator.id, today)
+  return paySummaryFrom(creator, today, active)
+}
+
+function pickActiveContract(contracts: Contract[], today: string): Contract | null {
+  const live = contracts.filter(
+    (c) => c.start_date <= today && (c.end_date == null || c.end_date >= today),
+  )
+  const pool = live.length > 0 ? live : contracts
+  if (pool.length === 0) return null
+  return [...pool].sort((a, b) => b.start_date.localeCompare(a.start_date) || b.id - a.id)[0]
+}
+
+export type CreatorConsistencyPack = {
+  consistency: ConsistencySummary
+  active: Contract | null
+}
+
+/** One round of SQL for a whole roster instead of 3–6 queries per person. */
+export async function getConsistencyForCreators(
+  creators: Creator[],
+  today: string,
+): Promise<Map<number, CreatorConsistencyPack>> {
+  const result = new Map<number, CreatorConsistencyPack>()
+  if (creators.length === 0) return result
+  const ids = creators.map((c) => c.id)
+
+  const [contractRows, restoreRows] = (await Promise.all([
+    sql`
+      SELECT id, creator_id, name,
+             start_date::text AS start_date,
+             end_date::text AS end_date,
+             created_at,
+             goal_instagram, goal_tiktok,
+             target_instagram, target_tiktok,
+             platforms,
+             base_amount::float AS base_amount,
+             COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
+             commission_amount::float AS commission_amount,
+             count_mode, views_threshold,
+             view_commission_amount::float AS view_commission_amount,
+             commission_reels,
+             COALESCE(max_strikes, 3)::int AS max_strikes,
+             COALESCE(project_targets, '{}'::jsonb) AS project_targets,
+             schedule_type, schedule_every_days, schedule_weekdays, schedule_per_week
+      FROM contracts
+      WHERE creator_id = ANY(${ids}::int[])
+      ORDER BY creator_id ASC, start_date DESC, id DESC
+    `,
+    sql`
+      SELECT id,
+             COALESCE(streak_carry, 0)::int AS streak_carry,
+             streak_resume_on::text AS streak_resume_on
+      FROM creators
+      WHERE id = ANY(${ids}::int[])
+    `,
+  ])) as unknown as [
+    Contract[],
+    { id: number; streak_carry: number; streak_resume_on: string | null }[],
+  ]
+
+  const contractsByCreator = new Map<number, Contract[]>()
+  for (const row of contractRows) {
+    const list = contractsByCreator.get(row.creator_id) ?? []
+    list.push(row)
+    contractsByCreator.set(row.creator_id, list)
+  }
+  const restoreById = new Map(restoreRows.map((row) => [row.id, row]))
+
+  type Plan = {
+    creator: Creator
+    active: Contract | null
+    goals: { goalInstagram: number; goalTiktok: number }
+    window: { start: string; end: string }
+    fetchStart: string
+    streakFrom: string
+    streakCarry: number
+  }
+  const plans: Plan[] = []
+  let minStart = today
+  let maxEnd = today
+
+  for (const creator of creators) {
+    const contracts = contractsByCreator.get(creator.id) ?? []
+    const active = pickActiveContract(contracts, today)
+    const goals = goalsForContract(creator, active)
+    const window = contractWindow(creator, today, active)
+    const prev = contracts
+      .filter((c) => c.start_date < window.start)
+      .sort((a, b) => b.start_date.localeCompare(a.start_date) || b.id - a.id)[0]
+    const prevStart = prev?.start_date ?? null
+    const fetchStart = prevStart && prevStart < window.start ? prevStart : window.start
+    const restore = restoreById.get(creator.id)
+    const resumeOn = restore?.streak_resume_on ?? null
+    const carry = restore?.streak_carry ?? 0
+    const streakFrom = resumeOn && resumeOn >= fetchStart ? resumeOn : fetchStart
+    const streakCarry = resumeOn ? carry : 0
+    plans.push({ creator, active, goals, window, fetchStart, streakFrom, streakCarry })
+    if (fetchStart < minStart) minStart = fetchStart
+    if (window.end > maxEnd) maxEnd = window.end
+  }
+
+  const [countRows, breakRows] = (await Promise.all([
+    sql`
+      SELECT creator_id, video_date::text AS video_date, platform, COUNT(*)::int AS count
+      FROM submissions
+      WHERE creator_id = ANY(${ids}::int[])
+        AND video_date >= ${minStart}::date
+        AND video_date <= ${maxEnd}::date
+      GROUP BY creator_id, video_date, platform
+    `,
+    sql`
+      SELECT creator_id, start_date::text AS start_date, end_date::text AS end_date
+      FROM schedule_breaks
+      WHERE creator_id = ANY(${ids}::int[])
+        AND start_date <= ${maxEnd}::date
+        AND end_date >= ${minStart}::date
+    `,
+  ])) as unknown as [
+    { creator_id: number; video_date: string; platform: Platform; count: number }[],
+    { creator_id: number; start_date: string; end_date: string }[],
+  ]
+
+  const countsByCreator = new Map<number, Record<string, { instagram: number; tiktok: number }>>()
+  for (const row of countRows) {
+    let byDate = countsByCreator.get(row.creator_id)
+    if (!byDate) {
+      byDate = {}
+      countsByCreator.set(row.creator_id, byDate)
+    }
+    if (!byDate[row.video_date]) byDate[row.video_date] = { instagram: 0, tiktok: 0 }
+    if (row.platform === 'instagram' || row.platform === 'tiktok') {
+      byDate[row.video_date][row.platform] = row.count
+    }
+  }
+
+  const breaksByCreator = new Map<number, { start_date: string; end_date: string }[]>()
+  for (const row of breakRows) {
+    const list = breaksByCreator.get(row.creator_id) ?? []
+    list.push(row)
+    breaksByCreator.set(row.creator_id, list)
+  }
+
+  for (const plan of plans) {
+    const breakDates = new Set<string>()
+    for (const row of breaksByCreator.get(plan.creator.id) ?? []) {
+      const from = row.start_date < plan.fetchStart ? plan.fetchStart : row.start_date
+      const to = row.end_date > plan.window.end ? plan.window.end : row.end_date
+      for (const d of eachDate(from, to)) breakDates.add(d)
+    }
+    const summary = buildConsistency({
+      start: plan.fetchStart,
+      end: plan.window.end,
+      today,
+      goalInstagram: plan.goals.goalInstagram,
+      goalTiktok: plan.goals.goalTiktok,
+      countsByDate: countsByCreator.get(plan.creator.id) ?? {},
+      breakDates,
+      streakFrom: plan.streakFrom,
+      streakEpochStart: plan.window.start,
+      streakEpochEnd: plan.window.end,
+      streakCarry: plan.streakCarry,
+      windowStart: plan.window.start,
+      schedule: scheduleFromContract(plan.active),
+    })
+    result.set(plan.creator.id, {
+      active: plan.active,
+      consistency: {
+        ...summary,
+        days: summary.days.filter((d) => d.date >= plan.window.start),
+      },
+    })
+  }
+  return result
+}
+
 export type CreatorTrackingRow = CreatorProgress & {
   current_streak: number
   hit_rate: number
@@ -1582,24 +1830,22 @@ export async function attachTracking(
   creators: CreatorProgress[],
   today: string,
 ): Promise<CreatorTrackingRow[]> {
-  return Promise.all(
-    creators.map(async (c) => {
-      const active = await getActiveContract(c.id, today)
-      const goals = goalsForContract(c, active)
-      const consistency = await getCreatorConsistency(c, today)
-      const pay = await getPaySummary(c, today)
-      return {
-        ...c,
-        // Today board / misses use effective contract goals (platform mode applied).
-        goal_instagram: goals.goalInstagram,
-        goal_tiktok: goals.goalTiktok,
-        current_streak: consistency.currentStreak,
-        hit_rate: consistency.hitRate,
-        next_pay_at: pay.nextPayAt,
-        pay_due: pay.isDue,
-        leader_id: c.leader_id ?? null,
-        leader_name: c.leader_name ?? null,
-      }
-    }),
-  )
+  const batch = await getConsistencyForCreators(creators, today)
+  return creators.map((c) => {
+    const packed = batch.get(c.id)
+    const active = packed?.active ?? null
+    const goals = goalsForContract(c, active)
+    const pay = paySummaryFrom(c, today, active)
+    return {
+      ...c,
+      goal_instagram: goals.goalInstagram,
+      goal_tiktok: goals.goalTiktok,
+      current_streak: packed?.consistency.currentStreak ?? 0,
+      hit_rate: packed?.consistency.hitRate ?? 0,
+      next_pay_at: pay.nextPayAt,
+      pay_due: pay.isDue,
+      leader_id: c.leader_id ?? null,
+      leader_name: c.leader_name ?? null,
+    }
+  })
 }

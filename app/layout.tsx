@@ -1,16 +1,9 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { Fraunces, Noto_Sans_Arabic, Source_Sans_3 } from 'next/font/google'
+import { Noto_Sans_Arabic, Source_Sans_3 } from 'next/font/google'
 import { getLocale } from '@/lib/locale'
 import { getTheme } from '@/lib/theme'
 import './globals.css'
-
-const display = Fraunces({
-  subsets: ['latin'],
-  variable: '--font-display',
-  display: 'swap',
-  preload: false,
-})
 
 const body = Source_Sans_3({
   subsets: ['latin'],
@@ -22,6 +15,7 @@ const arabic = Noto_Sans_Arabic({
   subsets: ['arabic'],
   variable: '--font-arabic',
   display: 'swap',
+  preload: false,
 })
 
 export const metadata: Metadata = {
@@ -50,7 +44,7 @@ export default async function RootLayout({
     <html
       lang={locale}
       dir={dir}
-      className={`${display.variable} ${body.variable} ${arabic.variable} ${theme} bg-background`}
+      className={`${body.variable} ${locale === 'ar' ? arabic.variable : ''} ${theme} bg-background`}
       suppressHydrationWarning
     >
       <body className={`${locale === 'ar' ? arabic.className : body.className} antialiased`}>
