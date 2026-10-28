@@ -25,12 +25,16 @@ export function ReposterShell({
   username,
   displayName,
   squadName,
+  welcome,
+  outreachHref,
   children,
 }: {
   locale: Locale
   username: string
   displayName: string
   squadName: string | null
+  welcome?: string | null
+  outreachHref?: string | null
   children: ReactNode
 }) {
   const params = useSearchParams()
@@ -56,12 +60,20 @@ export function ReposterShell({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-sm text-muted-foreground">
-              {t('hey')} @{displayName}
+              {welcome ?? `${t('hey')} @${displayName}`}
               {squadName ? ` · ${squadName}` : ''}
             </p>
             <h1 className="text-xl font-semibold tracking-tight">{t('reposterDashboard')}</h1>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            {outreachHref ? (
+              <Link
+                href={outreachHref}
+                className="inline-flex h-10 items-center rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
+              >
+                Outreach
+              </Link>
+            ) : null}
             <LanguageToggle locale={locale} labels={{ english: t('english'), arabic: t('arabic') }} />
             <Link
               href="/login"

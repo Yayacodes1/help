@@ -14,11 +14,13 @@ export function LeaderShell({
   locale,
   leaderName,
   score,
+  outreachHref,
   children,
 }: {
   locale: Locale
   leaderName: string
   score: LeaderScore
+  outreachHref?: string | null
   children: ReactNode
 }) {
   const pathname = usePathname()
@@ -56,6 +58,14 @@ export function LeaderShell({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            {outreachHref ? (
+              <Link
+                href={outreachHref}
+                className="inline-flex h-10 items-center rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
+              >
+                Outreach
+              </Link>
+            ) : null}
             <LanguageToggle locale={locale} labels={{ english: t('english'), arabic: t('arabic') }} />
             <form action={logoutLeader}>
               <button

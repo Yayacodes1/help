@@ -37,6 +37,8 @@ import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 import { getLeaderSession } from '@/lib/leader-auth'
 import { getLeaderForCreator } from '@/lib/leaders'
+import { getOutreachMemberByCreator } from '@/lib/outreach'
+import { outreachGreeting } from '@/lib/outreach-status'
 import { ReposterDashboard } from '@/app/submit/reposter-dashboard'
 
 export const dynamic = 'force-dynamic'
@@ -62,6 +64,17 @@ export default async function SubmitPage({
 
   const login = loginHandleFor(creator)
   const username = login.handle || creator.name
+  let outreachMember: { role: 'upper' | 'outreach'; name: string } | null = null
+  try {
+    outreachMember = await getOutreachMemberByCreator(creator.id)
+  } catch {
+    outreachMember = null
+  }
+  const outreachWelcome =
+    outreachMember?.role === 'outreach'
+      ? outreachGreeting({ name: creator.name, role: 'outreach', via: 'creator' })
+      : null
+  const outreachHref = outreachMember ? `/outreach?u=${encodeURIComponent(u ?? username)}` : null
   if (creator.role === 'reposter') {
     const todayIso = operationalDayFromIso(await getServerNowIso())
     after(() => {
@@ -79,6 +92,8 @@ export default async function SubmitPage({
           creator,
           username,
           locale,
+          outreachWelcome,
+          outreachHref,
           searchParams: { u, date: dateParam, panel, tab, taskDay, vPage, vSize },
         })
       } catch {
@@ -305,8 +320,13 @@ export default async function SubmitPage({
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-base font-semibold text-[#9a0d18] dark:text-card-foreground">
-                {t('hey')} @{username}
+                {outreachWelcome ?? `${t('hey')} @${username}`}
               </p>
+              {outreachHref ? (
+                <Link href={outreachHref} className="mt-1 inline-block text-xs font-semibold underline">
+                  Outreach
+                </Link>
+              ) : null}
               <p className="mt-0.5 text-xs text-[#a05a55] dark:text-muted-foreground">
                 {login.platform === 'instagram' ? t('instagram') : t('tiktok')}
               </p>

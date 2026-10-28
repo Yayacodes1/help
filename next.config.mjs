@@ -8,6 +8,9 @@ const nextConfig = {
   },
   experimental: {
     optimizePackageImports: ['lucide-react', 'recharts'],
+    serverActions: {
+      bodySizeLimit: '8mb',
+    },
   },
 }
 

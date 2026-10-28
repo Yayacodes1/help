@@ -71,11 +71,15 @@ export async function ReposterDashboard({
   creator,
   username,
   locale,
+  outreachWelcome,
+  outreachHref,
   searchParams,
 }: {
   creator: Creator
   username: string
   locale: Locale
+  outreachWelcome?: string | null
+  outreachHref?: string | null
   searchParams: { date?: string; tab?: string; panel?: string; taskDay?: string; u?: string; vPage?: string; vSize?: string }
 }) {
   const t = createT(locale)
@@ -508,7 +512,14 @@ export async function ReposterDashboard({
   console.info(`[perf] reposter-dashboard tab=${tab} ${Date.now() - started}ms team=${teamIds.length}`)
 
   return (
-    <ReposterShell locale={locale} username={username} displayName={username} squadName={squadName}>
+    <ReposterShell
+      locale={locale}
+      username={username}
+      displayName={username}
+      squadName={squadName}
+      welcome={outreachWelcome}
+      outreachHref={outreachHref}
+    >
       {strikeSummary ? (
         <div className="mb-4">
           <StrikeBanner

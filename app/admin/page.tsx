@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { Suspense } from 'react'
 import nextDynamic from 'next/dynamic'
 import { redirect } from 'next/navigation'
@@ -86,6 +87,7 @@ import { formatPlanCompare, getLeaderBoard, getLeaderDirectory, loadLeaderLinks,
 import { LeadersBoard } from '@/components/admin/leaders-board'
 import { LeaderSquadsBoard } from '@/components/admin/leader-squads-board'
 import { LeadersManager } from '@/components/admin/leaders-manager'
+import { OutreachAccess } from '@/components/outreach/outreach-access'
 import { getActivityForDay } from '@/lib/activity'
 import { getProjectViewsBoard } from '@/lib/project-views'
 import { ProjectViewsPanel } from '@/components/admin/project-views-panel'
@@ -776,6 +778,12 @@ export default async function AdminPage({
             />
             <ProjectSelector projects={projects} />
             <LogoutButton label={t('logOut')} />
+            <Link
+              href="/outreach"
+              className="inline-flex h-10 items-center rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
+            >
+              Outreach
+            </Link>
           </div>
         </div>
         <CreatorJumpSearch
@@ -1584,6 +1592,16 @@ export default async function AdminPage({
               </div>
             ),
           },
+          ...(session?.id === 'ahmed'
+            ? [
+                {
+                  id: 'outreach',
+                  title: 'Outreach',
+                  summary: 'Who can negotiate and who can add accounts',
+                  children: <OutreachAccess />,
+                },
+              ]
+            : []),
           ] : []),
         ]}
       />

@@ -5,11 +5,12 @@ import { AlertCircle, ArrowLeft, Eye, EyeOff, Lock, Users } from 'lucide-react'
 import { startSubmission } from '@/app/actions/creator'
 import { login } from '@/app/actions/admin'
 import { loginLeader } from '@/app/actions/leader'
+import { loginOutreach } from '@/app/actions/outreach'
 import { LanguageToggle } from '@/components/language-toggle'
 import { CreatorLoginFields } from '@/components/creator-login-fields'
 import { createT, type Locale } from '@/lib/i18n'
 
-type Role = 'creator' | 'reposter' | 'yahya' | 'ahmed' | 'leader'
+type Role = 'creator' | 'reposter' | 'yahya' | 'ahmed' | 'leader' | 'outreach'
 type CreatorState = { ok: boolean; message: string } | null
 type AdminState = { ok: boolean; message: string }
 
@@ -26,6 +27,10 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
   )
   const [adminState, adminAction, adminPending] = useActionState(login, adminInitial)
   const [leaderState, leaderAction, leaderPending] = useActionState(loginLeader, adminInitial)
+  const [outreachState, outreachAction, outreachPending] = useActionState(loginOutreach, adminInitial)
+  const accountAction = role === 'outreach' ? outreachAction : leaderAction
+  const accountPending = role === 'outreach' ? outreachPending : leaderPending
+  const accountMessage = role === 'outreach' ? outreachState?.message : leaderState?.message
 
   return (
     <div className="min-h-dvh bg-background">
@@ -66,13 +71,14 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
             <option value="creator">{t('creatorRole')}</option>
             <option value="reposter">{t('reposterRole')}</option>
             <option value="leader">{t('leaderRole')}</option>
+            <option value="outreach">Outreach</option>
             <option value="yahya">Yahya</option>
             <option value="ahmed">Ahmed</option>
           </select>
         </div>
 
-        {role === 'leader' ? (
-          <form action={leaderAction} className="mt-5 flex flex-col gap-3">
+        {role === 'leader' || role === 'outreach' ? (
+          <form action={accountAction} className="mt-5 flex flex-col gap-3">
             <label htmlFor="leader-name" className="text-sm font-semibold text-foreground">
               {t('yourName')}
             </label>
@@ -117,19 +123,19 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
-            {leaderState?.message ? (
+            {accountMessage ? (
               <p className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive" role="status">
                 <AlertCircle className="h-4 w-4 shrink-0" />
-                {leaderState.message}
+                {accountMessage}
               </p>
             ) : null}
             <button
               type="submit"
-              disabled={leaderPending}
+              disabled={accountPending}
               className="mt-1 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-60"
             >
               <Lock className="h-4 w-4" />
-              {leaderPending ? t('sending') : t('continue')}
+              {accountPending ? t('sending') : t('continue')}
               <ArrowLeft className={`h-4 w-4 ${rtl ? '' : 'rotate-180'}`} />
             </button>
           </form>

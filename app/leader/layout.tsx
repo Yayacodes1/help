@@ -6,6 +6,7 @@ import { getOperationalToday } from '@/lib/queries'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import { getLocale } from '@/lib/locale'
 import { LeaderShell } from '@/components/leader/leader-shell'
+import { getOutreachMemberByLeader } from '@/lib/outreach'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,9 +35,17 @@ export default async function LeaderLayout({ children }: { children: ReactNode }
       people: [],
     }
 
+  let outreachHref: string | null = null
+  try {
+    const member = await getOutreachMemberByLeader(session.id)
+    if (member) outreachHref = '/outreach'
+  } catch {
+    outreachHref = null
+  }
+
   return (
     <Suspense fallback={null}>
-      <LeaderShell locale={locale} leaderName={session.name} score={score}>
+      <LeaderShell locale={locale} leaderName={session.name} score={score} outreachHref={outreachHref}>
         {children}
       </LeaderShell>
     </Suspense>
