@@ -18,7 +18,7 @@ export async function hydrateSubmissionViews(
     try {
       const result = await fetchViewsDetailed(row.platform, row.url)
       if (result.ok) {
-        await applyFetchViewsResult(row.id, result)
+        await applyFetchViewsResult(row.id, result, { updatePostedAt: true })
       } else {
         await sql`
           UPDATE submissions
@@ -52,6 +52,9 @@ export type RefreshFilters = {
   submissionId?: number | null
   /** Only these people's videos (a leader's team); null = everyone. */
   creatorIds?: number[] | null
+  /** Videos section page (1-based). Bulk refresh uses this slice only. */
+  page?: number | null
+  pageSize?: number | null
 }
 
 export type RefreshFailureSample = {
@@ -73,6 +76,8 @@ export type RefreshViewsResult = {
   hasMore: boolean
   failures: { reason: string; count: number }[]
   failureSamples: RefreshFailureSample[]
+  /** New play count when a single video was refreshed. */
+  views?: number
 }
 
 type Row = {
@@ -131,15 +136,10 @@ export async function refreshOneSubmission(
       return { outcome: 'failed', reason, platformsFixed }
     }
 
-    const urlChanged = Boolean(result.resolvedUrl && result.resolvedUrl !== row.url)
     const viewsChanged = result.views !== row.views
-    const postedAtChanged = Boolean(
-      result.postedAt && result.postedAt !== row.platform_posted_at,
-    )
 
-    if (urlChanged || viewsChanged || postedAtChanged) {
+    if (viewsChanged) {
       const saved = await applyFetchViewsResult(row.id, result, {
-        updateUrl: urlChanged,
         fetchedAt,
       })
       if (!saved) {
@@ -273,6 +273,7 @@ export async function refreshViews(
   let skipped = 0
   let failed = 0
   let platformsFixed = 0
+  let views: number | undefined
   const failReasons: string[] = []
   const failureSamples: RefreshFailureSample[] = []
 
@@ -284,6 +285,8 @@ export async function refreshViews(
 
     const one = await refreshOneSubmission(row)
     platformsFixed += one.platformsFixed
+    if (one.views != null) views = one.views
+    else if (one.outcome !== 'failed') views = row.views
     if (one.outcome === 'updated') updated += 1
     else if (one.outcome === 'skipped') skipped += 1
     else {
@@ -308,6 +311,7 @@ export async function refreshViews(
     hasMore,
     failures: tallyFailures(failReasons),
     failureSamples,
+    views,
   }
 }
 

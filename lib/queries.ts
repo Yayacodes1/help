@@ -202,7 +202,7 @@ export async function getSubmissionsForCreator(
     FROM submissions s
     LEFT JOIN projects p ON p.id = s.project_id
     WHERE s.creator_id = ${creatorId}
-    ORDER BY s.video_date DESC, s.created_at DESC
+    ORDER BY s.video_date DESC, s.created_at DESC, s.id DESC
     LIMIT ${limit} OFFSET ${offset}
   `) as Array<Submission & { project_name: string | null }>
 }
@@ -345,7 +345,7 @@ export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<A
       AND (${platform}::text IS NULL OR s.platform = ${platform})
       AND (${from}::date IS NULL OR s.video_date >= ${from})
       AND (${to}::date IS NULL OR s.video_date <= ${to})
-    ORDER BY s.video_date DESC, s.created_at DESC
+    ORDER BY s.video_date DESC, s.created_at DESC, s.id DESC
     LIMIT ${limit} OFFSET ${offset}
   `) as AdminSubmissionRow[]
 }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { Platform } from '@/lib/db'
 import type { RefreshFilters } from '@/lib/refresh-views'
 import {
+  drainRefreshJob,
   getLatestRefreshJob,
   retryFailedRefreshJob,
   startRefreshJob,
@@ -20,6 +21,8 @@ type Body = {
   projectId?: number
   role?: string
   platform?: Platform
+  page?: number
+  pageSize?: number
 }
 
 function filtersFrom(body: Body, extra?: Partial<RefreshFilters>): RefreshFilters {
@@ -31,6 +34,8 @@ function filtersFrom(body: Body, extra?: Partial<RefreshFilters>): RefreshFilter
     role: body.role ?? extra?.role ?? null,
     platform: body.platform ?? extra?.platform ?? null,
     creatorIds: extra?.creatorIds ?? null,
+    page: body.page ?? extra?.page ?? null,
+    pageSize: body.pageSize ?? extra?.pageSize ?? null,
   }
 }
 
@@ -79,12 +84,20 @@ export async function handleRefreshJobPost(
     }
     if (action === 'retry') {
       if (jobId == null) return NextResponse.json({ error: 'Missing jobId' }, { status: 400 })
-      const job = await retryFailedRefreshJob(jobId, actor)
-      if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+      const retried = await retryFailedRefreshJob(jobId, actor)
+      if (!retried) return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+      const job =
+        retried.status === 'running'
+          ? (await drainRefreshJob(retried.id, actor)) ?? retried
+          : retried
       return NextResponse.json({ job })
     }
 
-    const job = await startRefreshJob(actor, filtersFrom(body, extra))
+    const started = await startRefreshJob(actor, filtersFrom(body, extra))
+    const job =
+      started.status === 'running' && started.total > 0
+        ? (await drainRefreshJob(started.id, actor)) ?? started
+        : started
     return NextResponse.json({ job })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unknown refresh error'

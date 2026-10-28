@@ -17,8 +17,16 @@ type ChunkResult = {
   platformsFixed?: number
   nextOffset: number | null
   hasMore: boolean
+  views?: number
   failures?: { reason: string; count: number }[]
   failureSamples?: { id: number; url: string; reason: string }[]
+}
+
+export const SUBMISSION_VIEWS_EVENT = 'submission-views'
+
+export function announceSubmissionViews(id: number, views: number) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(SUBMISSION_VIEWS_EVENT, { detail: { id, views } }))
 }
 
 function explainHttpError(status: number, apiError?: string): string {
@@ -43,6 +51,8 @@ type RefreshFilterInput = {
   submissionId?: number
   role?: string
   platform?: Platform
+  page?: number
+  pageSize?: number
 }
 
 function readFilters(
@@ -55,10 +65,23 @@ function readFilters(
   } = {},
   defaultRole: RoleFilter = 'creator',
 ): RefreshFilterInput {
-  if (overrides.allDates || overrides.submissionId) {
+  const pageRaw = Number(params.get('vPage') || '1')
+  const sizeRaw = Number(params.get('vSize') || '50')
+  const page = Number.isFinite(pageRaw) && pageRaw >= 1 ? Math.floor(pageRaw) : 1
+  const pageSize = sizeRaw === 25 || sizeRaw === 50 || sizeRaw === 100 ? sizeRaw : 50
+
+  if (overrides.submissionId) {
     return {
       creatorId: overrides.creatorId,
       submissionId: overrides.submissionId,
+    }
+  }
+
+  if (overrides.allDates) {
+    return {
+      creatorId: overrides.creatorId,
+      page,
+      pageSize,
     }
   }
 
@@ -85,6 +108,8 @@ function readFilters(
     projectId: Number.isFinite(projectId) ? projectId : undefined,
     role,
     platform,
+    page,
+    pageSize,
   }
 }
 
@@ -200,7 +225,9 @@ export function RefreshViewsButton({
     cancelled.current = false
     void jobRequest(jobEndpoint, {}, 'GET')
       .then((latest) => {
-        if (!cancelled.current && latest) setJob(latest)
+        if (cancelled.current || !latest) return
+        if (latest.status === 'running' && latest.total > 100) return
+        setJob(latest)
       })
       .catch(() => undefined)
     return () => {
@@ -230,8 +257,8 @@ export function RefreshViewsButton({
       setIsError(next.failed > 0)
       setMessage(
         next.total === 0
-          ? 'No videos matched these filters.'
-          : `Done — ${next.succeeded + next.skipped} saved, ${next.failed} failed, across ${next.total} videos on every page.`,
+          ? 'No videos on this page.'
+          : `Done — ${next.succeeded + next.skipped} saved, ${next.failed} failed, on this page (${next.total} videos).`,
       )
       router.refresh()
     } catch (e) {
@@ -264,8 +291,16 @@ export function RefreshViewsButton({
           : await jobRequest(jobEndpoint, { action: 'start', ...filters })
       if (!started) throw new Error('Could not start refresh.')
       setJob(started)
-      if (started.alreadyRunning) {
-        setMessage('A refresh is already running. Continuing that job across every page.')
+      if (started.status === 'completed') {
+        setIsError(started.failed > 0)
+        setMessage(
+          started.total === 0
+            ? 'No videos on this page.'
+            : `Done — ${started.succeeded + started.skipped} saved, ${started.failed} failed, on this page (${started.total} videos).`,
+        )
+        router.refresh()
+      } else if (started.alreadyRunning) {
+        setMessage('A refresh is already running for this page. Continuing that job.')
       }
     } catch (e) {
       setIsError(true)
@@ -289,13 +324,11 @@ export function RefreshViewsButton({
         {running ? 'Refreshing all views…' : label}
       </button>
       <p className="text-xs text-muted-foreground">
-        {allDates || creatorId
-          ? "Pulls current views for this person's videos on every page, not only the ones on screen."
-          : 'Refreshes every video matching the filters above, across every page — not only this page.'}
+        Refreshes only the videos on this page. Other pages are left alone.
       </p>
       {job && (running || job.processed > 0 || job.total > 0) ? (
         <div className="max-w-xl rounded-lg border border-border bg-card p-3">
-          <p className="text-sm font-medium">Refreshing all video views</p>
+          <p className="text-sm font-medium">Refreshing this page</p>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
             <div
               className="h-full bg-primary transition-[width] duration-300"
@@ -368,7 +401,6 @@ export function RefreshVideoButton({
   label: string
   endpoint?: string
 }) {
-  const router = useRouter()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
@@ -380,17 +412,18 @@ export function RefreshVideoButton({
     try {
       const data = await fetchChunk(0, 1, { submissionId }, endpoint)
       if (data.failed > 0) {
-        // Row already shows views_error after refresh — don't duplicate it here.
-        setError(null)
+        setError(data.failureSamples?.[0]?.reason || 'Could not refresh this video.')
         setStatus(null)
-      } else if (data.checked === 0) {
-        setError('Video not found for refresh.')
-      } else if (data.updated > 0) {
-        setStatus('Updated')
-      } else {
-        setStatus('Already current')
+        return
       }
-      router.refresh()
+      if (data.checked === 0) {
+        setError('Video not found for refresh.')
+        return
+      }
+      if (typeof data.views === 'number' && Number.isFinite(data.views)) {
+        announceSubmissionViews(submissionId, data.views)
+      }
+      setStatus(data.updated > 0 ? 'Updated' : 'Already current')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Refresh failed')
     } finally {

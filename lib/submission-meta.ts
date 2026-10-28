@@ -18,16 +18,21 @@ function validViews(views: number): number | null {
  * Persist views after a TikHub hit.
  * Never writes when `views` is invalid. Optional `fetchedAt` blocks a slower
  * response from overwriting a newer successful refresh.
+ * Refresh-views does not rewrite URL, key, or posted time so the row stays put.
  */
 export async function applyFetchViewsResult(
   id: number,
   result: FetchViewsOk,
-  options: { updateUrl?: boolean; fetchedAt?: string | null } = {},
+  options: {
+    updateUrl?: boolean
+    updatePostedAt?: boolean
+    fetchedAt?: string | null
+  } = {},
 ): Promise<boolean> {
   const views = validViews(result.views)
   if (views == null) return false
 
-  const postedAt = result.postedAt ?? null
+  const postedAt = options.updatePostedAt ? result.postedAt ?? null : null
   const resolvedUrl =
     options.updateUrl && result.resolvedUrl ? result.resolvedUrl : null
   const resolvedKey = resolvedUrl ? videoKeyFromUrl(resolvedUrl) : null

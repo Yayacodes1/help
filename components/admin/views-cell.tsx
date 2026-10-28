@@ -1,22 +1,56 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { updateViews } from '@/app/actions/admin'
 import { formatNumber } from '@/lib/format'
+import { SUBMISSION_VIEWS_EVENT } from '@/components/admin/refresh-views-button'
 
-export function ViewsCell({ id, views }: { id: number; views: number }) {
+export function ViewsCell({
+  id,
+  views,
+  editable = true,
+}: {
+  id: number
+  views: number
+  editable?: boolean
+}) {
   const [editing, setEditing] = useState(false)
+  const [liveViews, setLiveViews] = useState(views ?? 0)
   const [value, setValue] = useState(String(views ?? 0))
   const [pending, startTransition] = useTransition()
+
+  useEffect(() => {
+    setLiveViews(views ?? 0)
+    setValue(String(views ?? 0))
+  }, [views])
+
+  useEffect(() => {
+    function onUpdate(event: Event) {
+      const detail = (event as CustomEvent<{ id?: number; views?: number }>).detail
+      if (detail?.id !== id || typeof detail.views !== 'number') return
+      if (!Number.isFinite(detail.views) || detail.views < 0) return
+      setLiveViews(detail.views)
+      setValue(String(detail.views))
+    }
+    window.addEventListener(SUBMISSION_VIEWS_EVENT, onUpdate)
+    return () => window.removeEventListener(SUBMISSION_VIEWS_EVENT, onUpdate)
+  }, [id])
 
   function save() {
     const next = Number(value)
     setEditing(false)
-    if (!Number.isFinite(next) || next === views) {
-      setValue(String(views ?? 0))
+    if (!Number.isFinite(next) || next === liveViews) {
+      setValue(String(liveViews ?? 0))
       return
     }
+    setLiveViews(next)
     startTransition(() => updateViews(id, next))
+  }
+
+  if (!editable) {
+    return (
+      <span className="px-2 tabular-nums">{formatNumber(liveViews ?? 0)}</span>
+    )
   }
 
   if (editing) {
@@ -31,7 +65,7 @@ export function ViewsCell({ id, views }: { id: number; views: number }) {
         onKeyDown={(e) => {
           if (e.key === 'Enter') save()
           if (e.key === 'Escape') {
-            setValue(String(views ?? 0))
+            setValue(String(liveViews ?? 0))
             setEditing(false)
           }
         }}
@@ -48,7 +82,7 @@ export function ViewsCell({ id, views }: { id: number; views: number }) {
       disabled={pending}
       title="Click to edit views"
     >
-      {formatNumber(views ?? 0)}
+      {formatNumber(liveViews ?? 0)}
     </button>
   )
 }

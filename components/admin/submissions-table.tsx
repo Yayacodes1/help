@@ -6,7 +6,7 @@ import { ProjectCell } from '@/components/admin/project-cell'
 import { DeleteSubmission } from '@/components/admin/delete-submission'
 import { ReplaceSubmission } from '@/components/admin/replace-submission'
 import { CopyLink } from '@/components/copy-link'
-import { formatDate, formatDateTime, formatNumber } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { OPERATIONAL_TZ, calendarDayInTimeZone } from '@/lib/operational-day'
 import { PLATFORM_META } from '@/lib/platforms'
 import { scopedPersonHref, type LinkScope } from '@/lib/admin-href'
@@ -208,13 +208,7 @@ export function SubmissionsTable({
                 <td className="px-2 py-2 text-right">
                   <div className="flex items-start justify-end gap-1.5">
                     <div className="flex flex-col items-end gap-0.5">
-                      {editableViews ? (
-                        <ViewsCell id={s.id} views={s.views ?? 0} />
-                      ) : (
-                        <span className="px-2 tabular-nums">
-                          {formatNumber(s.views ?? 0)}
-                        </span>
-                      )}
+                      <ViewsCell id={s.id} views={s.views ?? 0} editable={editableViews} />
                       {err && (
                         <span
                           className="max-w-[220px] text-left text-[11px] leading-snug text-destructive"

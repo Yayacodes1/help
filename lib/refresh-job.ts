@@ -6,10 +6,11 @@ import {
   refreshOneSubmission,
   type RefreshFilters,
 } from '@/lib/refresh-views'
+import { parseVideoPage, parseVideoPageSize } from '@/lib/video-page'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-const BATCH = 12
-const CONCURRENCY = 4
+const BATCH = 25
+const CONCURRENCY = 6
 
 export type RefreshJobActor = {
   kind: 'admin' | 'leader'
@@ -100,6 +101,10 @@ async function loadJob(id: number): Promise<RefreshJobStatus | null> {
 }
 
 function filterArgs(filters: RefreshFilters) {
+  const pageSize = parseVideoPageSize(
+    filters.pageSize != null ? String(filters.pageSize) : undefined,
+  )
+  const page = parseVideoPage(filters.page != null ? String(filters.page) : undefined)
   return {
     from: filters.from && DATE_RE.test(filters.from) ? filters.from : null,
     to: filters.to && DATE_RE.test(filters.to) ? filters.to : null,
@@ -109,6 +114,8 @@ function filterArgs(filters: RefreshFilters) {
     platform:
       filters.platform === 'instagram' || filters.platform === 'tiktok' ? filters.platform : null,
     ids: Array.isArray(filters.creatorIds) ? filters.creatorIds : null,
+    pageSize,
+    offset: (page - 1) * pageSize,
   }
 }
 
@@ -158,22 +165,10 @@ export async function startRefreshJob(
   await ensureRefreshJobTables()
   const running = await getRunningJob(actor)
   if (running) {
-    const ageMs = Date.now() - new Date(running.started_at).getTime()
-    const items = (await sql`
-      SELECT COUNT(*)::int AS n FROM refresh_job_items WHERE job_id = ${running.id}
-    `) as { n: number }[]
-    const emptyStuck =
-      Number(running.total) === 0 &&
-      Number(items[0]?.n ?? 0) === 0 &&
-      ageMs > 15_000
-    if (!emptyStuck) {
-      const job = asJob(running, await loadFailures(running.id))
-      return { ...job, alreadyRunning: true }
-    }
     await sql`
       UPDATE refresh_jobs
       SET status = 'cancelled', finished_at = NOW(), updated_at = NOW(),
-          last_error = 'Replaced empty stuck job'
+          last_error = 'Replaced by a new this-page refresh'
       WHERE id = ${running.id} AND status = 'running'
     `
   }
@@ -204,16 +199,21 @@ export async function startRefreshJob(
 
   await sql`
     INSERT INTO refresh_job_items (job_id, submission_id, status, views_before)
-    SELECT ${job.id}, s.id, 'pending', s.views
-    FROM submissions s
-    JOIN creators c ON c.id = s.creator_id
-    WHERE (${f.from}::date IS NULL OR s.video_date >= ${f.from}::date)
-      AND (${f.to}::date IS NULL OR s.video_date <= ${f.to}::date)
-      AND (${f.creatorId}::int IS NULL OR s.creator_id = ${f.creatorId})
-      AND (${f.projectId}::int IS NULL OR s.project_id = ${f.projectId})
-      AND (${f.role}::text IS NULL OR c.role = ${f.role})
-      AND (${f.platform}::text IS NULL OR s.platform = ${f.platform})
-      AND (${f.ids}::int[] IS NULL OR s.creator_id = ANY(${f.ids}::int[]))
+    SELECT ${job.id}, page.id, 'pending', page.views
+    FROM (
+      SELECT s.id, s.views
+      FROM submissions s
+      JOIN creators c ON c.id = s.creator_id
+      WHERE (${f.from}::date IS NULL OR s.video_date >= ${f.from}::date)
+        AND (${f.to}::date IS NULL OR s.video_date <= ${f.to}::date)
+        AND (${f.creatorId}::int IS NULL OR s.creator_id = ${f.creatorId})
+        AND (${f.projectId}::int IS NULL OR s.project_id = ${f.projectId})
+        AND (${f.role}::text IS NULL OR c.role = ${f.role})
+        AND (${f.platform}::text IS NULL OR s.platform = ${f.platform})
+        AND (${f.ids}::int[] IS NULL OR s.creator_id = ANY(${f.ids}::int[]))
+      ORDER BY s.video_date DESC, s.created_at DESC, s.id DESC
+      LIMIT ${f.pageSize} OFFSET ${f.offset}
+    ) page
     ON CONFLICT (job_id, submission_id) DO NOTHING
   `
 
@@ -467,6 +467,20 @@ export async function retryFailedRefreshJob(
               started_at, updated_at, finished_at, last_error
   `) as JobRow[]
   return asJob(updated[0])
+}
+
+/** Keep ticking a small this-page job until it finishes or the time budget runs out. */
+export async function drainRefreshJob(
+  jobId: number,
+  actor: RefreshJobActor,
+  budgetMs = 45_000,
+): Promise<RefreshJobStatus | null> {
+  const started = Date.now()
+  let job = await loadJob(jobId)
+  while (job && job.status === 'running' && Date.now() - started < budgetMs) {
+    job = await tickRefreshJob(jobId, actor)
+  }
+  return job
 }
 
 /** Backup processor for the daily cron if a job was left running. */
