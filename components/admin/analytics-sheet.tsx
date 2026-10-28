@@ -12,6 +12,7 @@ import {
   ExternalLink,
   FileUp,
   Loader2,
+  RefreshCw,
   X,
 } from 'lucide-react'
 import {
@@ -29,7 +30,7 @@ import { addDays, rankingMonthRange } from '@/lib/campaign'
 import { shiftYearMonth } from '@/lib/biweekly'
 import { formatNumber } from '@/lib/format'
 import type { DailyDownloadsRow, SheetDayVideo, SheetRow } from '@/lib/analytics'
-import { loadSheetDay, loadSheetPerson, saveDailyDownloads } from '@/app/actions/downloads'
+import { loadSheetDay, loadSheetPerson, saveDailyDownloads, syncRevenueCatNow } from '@/app/actions/downloads'
 
 const IG = '#E1306C'
 const TT = '#0F766E'
@@ -654,6 +655,7 @@ export function AnalyticsSheet({
   projectId,
   projects,
   showBusiness,
+  revenueCatProjectIds,
 }: {
   rows: SheetRow[]
   downloads: DailyDownloadsRow[]
@@ -662,8 +664,10 @@ export function AnalyticsSheet({
   today: string
   projectId: number | null
   projects: Array<{ id: number; name: string }>
-  /** Owner only: downloads and the impact tab. */
+  /** Yahya and Ahmed: downloads and the impact tab. */
   showBusiness: boolean
+  /** Projects with a RevenueCat link (needs REVENUECAT_API_KEY). */
+  revenueCatProjectIds: number[]
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -684,6 +688,9 @@ export function AnalyticsSheet({
     key: 'estDl',
     desc: true,
   })
+
+  const rcConnected =
+    projectId != null ? revenueCatProjectIds.includes(projectId) : revenueCatProjectIds.length > 0
 
   const serverKey = `${serverFrom}|${serverTo}|${projectId ?? ''}`
   const [syncedKey, setSyncedKey] = useState(serverKey)
@@ -943,6 +950,15 @@ export function AnalyticsSheet({
         return
       }
       saveDrafts(entries, 'import')
+    })
+  }
+
+  function syncRevenueCat() {
+    setSaveMsg(null)
+    startSave(async () => {
+      const res = await syncRevenueCatNow(serverFrom, serverTo, projectId)
+      setSaveMsg(res.ok ? `RevenueCat: updated ${res.days} day${res.days === 1 ? '' : 's'}.` : res.error)
+      if (res.ok) router.refresh()
     })
   }
 
@@ -1395,6 +1411,18 @@ export function AnalyticsSheet({
           </div>
           {tab === 'day' && showBusiness ? (
             <>
+              {rcConnected ? (
+                <button
+                  type="button"
+                  disabled={savePending}
+                  onClick={syncRevenueCat}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-sm hover:bg-accent disabled:opacity-60"
+                  title="Pull downloads from RevenueCat for these dates. Hand-typed numbers are kept."
+                >
+                  <RefreshCw className={`size-3.5 ${savePending ? 'animate-spin' : ''}`} />
+                  Sync downloads
+                </button>
+              ) : null}
               {projectId != null ? (
                 <>
                   <label

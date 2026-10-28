@@ -51,6 +51,7 @@ import { PaymentsPeriodPanel } from '@/components/admin/payments-period-panel'
 import { PaymentDuePanel } from '@/components/admin/payment-due-panel'
 import { AssistantDrawer } from '@/components/admin/assistant-drawer'
 import { AnalyticsSheet } from '@/components/admin/analytics-sheet'
+import { linkedProjectIds } from '@/lib/revenuecat'
 import { TopVideosPanel } from '@/components/admin/top-videos-panel'
 import { WalletBoard } from '@/components/marketing/wallet-board'
 import { getPayablePeople, getWalletEntries, getWalletTotals } from '@/lib/wallet'
@@ -273,7 +274,9 @@ export default async function AdminPage({
   const videosOpen = tab === 'today' && sp.panel === 'videos'
   const { page: vPage, pageSize: vSize, offset: vOffset } = videoPaging(sp)
   const session = await getAdminSession()
-  const showBusiness = session?.role === 'owner'
+  const isOwner = session?.role === 'owner'
+  /** Downloads in the daily sheet: Yahya and Ahmed. Money stays owner-only. */
+  const showDownloads = session != null
   const projects = projectsEarly
 
   const creatorsBase = await getCreatorsWithProgressOnDate(selectedDay, projectId, roleSql, {
@@ -368,7 +371,7 @@ export default async function AdminPage({
       sheetOpen
         ? getDailySheet({ from: aFrom, to: aTo, projectId: aProjectId })
         : Promise.resolve([]),
-      sheetOpen && showBusiness
+      sheetOpen && showDownloads
         ? getDailyDownloads({ from: aFrom, to: aTo, projectId: aProjectId })
         : Promise.resolve([]),
     ])
@@ -1361,7 +1364,7 @@ export default async function AdminPage({
             children: (
               <WalletBoard
                 today={today}
-                isOwner={showBusiness}
+                isOwner={isOwner}
                 totals={walletTotals}
                 entries={walletEntries}
                 requests={marketingRequests}
@@ -1537,7 +1540,7 @@ export default async function AdminPage({
                         roleFilter="creator"
                         today={today}
                         currentProjectId={projectId}
-                        isOwner={showBusiness}
+                        isOwner={isOwner}
                         leaders={leaderLinks.leaders}
                       />
                     ),
@@ -1558,7 +1561,7 @@ export default async function AdminPage({
                     projects={projects}
                     roleFilter="reposter"
                     today={today}
-                    isOwner={showBusiness}
+                    isOwner={isOwner}
                     leaders={leaderLinks.leaders}
                   />
                 </section>
@@ -1574,7 +1577,7 @@ export default async function AdminPage({
                   roleFilter={roleFilter}
                   today={today}
                   currentProjectId={projectId}
-                  isOwner={showBusiness}
+                  isOwner={isOwner}
                   leaders={leaderLinks.leaders}
                 />
                 <ProjectsManager key="projects-manager" projects={projects} />
@@ -1595,7 +1598,8 @@ export default async function AdminPage({
           today={today}
           projectId={aProjectId}
           projects={projects}
-          showBusiness={showBusiness}
+          showBusiness={showDownloads}
+          revenueCatProjectIds={linkedProjectIds(projects)}
         />
       ) : null}
 

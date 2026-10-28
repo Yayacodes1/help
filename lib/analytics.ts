@@ -319,7 +319,7 @@ export async function getDailySheet(opts: {
   `) as SheetRow[]
 }
 
-/** `source`: manual | import (mixed when summed across projects). */
+/** `source`: manual | import | revenuecat (mixed when summed across projects). */
 export type DailyDownloadsRow = {
   date: string
   downloads: number
