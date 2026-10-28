@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { updateViews } from '@/app/actions/admin'
 import { formatNumber } from '@/lib/format'
 import { SUBMISSION_VIEWS_EVENT } from '@/components/admin/refresh-views-button'
@@ -18,8 +18,14 @@ export function ViewsCell({
   const [liveViews, setLiveViews] = useState(views ?? 0)
   const [value, setValue] = useState(String(views ?? 0))
   const [pending, startTransition] = useTransition()
+  const announced = useRef<number | null>(null)
 
   useEffect(() => {
+    if (announced.current != null) {
+      setLiveViews(announced.current)
+      setValue(String(announced.current))
+      return
+    }
     setLiveViews(views ?? 0)
     setValue(String(views ?? 0))
   }, [views])
@@ -29,6 +35,7 @@ export function ViewsCell({
       const detail = (event as CustomEvent<{ id?: number; views?: number }>).detail
       if (detail?.id !== id || typeof detail.views !== 'number') return
       if (!Number.isFinite(detail.views) || detail.views < 0) return
+      announced.current = detail.views
       setLiveViews(detail.views)
       setValue(String(detail.views))
     }

@@ -11,6 +11,7 @@ import {
   squadRoleButtons,
   type ReportSquad,
 } from '@/lib/telegram-groups'
+import { formatDailyViewsSection, type DailyViewsCompare } from '@/lib/daily-views'
 
 /**
  * `final`: the day that just closed at midnight Riyadh (sent at 12:00 AM).
@@ -44,6 +45,7 @@ export type DayReport = {
   everyone: AttendancePerson[]
   leaders: LeaderBoard
   generatedAt: Date
+  dailyViews: DailyViewsCompare | null
 }
 
 function addStatus(c: Counts, status: AttendanceStatus) {
@@ -141,7 +143,15 @@ export async function buildDayReport(opToday: string, mode: ReportMode): Promise
     })),
   })
 
-  return { mode, day, groups, everyone, leaders, generatedAt: new Date() }
+  let dailyViews: DailyViewsCompare | null = null
+  try {
+    const { loadDailyViewsCompare } = await import('@/lib/daily-views-store')
+    dailyViews = await loadDailyViewsCompare(day, mode)
+  } catch {
+    dailyViews = null
+  }
+
+  return { mode, day, groups, everyone, leaders, generatedAt: new Date(), dailyViews }
 }
 
 function enDay(ymd: string): string {
@@ -223,6 +233,9 @@ export function reportButtons(mode: ReportMode) {
 /** Counts only: posted / partial / didn't, per project, plus on-plan % today vs yesterday. */
 export function formatSummary(report: DayReport): string {
   const lines: string[] = [`📊 ${dayTitle(report)}`]
+  if (report.dailyViews) {
+    lines.push('', formatDailyViewsSection(report.dailyViews))
+  }
   for (const role of ['creator', 'reposter'] as const) {
     lines.push('', ROLE_TITLE[role])
     for (const g of report.groups.filter((x) => x.role === role)) {

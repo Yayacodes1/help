@@ -17,6 +17,37 @@ export function isTikTokHost(host: string): boolean {
   return h === 'tiktok.com' || h.endsWith('.tiktok.com') || h === 'tt.site' || h.endsWith('.tt.site')
 }
 
+/** Documented share hosts/paths — not a canonical /@user/video/{id} URL. */
+export function isTikTokShareLink(url: string): boolean {
+  try {
+    const u = new URL(url.trim())
+    const host = u.hostname.replace(/^www\./i, '').toLowerCase()
+    if (!isTikTokHost(host)) return false
+    if (host === 'vt.tiktok.com' || host === 'vm.tiktok.com') return true
+    if (host === 'tt.site' || host.endsWith('.tt.site')) return true
+    return /^\/t\//i.test(u.pathname)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Only /video/{id}, /photo/{id}, or aweme_id/item_id query params.
+ * Generic `id=` on a share URL is not an aweme id and 400s TikHub.
+ */
+export function extractTikTokAwemeId(url: string): string | null {
+  try {
+    const u = new URL(url.trim())
+    const fromPath = u.pathname.match(/\/(?:video|photo)\/(\d{5,})/)
+    if (fromPath?.[1]) return fromPath[1]
+    const fromQuery = u.searchParams.get('aweme_id') || u.searchParams.get('item_id')
+    if (fromQuery && /^\d{5,}$/.test(fromQuery)) return fromQuery
+    return null
+  } catch {
+    return null
+  }
+}
+
 export function detectPlatformFromUrl(url: string): Platform | null {
   let parsed: URL
   try {

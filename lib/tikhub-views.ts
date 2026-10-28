@@ -1,26 +1,13 @@
-export const INSTAGRAM_REFRESH_USER_ERROR =
-  "Couldn't refresh Instagram views. Try again later."
-
-export function isTransientViewsError(reason: string): boolean {
-  return /\b(429|502|503|504|timeout|timed out|rate limit|econnreset|fetch failed|network|aborted)\b/i.test(
-    reason,
-  )
-}
-
-export function publicViewsError(
-  reason: string,
-  platform?: string | null,
-): string {
-  if (
-    platform === 'instagram' ||
-    /instagram/i.test(reason) ||
-    /Couldn['’]t refresh Instagram/i.test(reason)
-  ) {
-    return INSTAGRAM_REFRESH_USER_ERROR
+export function isInstagramShareUrl(url: string): boolean {
+  try {
+    const path = new URL(url.trim()).pathname.toLowerCase()
+    return /\/share\//.test(path)
+  } catch {
+    return false
   }
-  return reason
 }
 
+/** Real /p /reel /tv shortcode only. Share tokens are not shortcodes. */
 export function extractInstagramCode(url: string): string | null {
   try {
     const u = new URL(url.trim())
@@ -28,9 +15,8 @@ export function extractInstagramCode(url: string): string | null {
     if (!/(^|\.)instagram\.com$/i.test(host) && !/^instagr\.am$/i.test(host)) {
       return null
     }
-    const m = u.pathname.match(
-      /\/(?:share\/(?:reels?|p)|reels?|p|tv)\/([A-Za-z0-9_-]+)/i,
-    )
+    if (/\/share\//i.test(u.pathname)) return null
+    const m = u.pathname.match(/\/(?:reels?|p|tv)\/([A-Za-z0-9_-]+)/i)
     return m?.[1] ?? null
   } catch {
     return null
@@ -54,6 +40,16 @@ export function canonicalizeInstagramUrl(raw: string): {
   code: string | null
 } {
   const trimmed = raw.trim()
+  if (isInstagramShareUrl(trimmed)) {
+    try {
+      const u = new URL(trimmed)
+      u.search = ''
+      u.hash = ''
+      return { url: u.toString(), code: null }
+    } catch {
+      return { url: trimmed, code: null }
+    }
+  }
   const code = extractInstagramCode(trimmed)
   if (code) {
     const kind = instagramPathKind(trimmed)
@@ -219,11 +215,13 @@ function preferredMediaObjects(payload: unknown): Array<Record<string, unknown> 
   const root = asRecord(unwrapTikHubPayload(payload))
   if (!root) return []
 
-  const data = asRecord(root.data) ?? root
-  const inner = asRecord(data.data) ?? data
+  const data = asRecord(root.data) ?? firstArrayItem(root.data) ?? root
+  const inner = asRecord(data.data) ?? firstArrayItem(data.data) ?? data
   const aweme =
     asRecord(inner.aweme_detail) ??
     asRecord(data.aweme_detail) ??
+    asRecord(inner.aweme_info) ??
+    asRecord(data.aweme_info) ??
     asRecord(inner.aweme) ??
     asRecord(data.aweme) ??
     firstArrayItem(inner.aweme_list) ??
@@ -231,34 +229,77 @@ function preferredMediaObjects(payload: unknown): Array<Record<string, unknown> 
     asRecord(root.aweme_detail) ??
     asRecord(root.aweme)
 
+  const item = firstArrayItem(inner.items) ?? firstArrayItem(data.items)
+  const media =
+    asRecord(inner.media) ??
+    asRecord(data.media) ??
+    asRecord(item?.media) ??
+    asRecord(inner.media_or_ad) ??
+    asRecord(data.media_or_ad)
+
+  // Documented TikHub shapes first: data.statistics.play_count and aweme.statistics.
   return [
+    asRecord(inner.statistics),
+    asRecord(data.statistics),
+    asRecord(aweme?.statistics),
+    asRecord(aweme?.stats),
+    asRecord(media),
+    asRecord(item),
+    inner,
+    data,
     aweme,
     asRecord(asRecord(inner.itemInfo)?.itemStruct),
     asRecord(inner.item),
     asRecord(data.item),
-    asRecord(inner.media),
-    asRecord(data.media),
     asRecord(inner.video),
     asRecord(data.video),
-    asRecord(inner.caption),
-    asRecord(data.caption),
-    firstArrayItem(inner.items),
-    firstArrayItem(data.items),
     asRecord(inner.xdt_shortcode_media),
     asRecord(data.xdt_shortcode_media),
-    asRecord(aweme?.statistics),
-    asRecord(aweme?.stats),
-    asRecord(inner.statistics),
-    asRecord(data.statistics),
     asRecord(inner.stats),
     asRecord(data.stats),
     asRecord(inner.metrics),
     asRecord(data.metrics),
     asRecord(asRecord(asRecord(inner.itemInfo)?.itemStruct)?.stats),
-    inner,
-    data,
-    root,
+    asRecord(item?.statistics),
+    asRecord(media?.statistics),
   ]
+}
+
+const DEEP_PLAY_KEYS = new Set([
+  'play_count',
+  'playCount',
+  'video_play_count',
+  'videoPlayCount',
+  'ig_play_count',
+  'video_view_count',
+  'videoViewCount',
+  'view_count',
+  'viewCount',
+])
+
+function deepPlayCount(value: unknown, depth = 0): number | null {
+  if (depth > 8 || value == null) return null
+  const obj = asRecord(value)
+  if (obj) {
+    for (const key of DEEP_PLAY_KEYS) {
+      const n = asFiniteCount(obj[key])
+      if (n != null) return n
+    }
+    for (const child of Object.values(obj)) {
+      if (child && typeof child === 'object') {
+        const n = deepPlayCount(child, depth + 1)
+        if (n != null) return n
+      }
+    }
+    return null
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const n = deepPlayCount(item, depth + 1)
+      if (n != null) return n
+    }
+  }
+  return null
 }
 
 /**
@@ -266,15 +307,126 @@ function preferredMediaObjects(payload: unknown): Array<Record<string, unknown> 
  * Avoid walking the whole tree (many unrelated `*_count: 0` fields).
  */
 export function extractViewCount(payload: unknown): number | null {
-  let foundZero: number | null = null
   for (const obj of preferredMediaObjects(payload)) {
     const n = viewsFromObject(obj)
-    if (n == null) continue
-    if (n > 0) return n
-    foundZero = n
+    if (n != null) return n
   }
+  return deepPlayCount(payload)
+}
 
-  return foundZero
+export type AwemeRecord = {
+  awemeId: string | null
+  views: number | null
+  postedAt: string | null
+}
+
+function asAwemeRecord(value: unknown): AwemeRecord | null {
+  const obj = asRecord(value)
+  if (!obj) return null
+  const aweme =
+    asRecord(obj.aweme_detail) ??
+    asRecord(obj.aweme_info) ??
+    asRecord(obj.aweme) ??
+    obj
+  const awemeId =
+    textId(aweme.aweme_id) ??
+    textId(obj.aweme_id) ??
+    textId(aweme.id) ??
+    textId(obj.id)
+  const views = extractViewCount(aweme) ?? extractViewCount(obj)
+  const postedAt = extractPostedAt(aweme) ?? extractPostedAt(obj)
+  if (awemeId == null && views == null) return null
+  return { awemeId, views, postedAt }
+}
+
+/** Pull every video record out of a TikHub single or batch payload. */
+export function extractAwemeRecords(payload: unknown): AwemeRecord[] {
+  const root = asRecord(unwrapTikHubPayload(payload))
+  if (!root) return []
+  const data = asRecord(root.data) ?? firstArrayItem(root.data)
+  const lists: unknown[] = []
+  if (Array.isArray(root.data)) lists.push(...root.data)
+  if (data) {
+    if (Array.isArray(data.aweme_list)) lists.push(...data.aweme_list)
+    if (Array.isArray(data.aweme_details)) lists.push(...data.aweme_details)
+    if (Array.isArray(data.aweme_detail_list)) lists.push(...data.aweme_detail_list)
+    if (asRecord(data.aweme_detail)) lists.push(data.aweme_detail)
+    lists.push(data)
+  }
+  lists.push(root)
+
+  const out: AwemeRecord[] = []
+  const seen = new Set<string>()
+  for (const item of lists) {
+    const record = asAwemeRecord(item)
+    if (!record) continue
+    const key = record.awemeId ?? `anon:${out.length}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(record)
+  }
+  return out
+}
+
+function textId(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return String(Math.floor(value))
+  }
+  if (typeof value === 'string' && /^\d{5,}$/.test(value.trim())) return value.trim()
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  return null
+}
+
+export function extractPayloadAwemeId(payload: unknown): string | null {
+  const root = asRecord(unwrapTikHubPayload(payload))
+  if (!root) return null
+  const data = asRecord(root.data) ?? root
+  const inner = asRecord(data.data) ?? data
+  const aweme =
+    asRecord(inner.aweme_detail) ??
+    asRecord(data.aweme_detail) ??
+    asRecord(inner.aweme_info) ??
+    asRecord(data.aweme_info) ??
+    asRecord(inner.aweme) ??
+    asRecord(data.aweme)
+  return (
+    textId(aweme?.aweme_id) ??
+    textId(inner.aweme_id) ??
+    textId(data.aweme_id) ??
+    textId(root.aweme_id)
+  )
+}
+
+export function extractPayloadInstagramCode(payload: unknown): string | null {
+  const root = asRecord(unwrapTikHubPayload(payload))
+  if (!root) return null
+  const data = asRecord(root.data) ?? root
+  const inner = asRecord(data.data) ?? data
+  const item = firstArrayItem(inner.items) ?? firstArrayItem(data.items)
+  const media = asRecord(inner.media) ?? asRecord(data.media) ?? asRecord(item?.media)
+  const code =
+    textId(media?.code) ??
+    textId(media?.shortcode) ??
+    textId(item?.code) ??
+    textId(item?.shortcode) ??
+    textId(inner.code) ??
+    textId(data.code)
+  return code
+}
+
+export function payloadMatchesRequestedVideo(
+  payload: unknown,
+  requested: { awemeId?: string | null; igCode?: string | null },
+): boolean {
+  if (requested.awemeId) {
+    const got = extractPayloadAwemeId(payload)
+    if (got && got !== requested.awemeId) return false
+  }
+  if (requested.igCode) {
+    const got = extractPayloadInstagramCode(payload)
+    if (got && got.toLowerCase() !== requested.igCode.toLowerCase()) return false
+  }
+  return true
 }
 
 const POSTED_AT_KEYS = [

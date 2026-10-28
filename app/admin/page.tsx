@@ -57,6 +57,7 @@ import { getPayablePeople, getWalletEntries, getWalletTotals } from '@/lib/walle
 import { OutflowPanel } from '@/components/admin/outflow-panel'
 import { PayCadences } from '@/components/admin/pay-cadence'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
+import { idsOnPage } from '@/lib/refresh-scope'
 import { LanguageToggle } from '@/components/language-toggle'
 import { CreatorJumpSearch } from '@/components/admin/creator-jump-search'
 import { formatDate, formatMoney, formatNumber, formatYearMonth, payCurrency } from '@/lib/format'
@@ -1235,8 +1236,14 @@ export default async function AdminPage({
                   >
                     <RefreshViewsButton
                       label={t('refreshViews')}
+                      allLabel={t('refreshAllViews')}
                       defaultFrom={monthStart}
                       defaultTo={monthEnd}
+                      submissionIds={idsOnPage(
+                        splitData
+                          ? splitData.flatMap((side) => side.submissions)
+                          : (submissions ?? []),
+                      )}
                     />
                   </Suspense>
                 </div>

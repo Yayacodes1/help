@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { refreshViews, type RefreshViewsScope } from '@/lib/refresh-views'
+import { refreshViews } from '@/lib/refresh-views'
 import { revalidatePath } from 'next/cache'
 
 export const dynamic = 'force-dynamic'
@@ -57,13 +57,13 @@ async function run(req: Request) {
 
   const url = new URL(req.url)
   const scopeParam = url.searchParams.get('scope')
-  // Default: today + yesterday once daily (Hobby allows 1 cron/day). Pass ?scope=all for rare full backfills.
-  const scope: RefreshViewsScope = scopeParam === 'all' ? 'all' : 'recent'
-
-  const result = await refreshViews(scope, { delayMs: 80, limit: 40 })
+  const { kickCatalogViewRefresh } = await import('@/lib/daily-views-store')
+  const catalog = await kickCatalogViewRefresh({ drainMs: 120_000 })
+  const recent =
+    scopeParam === 'recent' ? await refreshViews('recent', { delayMs: 80, limit: 40 }) : null
   revalidatePath('/admin')
   revalidatePath('/submit')
-  return NextResponse.json({ ...result, jobTicks, strikesAdded, streakEpoch, telegram, webhook })
+  return NextResponse.json({ catalog, recent, jobTicks, strikesAdded, streakEpoch, telegram, webhook })
 }
 
 export async function GET(req: Request) {

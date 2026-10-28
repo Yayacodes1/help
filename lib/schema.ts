@@ -354,6 +354,8 @@ async function runEnsureCreatorTrackingColumns() {
   const { ensureLeaderTables } = await import('@/lib/leaders')
   await ensureLeaderTables()
   await ensureRefreshJobTables()
+  const { ensureViewSnapshotTable } = await import('@/lib/daily-views-store')
+  await ensureViewSnapshotTable()
 }
 
 export async function ensureRefreshJobTables() {
@@ -378,11 +380,21 @@ export async function ensureRefreshJobTables() {
     )
   `
   await sql`CREATE INDEX IF NOT EXISTS refresh_jobs_actor_status_idx ON refresh_jobs (actor_kind, status, started_at DESC)`
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS refresh_jobs_one_running_idx
-    ON refresh_jobs (actor_kind, (COALESCE(leader_id, 0)))
-    WHERE status = 'running'
-  `
+  await sql`ALTER TABLE refresh_jobs ADD COLUMN IF NOT EXISTS creator_id integer`
+  try {
+    await sql`DROP INDEX IF EXISTS refresh_jobs_one_running_idx`
+  } catch {
+    /* old global unique index may already be gone */
+  }
+  try {
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS refresh_jobs_one_running_per_creator_idx
+      ON refresh_jobs (actor_kind, (COALESCE(leader_id, 0)), (COALESCE(creator_id, 0)))
+      WHERE status = 'running'
+    `
+  } catch {
+    /* a leftover running job can block the first create; start still recovers */
+  }
   await sql`
     CREATE TABLE IF NOT EXISTS refresh_job_items (
       id SERIAL PRIMARY KEY,
@@ -397,4 +409,15 @@ export async function ensureRefreshJobTables() {
     )
   `
   await sql`CREATE INDEX IF NOT EXISTS refresh_job_items_pending_idx ON refresh_job_items (job_id, status, submission_id)`
+  await sql`ALTER TABLE refresh_job_items ADD COLUMN IF NOT EXISTS retry_at timestamptz`
+  await sql`ALTER TABLE refresh_job_items ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 0`
+  await sql`
+    CREATE TABLE IF NOT EXISTS tikhub_quota (
+      name TEXT PRIMARY KEY,
+      blocked_until TIMESTAMPTZ,
+      inflight INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`ALTER TABLE tikhub_quota ADD COLUMN IF NOT EXISTS inflight integer NOT NULL DEFAULT 0`
 }

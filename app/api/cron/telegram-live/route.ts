@@ -23,12 +23,17 @@ async function run(req: Request) {
 
   await ensureCreatorTrackingColumns()
   const opToday = await getOperationalToday()
+  const { kickCatalogViewRefresh } = await import('@/lib/daily-views-store')
+  const catalog = await kickCatalogViewRefresh({ drainMs: 25_000 }).catch((e) => ({
+    started: false,
+    error: String(e),
+  }))
   const telegram = await sendAttendanceReports(opToday, 'live')
   const webhook = await ensureTelegramWebhook(new URL(req.url).origin).catch((e) => ({
     ok: false,
     error: String(e),
   }))
-  return NextResponse.json({ ok: telegram.ok, opToday, telegram, webhook })
+  return NextResponse.json({ ok: telegram.ok, opToday, telegram, webhook, catalog })
 }
 
 export async function GET(req: Request) {

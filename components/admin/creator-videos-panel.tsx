@@ -3,6 +3,7 @@
 import { Suspense, useMemo, useState } from 'react'
 import { SubmissionsTable } from '@/components/admin/submissions-table'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
+import { idsOnPage } from '@/lib/refresh-scope'
 import { AddCreatorVideoForm } from '@/components/admin/add-creator-video-form'
 import { formatNumber } from '@/lib/format'
 import { sortProjects } from '@/lib/project-order'
@@ -55,6 +56,7 @@ export function CreatorVideosPanel({
     views: string
     noMatch: string
     refreshViews: string
+    refreshAllViews: string
     refreshThisVideo: string
     allProjects: string
     pickProject: string
@@ -190,9 +192,12 @@ export function CreatorVideosPanel({
         fallback={<p className="text-xs text-muted-foreground">Loading refresh…</p>}
       >
         <RefreshViewsButton
+          key={creatorId}
           label={labels.refreshViews}
+          allLabel={labels.refreshAllViews}
           creatorId={creatorId}
           allDates
+          submissionIds={idsOnPage(filtered)}
         />
       </Suspense>
 

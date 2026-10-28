@@ -390,6 +390,7 @@ export default async function CreatorDetailPage({
                 refreshFrom={commissionSheets.sheets[0]?.startDate ?? cmFrom}
                 refreshTo={today}
                 refreshLabel={t('refreshViews')}
+                refreshAllLabel={t('refreshAllViews')}
               />
             ),
           },
@@ -419,6 +420,7 @@ export default async function CreatorDetailPage({
                   views: t('views'),
                   noMatch: t('noVideosMatch'),
                   refreshViews: t('refreshViews'),
+                  refreshAllViews: t('refreshAllViews'),
                   refreshThisVideo: t('refreshThisVideo'),
                   allProjects: t('allProjects'),
                   pickProject: t('pickProject'),

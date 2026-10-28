@@ -4,11 +4,16 @@ import type { Platform } from '@/lib/db'
 import { addDays } from '@/lib/campaign'
 import { detectPlatformFromUrl } from '@/lib/media-url'
 import { getServerToday } from '@/lib/queries'
-import { fetchViewsDetailed } from '@/lib/tikhub'
+import { fetchViewsDetailed, type FetchViewsResult } from '@/lib/tikhub'
 import { applyFetchViewsResult } from '@/lib/submission-meta'
-import { isTransientViewsError, publicViewsError } from '@/lib/tikhub-views'
+import {
+  classifyViewsError,
+  isRateLimitedCategory,
+  isTransientViewsCategory,
+  publicViewsError,
+} from '@/lib/tikhub-errors'
 
-export { isTransientViewsError } from '@/lib/tikhub-views'
+export { isTransientViewsError } from '@/lib/tikhub-errors'
 
 /** Fill view counts after a submit so TikHub never blocks saving the links. */
 export async function hydrateSubmissionViews(
@@ -52,9 +57,15 @@ export type RefreshFilters = {
   submissionId?: number | null
   /** Only these people's videos (a leader's team); null = everyone. */
   creatorIds?: number[] | null
-  /** Videos section page (1-based). Bulk refresh uses this slice only. */
+  /** Videos section page (1-based). Used only if submissionIds is empty. */
   page?: number | null
   pageSize?: number | null
+  /** Exact videos currently displayed. Bulk refresh uses this list only. */
+  submissionIds?: number[] | null
+  /** All videos matching the current filters, not only the displayed page. */
+  allMatching?: boolean | null
+  /** Every tracked video, including older ones, for daily view-gain snapshots. */
+  catalog?: boolean | null
 }
 
 export type RefreshFailureSample = {
@@ -91,13 +102,14 @@ type Row = {
 const DEFAULT_CHUNK = 25
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
-export type RefreshOneOutcome = 'updated' | 'skipped' | 'failed'
+export type RefreshOneOutcome = 'updated' | 'skipped' | 'failed' | 'waiting'
 
 export type RefreshOneResult = {
   outcome: RefreshOneOutcome
   reason?: string
   views?: number
   platformsFixed: number
+  retryAfterMs?: number
 }
 
 type RefreshRow = {
@@ -110,7 +122,9 @@ type RefreshRow = {
 
 export async function refreshOneSubmission(
   row: RefreshRow,
-  options: { retryTransient?: boolean } = {},
+  options: { retryTransient?: boolean; preloaded?: FetchViewsResult | null } = {
+    retryTransient: false,
+  },
 ): Promise<RefreshOneResult> {
   const fetchedAt = new Date().toISOString()
   let platformsFixed = 0
@@ -124,8 +138,10 @@ export async function refreshOneSubmission(
     row.platform = detected
   }
 
-  const attempt = async (): Promise<RefreshOneResult> => {
-    const result = await fetchViewsDetailed(platform, row.url)
+  const attempt = async (
+    preloaded?: FetchViewsResult | null,
+  ): Promise<RefreshOneResult> => {
+    const result = preloaded ?? (await fetchViewsDetailed(platform, row.url))
     if (!result.ok) {
       const reason = publicViewsError(result.reason, platform)
       await sql`
@@ -133,6 +149,14 @@ export async function refreshOneSubmission(
         SET views_error = ${reason.slice(0, 400)}
         WHERE id = ${row.id}
       `
+      if (isRateLimitedCategory(result.category)) {
+        return {
+          outcome: 'waiting',
+          reason,
+          platformsFixed,
+          retryAfterMs: result.retryAfterMs ?? 5_000,
+        }
+      }
       return { outcome: 'failed', reason, platformsFixed }
     }
 
@@ -157,18 +181,24 @@ export async function refreshOneSubmission(
           OR views_fetched_at <= ${fetchedAt}::timestamptz
         )
     `
+    const { recordViewSnapshot } = await import('@/lib/daily-views-store')
+    await recordViewSnapshot({
+      submissionId: row.id,
+      views: result.views,
+      observedAt: fetchedAt,
+    }).catch(() => undefined)
     return { outcome: 'skipped', views: result.views, platformsFixed }
   }
 
-  let result = await attempt()
+  let result = await attempt(options.preloaded)
   if (
-    options.retryTransient !== false &&
+    options.retryTransient === true &&
     result.outcome === 'failed' &&
     result.reason &&
-    isTransientViewsError(result.reason)
+    isTransientViewsCategory(classifyViewsError(result.reason))
   ) {
     await new Promise((r) => setTimeout(r, 400))
-    result = await attempt()
+    result = await attempt(null)
     result.platformsFixed = Math.max(result.platformsFixed, platformsFixed)
   }
   return result

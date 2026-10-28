@@ -1,11 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { RefreshCw } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { RefreshCw, X } from 'lucide-react'
+import type { RefreshLinkSample } from '@/lib/refresh-progress'
 import type { Platform } from '@/lib/db'
 import type { RoleFilter } from '@/lib/participant-role'
-import { publicViewsError } from '@/lib/tikhub-views'
+import { publicViewsError } from '@/lib/tikhub-errors'
+import { refreshJobHeading, shouldShowRefreshCards } from '@/lib/refresh-progress'
+import { snapshotRefreshTarget } from '@/lib/refresh-scope'
 
 const ADMIN_ENDPOINT = '/api/admin/refresh-views'
 
@@ -24,9 +27,17 @@ type ChunkResult = {
 
 export const SUBMISSION_VIEWS_EVENT = 'submission-views'
 
-export function announceSubmissionViews(id: number, views: number) {
+export function announceSubmissionViews(
+  id: number,
+  views: number,
+  extra: { error?: string | null } = {},
+) {
   if (typeof window === 'undefined') return
-  window.dispatchEvent(new CustomEvent(SUBMISSION_VIEWS_EVENT, { detail: { id, views } }))
+  window.dispatchEvent(
+    new CustomEvent(SUBMISSION_VIEWS_EVENT, {
+      detail: { id, views, error: extra.error ?? null },
+    }),
+  )
 }
 
 function explainHttpError(status: number, apiError?: string): string {
@@ -157,12 +168,75 @@ type JobStatus = {
   succeeded: number
   failed: number
   skipped: number
+  waiting?: number
   remaining: number
   percent: number
   alreadyRunning?: boolean
+  creatorId?: number | null
   startedAt?: string
   finishedAt?: string | null
-  failures: { id: number; url: string; reason: string }[]
+  updates?: RefreshLinkSample[]
+  unchanged?: RefreshLinkSample[]
+  failures: RefreshLinkSample[]
+}
+
+function LinkResultList({
+  title,
+  rows,
+  tone,
+  bare = false,
+}: {
+  title: string
+  rows: RefreshLinkSample[]
+  tone: 'ok' | 'muted' | 'bad'
+  bare?: boolean
+}) {
+  if (rows.length === 0) return null
+  const color =
+    tone === 'ok'
+      ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-800 dark:text-emerald-300'
+      : tone === 'bad'
+        ? 'text-foreground'
+        : 'border-border bg-muted/40 text-muted-foreground'
+  const list = (
+    <ul className={`${bare ? 'mt-1' : 'mt-1'} max-h-40 space-y-1 overflow-y-auto`}>
+      {rows.map((row) => (
+        <li key={`${title}-${row.id}`} className="break-all text-foreground">
+          <a
+            href={row.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2"
+            dir="ltr"
+          >
+            {row.url}
+          </a>
+          {typeof row.viewsBefore === 'number' && typeof row.viewsAfter === 'number' ? (
+            <span className="text-muted-foreground">
+              {' '}
+              · {row.viewsBefore.toLocaleString()} → {row.viewsAfter.toLocaleString()}
+            </span>
+          ) : typeof row.views === 'number' ? (
+            <span className="text-muted-foreground"> · {row.views.toLocaleString()} views</span>
+          ) : null}
+          {row.reason ? (
+            <span className="text-muted-foreground">
+              {' '}
+              · {publicViewsError(row.reason)}
+              {row.viewsFetchedAt ? ` (${formatClock(row.viewsFetchedAt)})` : ''}
+            </span>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  )
+  if (bare) return list
+  return (
+    <div className={`rounded-md border p-2 text-xs ${color}`}>
+      {title ? <p className="font-medium">{title}</p> : null}
+      {list}
+    </div>
+  )
 }
 
 function formatClock(value?: string | null): string | null {
@@ -194,14 +268,17 @@ async function jobRequest(
 
 export function RefreshViewsButton({
   label,
+  allLabel = 'Refresh all views',
   defaultFrom,
   defaultTo,
   creatorId,
   allDates = false,
   endpoint = ADMIN_ENDPOINT,
   defaultRole = 'creator',
+  submissionIds,
 }: {
   label: string
+  allLabel?: string
   defaultFrom?: string
   defaultTo?: string
   creatorId?: number
@@ -210,144 +287,340 @@ export function RefreshViewsButton({
   endpoint?: string
   /** Role used when the URL has no `?role=` (admin: creators, leader: everyone). */
   defaultRole?: RoleFilter
+  /** Exact videos currently displayed. Required for bulk refresh. */
+  submissionIds?: number[]
 }) {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const jobEndpoint = `${endpoint.replace(/\/$/, '')}/job`
   const [job, setJob] = useState<JobStatus | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [isError, setIsError] = useState(false)
-  const looping = useRef(false)
+  const [dismissed, setDismissed] = useState(false)
+  const driveGen = useRef(0)
+  const starting = useRef(false)
   const cancelled = useRef(false)
+  const dismissedRef = useRef(false)
+  const ownedJobId = useRef<number | null>(null)
+  const ownedCreatorId = useRef<number | null>(null)
+  const pageCreatorRef = useRef<number | null>(creatorId ?? null)
   const lastProcessed = useRef(0)
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastScope = useRef<{ creatorId?: number; endpoint: string } | null>(null)
+  pageCreatorRef.current = creatorId ?? null
+
+  function clearHideTimer() {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current)
+      hideTimer.current = null
+    }
+  }
+
+  function hideCards(immediate = false) {
+    dismissedRef.current = true
+    setDismissed(true)
+    setMessage(null)
+    setIsError(false)
+    clearHideTimer()
+    if (immediate) {
+      setJob(null)
+      return
+    }
+    hideTimer.current = setTimeout(() => {
+      if (dismissedRef.current) setJob(null)
+    }, 220)
+  }
+
+  function acceptJobUpdate(next: JobStatus): boolean {
+    if (cancelled.current || dismissedRef.current) return false
+    if (ownedJobId.current == null || ownedJobId.current !== next.id) return false
+    const pageCreator = pageCreatorRef.current
+    const jobCreator = next.creatorId ?? ownedCreatorId.current
+    if (pageCreator != null && jobCreator != null && pageCreator !== jobCreator) return false
+    return true
+  }
 
   useEffect(() => {
     cancelled.current = false
-    void jobRequest(jobEndpoint, {}, 'GET')
-      .then((latest) => {
-        if (cancelled.current || !latest) return
-        if (latest.status === 'running' && latest.total > 100) return
-        setJob(latest)
-      })
-      .catch(() => undefined)
+    const prev = lastScope.current
+    lastScope.current = { creatorId, endpoint: jobEndpoint }
+    if (prev && (prev.creatorId !== creatorId || prev.endpoint !== jobEndpoint)) {
+      hideCards(true)
+      ownedJobId.current = null
+      ownedCreatorId.current = null
+    }
     return () => {
       cancelled.current = true
-      looping.current = false
+      driveGen.current += 1
+      dismissedRef.current = true
+      ownedJobId.current = null
+      ownedCreatorId.current = null
+      clearHideTimer()
     }
-  }, [jobEndpoint])
+  }, [creatorId, jobEndpoint])
 
   async function drive(current: JobStatus) {
-    if (looping.current) return
-    looping.current = true
+    const gen = ++driveGen.current
+    const jobId = current.id
     lastProcessed.current = current.processed
     let next = current
     try {
-      while (next.status === 'running') {
-        if (cancelled.current) return
+      while (next.status === 'running' && driveGen.current === gen) {
         next =
-          (await jobRequest(jobEndpoint, { action: 'tick', jobId: next.id })) ?? next
-        if (cancelled.current) return
-        setJob(next)
+          (await jobRequest(jobEndpoint, { action: 'tick', jobId })) ?? next
+        if (driveGen.current !== gen) break
+        if (acceptJobUpdate(next)) {
+          setJob(next)
+        }
         if (next.status !== 'running') break
         if (next.processed <= lastProcessed.current) {
-          await new Promise((r) => setTimeout(r, 400))
+          const pause = (next.waiting ?? 0) > 0 ? 1_500 : 400
+          await new Promise((r) => setTimeout(r, pause))
         }
         lastProcessed.current = next.processed
       }
-      setIsError(next.failed > 0)
-      setMessage(
-        next.total === 0
-          ? 'No videos on this page.'
-          : `Done — ${next.succeeded + next.skipped} saved, ${next.failed} failed, on this page (${next.total} videos).`,
-      )
-      router.refresh()
+      if (driveGen.current !== gen) return
+      if (acceptJobUpdate(next)) {
+        setIsError(next.failed > 0)
+        setMessage(
+          next.total === 0
+            ? 'No videos on this page.'
+            : `Done — ${next.succeeded + next.skipped} saved, ${next.failed} failed (${next.total} videos).`,
+        )
+      }
+      if (!cancelled.current) {
+        for (const row of next.updates ?? []) {
+          if (typeof row.viewsAfter === 'number') {
+            announceSubmissionViews(row.id, row.viewsAfter, { error: null })
+          }
+        }
+        for (const row of next.unchanged ?? []) {
+          if (typeof row.views === 'number') {
+            announceSubmissionViews(row.id, row.views, { error: null })
+          }
+        }
+      }
     } catch (e) {
-      if (cancelled.current) return
+      if (driveGen.current !== gen || cancelled.current || dismissedRef.current) return
       setIsError(true)
       setMessage(e instanceof Error ? e.message : 'Refresh failed')
-    } finally {
-      looping.current = false
     }
   }
 
   useEffect(() => {
-    if (job?.status === 'running') void drive(job)
+    if (job?.status === 'running' && ownedJobId.current === job.id && !dismissedRef.current) {
+      void drive(job)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.id, job?.status === 'running'])
 
-  async function start(action: 'start' | 'retry' = 'start') {
+  function dismissPanel() {
+    hideCards()
+  }
+
+  async function start(action: 'start' | 'retry' | 'all' = 'start') {
+    if (starting.current) return
+    const cardsOpen =
+      !dismissedRef.current &&
+      job != null &&
+      ownedJobId.current === job.id
+    if (cardsOpen && job.status === 'running') return
+    const target = snapshotRefreshTarget({
+      creatorId,
+      submissionIds,
+      allMatching: action === 'all',
+    })
+    const retryJobId = action === 'retry' ? ownedJobId.current : null
+    if (action === 'retry' && retryJobId == null) return
+    starting.current = true
+    clearHideTimer()
+    dismissedRef.current = false
+    setDismissed(false)
     setMessage(null)
     setIsError(false)
+    if (action !== 'retry') {
+      setJob(null)
+    }
     const filters = readFilters(
       searchParams,
       { from: defaultFrom, to: defaultTo },
-      { creatorId, allDates },
+      { creatorId: target.creatorId ?? undefined, allDates },
       defaultRole,
     )
     try {
+      if (action === 'start' && target.submissionIds.length === 0) {
+        setMessage('No videos on this page.')
+        return
+      }
       const started =
-        action === 'retry' && job
-          ? await jobRequest(jobEndpoint, { action: 'retry', jobId: job.id })
-          : await jobRequest(jobEndpoint, { action: 'start', ...filters })
+        action === 'retry' && retryJobId != null
+          ? await jobRequest(jobEndpoint, { action: 'retry', jobId: retryJobId })
+          : await jobRequest(jobEndpoint, {
+              action: 'start',
+              ...filters,
+              creatorId: target.creatorId ?? undefined,
+              submissionIds: target.submissionIds,
+              allMatching: target.allMatching,
+            })
       if (!started) throw new Error('Could not start refresh.')
+      if (cancelled.current || pageCreatorRef.current !== (creatorId ?? null)) return
+      ownedJobId.current = started.id
+      ownedCreatorId.current = started.creatorId ?? target.creatorId
+      dismissedRef.current = false
+      setDismissed(false)
       setJob(started)
       if (started.status === 'completed') {
         setIsError(started.failed > 0)
         setMessage(
           started.total === 0
-            ? 'No videos on this page.'
-            : `Done — ${started.succeeded + started.skipped} saved, ${started.failed} failed, on this page (${started.total} videos).`,
+            ? target.allMatching
+              ? 'No videos match these filters.'
+              : 'No videos on this page.'
+            : `Done — ${started.succeeded + started.skipped} saved, ${started.failed} failed (${started.total} videos).`,
         )
-        router.refresh()
-      } else if (started.alreadyRunning) {
-        setMessage('A refresh is already running for this page. Continuing that job.')
+        for (const row of started.updates ?? []) {
+          if (typeof row.viewsAfter === 'number') {
+            announceSubmissionViews(row.id, row.viewsAfter, { error: null })
+          }
+        }
+        for (const row of started.unchanged ?? []) {
+          if (typeof row.views === 'number') {
+            announceSubmissionViews(row.id, row.views, { error: null })
+          }
+        }
       }
     } catch (e) {
+      if (cancelled.current || dismissedRef.current) return
       setIsError(true)
       setMessage(e instanceof Error ? e.message : 'Refresh failed')
+    } finally {
+      starting.current = false
     }
   }
 
-  const running = job?.status === 'running'
-  const successful = job ? job.succeeded + job.skipped : 0
+  const showPanel = shouldShowRefreshCards({
+    dismissed,
+    ownedJobId: ownedJobId.current,
+    jobId: job?.id ?? null,
+    pageCreatorId: creatorId ?? null,
+    jobCreatorId: job?.creatorId ?? ownedCreatorId.current,
+  })
+  const running = Boolean(showPanel && job?.status === 'running')
+  const waiting = job?.waiting ?? 0
   const startedLabel = formatClock(job?.startedAt)
   const finishedLabel = formatClock(job?.finishedAt)
+  const heading = job
+    ? refreshJobHeading({
+        status: job.status,
+        total: job.total,
+        processed: job.processed,
+        succeeded: job.succeeded,
+        failed: job.failed,
+        waiting,
+      })
+    : 'Refreshing this page'
+  const updates = job?.updates ?? []
+  const unchanged = job?.unchanged ?? []
+  const failures = job?.failures ?? []
 
   return (
     <div className="flex flex-col gap-2">
-      <button
-        type="button"
-        disabled={running}
-        onClick={() => void start('start')}
-        className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-60"
-      >
-        {running ? 'Refreshing all views…' : label}
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={running}
+          onClick={() => void start('start')}
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-60"
+        >
+          {label}
+        </button>
+        <button
+          type="button"
+          disabled={running}
+          onClick={() => void start('all')}
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-60"
+        >
+          {allLabel}
+        </button>
+      </div>
       <p className="text-xs text-muted-foreground">
-        Refreshes only the videos on this page. Other pages are left alone.
+        {label} refreshes only this page. {allLabel} refreshes every matching video, not just this
+        page.
       </p>
-      {job && (running || job.processed > 0 || job.total > 0) ? (
-        <div className="max-w-xl rounded-lg border border-border bg-card p-3">
-          <p className="text-sm font-medium">Refreshing this page</p>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full bg-primary transition-[width] duration-300"
-              style={{ width: `${job.percent}%` }}
-            />
-          </div>
-          <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs tabular-nums text-muted-foreground">
-            <div>Total videos: {job.total.toLocaleString()}</div>
-            <div>Processed: {job.processed.toLocaleString()}</div>
-            <div>Successfully refreshed: {successful.toLocaleString()}</div>
-            <div>Failed: {job.failed.toLocaleString()}</div>
-            <div>Remaining: {job.remaining.toLocaleString()}</div>
-            <div>Progress: {job.percent}%</div>
-            {startedLabel ? <div>Started: {startedLabel}</div> : null}
-            {finishedLabel ? <div>Finished: {finishedLabel}</div> : running ? <div>Finished: in progress</div> : null}
-          </dl>
+      <div
+        className={`grid max-w-3xl transition-[grid-template-rows,opacity,margin] duration-200 ease-out ${
+          showPanel && job ? 'mt-0 grid-rows-[1fr] opacity-100' : 'mt-0 grid-rows-[0fr] opacity-0'
+        }`}
+        aria-hidden={!showPanel}
+      >
+        <div className="overflow-hidden">
+          {job ? (
+            <div className="space-y-2 pb-0.5">
+              <div className="rounded-lg border border-border bg-card p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium">{heading}</p>
+                  <button
+                    type="button"
+                    onClick={dismissPanel}
+                    className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    aria-label="Dismiss refresh progress and failed videos"
+                    title="Dismiss"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full bg-primary transition-[width] duration-300"
+                    style={{ width: `${job.percent}%` }}
+                  />
+                </div>
+                <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs tabular-nums text-muted-foreground">
+                  <div>Total videos: {job.total.toLocaleString()}</div>
+                  <div>Processed: {job.processed.toLocaleString()}</div>
+                  <div>Updated: {updates.length.toLocaleString()}</div>
+                  <div>Not updated: {unchanged.length.toLocaleString()}</div>
+                  <div>Failed: {job.failed.toLocaleString()}</div>
+                  <div>Waiting to retry: {waiting.toLocaleString()}</div>
+                  <div>Remaining: {job.remaining.toLocaleString()}</div>
+                  <div>Progress: {job.percent}%</div>
+                  {startedLabel ? <div>Started: {startedLabel}</div> : null}
+                  {finishedLabel ? (
+                    <div>Finished: {finishedLabel}</div>
+                  ) : running ? (
+                    <div>Finished: in progress</div>
+                  ) : null}
+                </dl>
+                <div className="mt-2 space-y-2">
+                  <LinkResultList title={`Updated links (${updates.length})`} rows={updates} tone="ok" />
+                  <LinkResultList
+                    title={`Not updated (${unchanged.length})`}
+                    rows={unchanged}
+                    tone="muted"
+                  />
+                </div>
+              </div>
+              {failures.length > 0 ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2 font-medium text-destructive">
+                    <span>Failed videos ({failures.length})</span>
+                    {!running ? (
+                      <button
+                        type="button"
+                        onClick={() => void start('retry')}
+                        className="rounded-md border border-destructive/40 px-2 py-1 text-[11px] font-medium text-destructive hover:bg-destructive/10"
+                      >
+                        Retry failed videos
+                      </button>
+                    ) : null}
+                  </div>
+                  <LinkResultList title="failed" rows={failures} tone="bad" bare />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-      ) : null}
-      {message ? (
+      </div>
+      {message && !dismissed ? (
         <p
           className={`max-w-3xl text-xs break-words ${
             isError ? 'text-destructive' : 'text-muted-foreground'
@@ -357,37 +630,6 @@ export function RefreshViewsButton({
           {message}
         </p>
       ) : null}
-      {job && job.failed > 0 && job.failures.length > 0 ? (
-        <ul className="max-w-3xl space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-muted-foreground">
-          <li className="flex flex-wrap items-center justify-between gap-2 font-medium text-destructive">
-            <span>Failed videos</span>
-            {!running ? (
-              <button
-                type="button"
-                onClick={() => void start('retry')}
-                className="rounded-md border border-destructive/40 px-2 py-1 text-[11px] font-medium text-destructive hover:bg-destructive/10"
-              >
-                Retry failed videos
-              </button>
-            ) : null}
-          </li>
-          {job.failures.map((s) => (
-            <li key={`${s.id}-${s.reason}`} className="break-all">
-              <a
-                href={s.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline underline-offset-2"
-                dir="ltr"
-              >
-                #{s.id}
-              </a>
-              {': '}
-              {publicViewsError(s.reason)}
-            </li>
-          ))}
-        </ul>
-      ) : null}
     </div>
   )
 }
@@ -396,62 +638,119 @@ export function RefreshVideoButton({
   submissionId,
   label,
   endpoint = ADMIN_ENDPOINT,
+  initialError = null,
 }: {
   submissionId: number
   label: string
   endpoint?: string
+  initialError?: string | null
 }) {
   const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
+  const [failed, setFailed] = useState(Boolean(initialError))
+  const [status, setStatus] = useState<'updated' | null>(null)
+  const [fading, setFading] = useState(false)
+  const generation = useRef(0)
+  const succeeded = useRef(false)
+  const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (succeeded.current) {
+      setFailed(false)
+      return
+    }
+    setFailed(Boolean(initialError))
+  }, [initialError])
+
+  useEffect(() => {
+    function onUpdate(event: Event) {
+      const detail = (event as CustomEvent<{ id?: number; error?: string | null }>).detail
+      if (detail?.id !== submissionId) return
+      if (detail.error === null) {
+        setFailed(false)
+      }
+    }
+    window.addEventListener(SUBMISSION_VIEWS_EVENT, onUpdate)
+    return () => window.removeEventListener(SUBMISSION_VIEWS_EVENT, onUpdate)
+  }, [submissionId])
+
+  useEffect(() => {
+    return () => {
+      if (fadeTimer.current) clearTimeout(fadeTimer.current)
+    }
+  }, [])
 
   async function run() {
+    if (pending) return
+    const my = ++generation.current
     setPending(true)
-    setError(null)
+    setFailed(false)
     setStatus(null)
+    setFading(false)
+    if (fadeTimer.current) {
+      clearTimeout(fadeTimer.current)
+      fadeTimer.current = null
+    }
     try {
       const data = await fetchChunk(0, 1, { submissionId }, endpoint)
-      if (data.failed > 0) {
-        setError(data.failureSamples?.[0]?.reason || 'Could not refresh this video.')
+      if (my !== generation.current) return
+      if (data.failed > 0 || data.checked === 0) {
+        setFailed(true)
         setStatus(null)
         return
       }
-      if (data.checked === 0) {
-        setError('Video not found for refresh.')
-        return
-      }
       if (typeof data.views === 'number' && Number.isFinite(data.views)) {
-        announceSubmissionViews(submissionId, data.views)
+        announceSubmissionViews(submissionId, data.views, { error: null })
       }
-      setStatus(data.updated > 0 ? 'Updated' : 'Already current')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Refresh failed')
+      succeeded.current = true
+      setFailed(false)
+      setStatus('updated')
+      fadeTimer.current = setTimeout(() => {
+        if (my !== generation.current) return
+        setFading(true)
+        fadeTimer.current = setTimeout(() => {
+          if (my !== generation.current) return
+          setStatus(null)
+          setFading(false)
+        }, 400)
+      }, 2200)
+    } catch {
+      if (my !== generation.current) return
+      setFailed(true)
+      setStatus(null)
     } finally {
-      setPending(false)
+      if (my === generation.current) setPending(false)
     }
   }
 
+  const hint = failed ? (initialError ? publicViewsError(initialError) : 'Refresh failed. Retry.') : label
+
   return (
-    <div className="flex flex-col items-end gap-0.5">
+    <div className="flex w-[4.5rem] flex-col items-end">
       <button
         type="button"
         disabled={pending}
         onClick={() => void run()}
-        title={label}
-        aria-label={label}
+        title={hint}
+        aria-label={failed ? 'Retry refresh' : label}
         className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
       >
         <RefreshCw className={`size-3.5 ${pending ? 'animate-spin' : ''}`} />
       </button>
-      {error ? (
-        <span className="max-w-[160px] text-left text-[11px] leading-snug text-destructive">
-          {error}
-        </span>
-      ) : status ? (
-        <span className="max-w-[160px] text-left text-[11px] leading-snug text-emerald-700 dark:text-emerald-300">
-          {status}
-        </span>
-      ) : null}
+      <span className="flex h-4 items-center text-[11px] leading-none">
+        {failed ? (
+          <span className="text-destructive">Retry</span>
+        ) : status === 'updated' ? (
+          <span
+            className={`text-emerald-700 transition-opacity duration-300 dark:text-emerald-300 ${
+              fading ? 'opacity-0' : 'opacity-100'
+            }`}
+          >
+            Updated
+          </span>
+        ) : (
+          <span className="opacity-0">Updated</span>
+        )}
+      </span>
     </div>
   )
 }

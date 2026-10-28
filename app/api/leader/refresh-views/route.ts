@@ -66,10 +66,12 @@ export async function POST(req: Request) {
       delayMs: 60,
       filters,
     })
-    revalidatePath('/leader', 'layout')
-    revalidatePath('/admin')
-    revalidatePath('/admin/creators', 'layout')
-    revalidatePath('/submit')
+    if (!filters.submissionId) {
+      revalidatePath('/leader', 'layout')
+      revalidatePath('/admin')
+      revalidatePath('/admin/creators', 'layout')
+      revalidatePath('/submit')
+    }
     return NextResponse.json(result)
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unknown refresh error'

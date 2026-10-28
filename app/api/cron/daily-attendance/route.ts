@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
-import { refreshViews, type RefreshViewsScope } from '@/lib/refresh-views'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -46,17 +45,13 @@ async function run(req: Request) {
 
   const url = new URL(req.url)
   const skipViews = url.searchParams.get('skipViews') === '1'
-  let views: Awaited<ReturnType<typeof refreshViews>> | null = null
-  let viewsError: string | null = null
-
+  let catalog: { started: boolean; error?: string } = { started: false }
   if (!skipViews) {
-    if (!process.env.TIKHUB_API_KEY?.trim()) {
-      viewsError = 'TIKHUB_API_KEY is not set'
-    } else {
-      const scopeParam = url.searchParams.get('scope')
-      const scope: RefreshViewsScope = scopeParam === 'all' ? 'all' : 'recent'
-      views = await refreshViews(scope, { delayMs: 80, limit: 40 })
-    }
+    const { kickCatalogViewRefresh } = await import('@/lib/daily-views-store')
+    catalog = await kickCatalogViewRefresh({ drainMs: 90_000 }).catch((e) => ({
+      started: false,
+      error: String(e),
+    }))
   }
 
   revalidatePath('/admin')
@@ -72,8 +67,7 @@ async function run(req: Request) {
     telegramError: telegram.error ?? null,
     webhook,
     contractReviews,
-    views,
-    viewsError,
+    catalog,
   })
 }
 

@@ -9,6 +9,7 @@ import { ConsistencyCalendar } from '@/components/admin/consistency-calendar'
 import { PanelBoard, type PanelItem } from '@/components/admin/panel-board'
 import { SubmissionsTable } from '@/components/admin/submissions-table'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
+import { idsOnPage } from '@/lib/refresh-scope'
 import { PersonHandlesLine } from '@/components/person-handles'
 import { StatCard } from '@/components/stat-card'
 import { getLeaderSession } from '@/lib/leader-auth'
@@ -285,7 +286,15 @@ export default async function LeaderCreatorPage({
       children: (
         <div className="flex flex-col gap-3">
           <Suspense fallback={<p className="text-xs text-muted-foreground">…</p>}>
-            <RefreshViewsButton label={t('refreshViews')} creatorId={id} allDates endpoint={LEADER_REFRESH} />
+            <RefreshViewsButton
+              key={id}
+              label={t('refreshViews')}
+              allLabel={t('refreshAllViews')}
+              creatorId={id}
+              allDates
+              endpoint={LEADER_REFRESH}
+              submissionIds={idsOnPage(submissions)}
+            />
           </Suspense>
           <SubmissionsTable
             submissions={submissions.map((s) => ({ ...s, creator_name: creator.name }))}

@@ -54,5 +54,14 @@ export async function applyFetchViewsResult(
       )
     RETURNING id
   `) as { id: number }[]
+  if (saved.length > 0) {
+    const { recordViewSnapshot } = await import('@/lib/daily-views-store')
+    await recordViewSnapshot({
+      submissionId: id,
+      views,
+      videoKey: resolvedKey,
+      observedAt: fetchedAt ?? new Date().toISOString(),
+    }).catch(() => undefined)
+  }
   return saved.length > 0
 }

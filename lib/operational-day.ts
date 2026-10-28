@@ -63,3 +63,44 @@ export function operationalDayFromIso(
 export function lastCompletedOperationalDay(today: string): string {
   return addDays(today, -1)
 }
+
+function tzOffsetMs(instant: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(instant)
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((p) => p.type === type)?.value)
+  const asUtc = Date.UTC(
+    value('year'),
+    value('month') - 1,
+    value('day'),
+    value('hour'),
+    value('minute'),
+    value('second'),
+  )
+  return asUtc - instant.getTime()
+}
+
+/** UTC instant when `ymd` starts in `timeZone` (Riyadh midnight → 21:00Z the day before). */
+export function zonedDayStartUtc(ymd: string, timeZone: string = OPERATIONAL_TZ): Date {
+  let utc = Date.parse(`${ymd}T00:00:00.000Z`)
+  for (let i = 0; i < 4; i++) {
+    const offset = tzOffsetMs(new Date(utc), timeZone)
+    utc = Date.parse(`${ymd}T00:00:00.000Z`) - offset
+  }
+  return new Date(utc)
+}
+
+export function zonedDayRangeUtc(
+  ymd: string,
+  timeZone: string = OPERATIONAL_TZ,
+): { start: Date; end: Date } {
+  return { start: zonedDayStartUtc(ymd, timeZone), end: zonedDayStartUtc(addDays(ymd, 1), timeZone) }
+}

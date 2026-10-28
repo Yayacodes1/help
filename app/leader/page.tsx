@@ -37,6 +37,7 @@ import { AttentionBoard } from '@/components/admin/attention-board'
 import { SubmissionsTable } from '@/components/admin/submissions-table'
 import { FiltersBar } from '@/components/admin/filters-bar'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
+import { idsOnPage } from '@/lib/refresh-scope'
 import { AnalyticsPanel } from '@/components/admin/analytics-panel'
 import { TopVideosPanel } from '@/components/admin/top-videos-panel'
 import { RoleSelector } from '@/components/admin/role-selector'
@@ -456,10 +457,12 @@ export default async function LeaderHomePage({
             <Suspense fallback={<p className="text-xs text-muted-foreground">…</p>}>
               <RefreshViewsButton
                 label={t('refreshViews')}
+                allLabel={t('refreshAllViews')}
                 defaultFrom={monthStart}
                 defaultTo={monthEnd}
                 endpoint={LEADER_REFRESH}
                 defaultRole="all"
+                submissionIds={idsOnPage(submissions)}
               />
             </Suspense>
             <SubmissionsTable

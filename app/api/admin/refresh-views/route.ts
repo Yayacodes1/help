@@ -73,10 +73,12 @@ export async function POST(req: Request) {
       filters: scope === 'filtered' ? filters : undefined,
     })
 
-    revalidatePath('/admin')
-    revalidatePath('/admin/creators', 'layout')
-    revalidatePath('/leader', 'layout')
-    revalidatePath('/submit')
+    if (!filters.submissionId) {
+      revalidatePath('/admin')
+      revalidatePath('/admin/creators', 'layout')
+      revalidatePath('/leader', 'layout')
+      revalidatePath('/submit')
+    }
     return NextResponse.json(result)
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unknown refresh error'

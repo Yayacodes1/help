@@ -4,6 +4,7 @@ import { Suspense, useState } from 'react'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { saveContractCommission, setContractCommissionPaid } from '@/app/actions/admin'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
+import { idsOnPage } from '@/lib/refresh-scope'
 import type {
   CommissionContractSheet,
   CommissionOutsideSheet,
@@ -174,6 +175,7 @@ export function CreatorCommissionPanel({
   refreshFrom,
   refreshTo,
   refreshLabel,
+  refreshAllLabel = 'Refresh all views',
 }: {
   creatorId: number
   sheets: CommissionContractSheet[]
@@ -181,6 +183,7 @@ export function CreatorCommissionPanel({
   refreshFrom: string
   refreshTo: string
   refreshLabel: string
+  refreshAllLabel?: string
 }) {
   const initial = sheets.find((sheet) => sheet.isActive)?.id ?? sheets[sheets.length - 1]?.id ?? null
   const [selectedId, setSelectedId] = useState<number | null>(initial)
@@ -192,10 +195,13 @@ export function CreatorCommissionPanel({
         <p className="text-sm text-muted-foreground">Pick a contract period. The rate and the paid mark stay on that contract.</p>
         <Suspense fallback={<p className="text-xs text-muted-foreground">Loading refresh…</p>}>
           <RefreshViewsButton
+            key={creatorId}
             label={refreshLabel}
+            allLabel={refreshAllLabel}
             creatorId={creatorId}
             defaultFrom={selected?.startDate ?? refreshFrom}
             defaultTo={selected?.endDate ?? refreshTo}
+            submissionIds={idsOnPage(selected?.videos ?? [])}
           />
         </Suspense>
       </div>

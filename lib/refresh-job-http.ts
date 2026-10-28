@@ -3,7 +3,6 @@ import type { Platform } from '@/lib/db'
 import type { RefreshFilters } from '@/lib/refresh-views'
 import {
   drainRefreshJob,
-  getLatestRefreshJob,
   retryFailedRefreshJob,
   startRefreshJob,
   tickRefreshJob,
@@ -23,6 +22,8 @@ type Body = {
   platform?: Platform
   page?: number
   pageSize?: number
+  submissionIds?: number[]
+  allMatching?: boolean
 }
 
 function filtersFrom(body: Body, extra?: Partial<RefreshFilters>): RefreshFilters {
@@ -36,12 +37,15 @@ function filtersFrom(body: Body, extra?: Partial<RefreshFilters>): RefreshFilter
     creatorIds: extra?.creatorIds ?? null,
     page: body.page ?? extra?.page ?? null,
     pageSize: body.pageSize ?? extra?.pageSize ?? null,
+    submissionIds: body.submissionIds ?? extra?.submissionIds ?? null,
+    allMatching: body.allMatching ?? extra?.allMatching ?? false,
+    catalog: extra?.catalog ?? false,
   }
 }
 
-export async function handleRefreshJobGet(actor: RefreshJobActor) {
-  const job = await getLatestRefreshJob(actor)
-  return NextResponse.json({ job })
+export async function handleRefreshJobGet(_actor: RefreshJobActor) {
+  // Never restore a previous run's cards on reload or navigation.
+  return NextResponse.json({ job: null })
 }
 
 export async function handleRefreshJobPost(
@@ -73,8 +77,7 @@ export async function handleRefreshJobPost(
 
   try {
     if (action === 'status') {
-      const job = await getLatestRefreshJob(actor)
-      return NextResponse.json({ job })
+      return NextResponse.json({ job: null })
     }
     if (action === 'tick') {
       if (jobId == null) return NextResponse.json({ error: 'Missing jobId' }, { status: 400 })

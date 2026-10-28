@@ -12,7 +12,6 @@ import { PLATFORM_META } from '@/lib/platforms'
 import { scopedPersonHref, type LinkScope } from '@/lib/admin-href'
 import { projectToneClass } from '@/lib/project-scope'
 import type { Project } from '@/lib/db'
-import { publicViewsError } from '@/lib/tikhub-views'
 import { VideoPager } from '@/components/admin/video-pager'
 import { VIDEO_PAGE_SIZE } from '@/lib/video-page'
 
@@ -107,9 +106,9 @@ export function SubmissionsTable({
         </thead>
         <tbody>
           {submissions.map((s) => {
-            const err =
+            const storedError =
               'views_error' in s && typeof s.views_error === 'string' && s.views_error
-                ? publicViewsError(s.views_error, s.platform)
+                ? s.views_error
                 : null
             const submittedAt = 'submitted_at' in s && s.submitted_at ? s.submitted_at : null
             const late =
@@ -207,18 +206,13 @@ export function SubmissionsTable({
                 </td>
                 <td className="px-2 py-2 text-right">
                   <div className="flex items-start justify-end gap-1.5">
-                    <div className="flex flex-col items-end gap-0.5">
-                      <ViewsCell id={s.id} views={s.views ?? 0} editable={editableViews} />
-                      {err && (
-                        <span
-                          className="max-w-[220px] text-left text-[11px] leading-snug text-destructive"
-                          title={err}
-                        >
-                          {err}
-                        </span>
-                      )}
-                    </div>
-                    <RefreshVideoButton submissionId={s.id} label={refreshLabel} endpoint={refreshEndpoint} />
+                    <ViewsCell id={s.id} views={s.views ?? 0} editable={editableViews} />
+                    <RefreshVideoButton
+                      submissionId={s.id}
+                      label={refreshLabel}
+                      endpoint={refreshEndpoint}
+                      initialError={storedError}
+                    />
                   </div>
                 </td>
                 {manageVideos && (
