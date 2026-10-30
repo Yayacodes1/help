@@ -5,6 +5,7 @@ import {
   classifyViewsError,
   parseRetryAfterMs,
   publicViewsCategoryMessage,
+  shouldPersistViewsError,
 } from './tikhub-errors.ts'
 
 test('classifyViewsError maps 429, 400, auth, and missing metrics', () => {
@@ -31,6 +32,17 @@ test('backoffMs is bounded with jitter', () => {
   const high = backoffMs(8, 1_000, 20_000, () => 1)
   assert.ok(low >= 500 && low <= 1_000)
   assert.equal(high, 20_000)
+})
+
+test('only fatal categories are stored as a row Retry label', () => {
+  assert.equal(shouldPersistViewsError('rate_limited'), false)
+  assert.equal(shouldPersistViewsError('timeout'), false)
+  assert.equal(shouldPersistViewsError('provider_unavailable'), false)
+  assert.equal(shouldPersistViewsError('unknown'), false)
+  assert.equal(shouldPersistViewsError('invalid_url'), true)
+  assert.equal(shouldPersistViewsError('metric_missing'), true)
+  assert.equal(shouldPersistViewsError('auth'), true)
+  assert.equal(shouldPersistViewsError('billing'), true)
 })
 
 test('public messages are actionable, not a generic Instagram line', () => {

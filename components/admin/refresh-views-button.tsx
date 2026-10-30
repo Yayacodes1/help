@@ -160,6 +160,24 @@ async function fetchChunk(
   return data
 }
 
+async function fetchChunkRetry(
+  offset: number,
+  limit: number,
+  filters: ReturnType<typeof readFilters>,
+  endpoint: string = ADMIN_ENDPOINT,
+): Promise<ChunkResult> {
+  let last: unknown
+  for (let i = 0; i < 4; i++) {
+    try {
+      return await fetchChunk(offset, limit, filters, endpoint)
+    } catch (e) {
+      last = e
+      await new Promise((r) => setTimeout(r, 700 * (i + 1)))
+    }
+  }
+  throw last instanceof Error ? last : new Error('Refresh failed')
+}
+
 type JobStatus = {
   id: number
   status: 'running' | 'completed' | 'cancelled'
@@ -636,18 +654,10 @@ export function RefreshVideoButton({
   initialError?: string | null
 }) {
   const [pending, setPending] = useState(false)
-  const [failed, setFailed] = useState(Boolean(initialError))
+  const [failed, setFailed] = useState(false)
   const [status, setStatus] = useState<'updated' | null>(null)
   const generation = useRef(0)
   const succeeded = useRef(false)
-
-  useEffect(() => {
-    if (succeeded.current) {
-      setFailed(false)
-      return
-    }
-    setFailed(Boolean(initialError))
-  }, [initialError])
 
   useEffect(() => {
     function onUpdate(event: Event) {
@@ -669,19 +679,23 @@ export function RefreshVideoButton({
     setPending(true)
     setFailed(false)
     try {
-      const data = await fetchChunk(0, 1, { submissionId }, endpoint)
+      const data = await fetchChunkRetry(0, 1, { submissionId }, endpoint)
       if (my !== generation.current) return
-      if (data.failed > 0 || data.checked === 0) {
-        setFailed(true)
-        setStatus(null)
-        return
-      }
       if (typeof data.views === 'number' && Number.isFinite(data.views)) {
         announceSubmissionViews(submissionId, data.views, { error: null })
+        succeeded.current = true
+        setFailed(false)
+        setStatus('updated')
+        return
       }
-      succeeded.current = true
-      setFailed(false)
-      setStatus('updated')
+      if (data.checked > 0 && data.failed === 0) {
+        succeeded.current = true
+        setFailed(false)
+        setStatus('updated')
+        return
+      }
+      setFailed(true)
+      setStatus(null)
     } catch {
       if (my !== generation.current) return
       setFailed(true)
@@ -691,7 +705,7 @@ export function RefreshVideoButton({
     }
   }
 
-  const hint = failed ? (initialError ? publicViewsError(initialError) : 'Refresh failed. Retry.') : label
+  const hint = failed ? 'Refresh failed. Retry.' : label
 
   return (
     <div className="flex w-[4.5rem] flex-col items-end">

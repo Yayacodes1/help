@@ -614,11 +614,6 @@ export async function tickRefreshJob(
         SET status = 'failed', error = ${reason}
         WHERE job_id = ${jobId} AND submission_id = ${submissionId}
       `
-      await sql`
-        UPDATE submissions
-        SET views_error = ${reason}
-        WHERE id = ${submissionId}
-      `.catch(() => undefined)
     }
   })
 

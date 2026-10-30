@@ -126,7 +126,7 @@ async function decrementInflight() {
 export async function acquireTikHubQuota(): Promise<QuotaGate> {
   const until = await readTikHubBlockedUntil()
   const remaining = until - Date.now()
-  if (remaining > 2_000) {
+  if (remaining > 10_000) {
     return { ok: false, retryAfterMs: remaining }
   }
   if (remaining > 0) {

@@ -100,6 +100,15 @@ export function isTransientViewsCategory(category: ViewsErrorCategory): boolean 
   return category === 'timeout' || category === 'provider_unavailable'
 }
 
+export function isRetryableViewsCategory(category: ViewsErrorCategory): boolean {
+  return isTransientViewsCategory(category) || isRateLimitedCategory(category)
+}
+
+/** Stale rate-limit / timeout text must not pin a Retry label on the row. */
+export function shouldPersistViewsError(category: ViewsErrorCategory): boolean {
+  return isFatalViewsCategory(category)
+}
+
 export const INSTAGRAM_REFRESH_USER_ERROR =
   "Couldn't refresh Instagram views. Try again later."
 

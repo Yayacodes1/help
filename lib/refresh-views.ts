@@ -7,10 +7,11 @@ import { getServerToday } from '@/lib/queries'
 import { fetchViewsDetailed, type FetchViewsResult } from '@/lib/tikhub'
 import { applyFetchViewsResult } from '@/lib/submission-meta'
 import {
+  backoffMs,
   classifyViewsError,
-  isRateLimitedCategory,
-  isTransientViewsCategory,
+  isRetryableViewsCategory,
   publicViewsError,
+  shouldPersistViewsError,
 } from '@/lib/tikhub-errors'
 
 export { isTransientViewsError } from '@/lib/tikhub-errors'
@@ -24,7 +25,7 @@ export async function hydrateSubmissionViews(
       const result = await fetchViewsDetailed(row.platform, row.url)
       if (result.ok) {
         await applyFetchViewsResult(row.id, result, { updatePostedAt: true })
-      } else {
+      } else if (shouldPersistViewsError(result.category)) {
         await sql`
           UPDATE submissions
           SET views_error = ${publicViewsError(result.reason, row.platform).slice(0, 400)}
@@ -36,6 +37,7 @@ export async function hydrateSubmissionViews(
         e instanceof Error ? e.message : 'views fetch failed',
         row.platform,
       )
+      if (!shouldPersistViewsError(classifyViewsError(reason))) continue
       await sql`
         UPDATE submissions
         SET views_error = ${reason.slice(0, 400)}
@@ -144,17 +146,26 @@ export async function refreshOneSubmission(
     const result = preloaded ?? (await fetchViewsDetailed(platform, row.url))
     if (!result.ok) {
       const reason = publicViewsError(result.reason, platform)
-      await sql`
-        UPDATE submissions
-        SET views_error = ${reason.slice(0, 400)}
-        WHERE id = ${row.id}
-      `
-      if (isRateLimitedCategory(result.category)) {
+      if (shouldPersistViewsError(result.category)) {
+        await sql`
+          UPDATE submissions
+          SET views_error = ${reason.slice(0, 400)}
+          WHERE id = ${row.id}
+        `
+      } else {
+        await sql`
+          UPDATE submissions
+          SET views_error = NULL
+          WHERE id = ${row.id}
+            AND views_error IS NOT NULL
+        `.catch(() => undefined)
+      }
+      if (isRetryableViewsCategory(result.category)) {
         return {
           outcome: 'waiting',
           reason,
           platformsFixed,
-          retryAfterMs: result.retryAfterMs ?? 5_000,
+          retryAfterMs: result.retryAfterMs ?? backoffMs(1),
         }
       }
       return { outcome: 'failed', reason, platformsFixed }
@@ -190,16 +201,24 @@ export async function refreshOneSubmission(
     return { outcome: 'skipped', views: result.views, platformsFixed }
   }
 
+  const maxAttempts = options.retryTransient === true ? 5 : 1
+  const deadline = Date.now() + 40_000
   let result = await attempt(options.preloaded)
-  if (
-    options.retryTransient === true &&
-    result.outcome === 'failed' &&
-    result.reason &&
-    isTransientViewsCategory(classifyViewsError(result.reason))
-  ) {
-    await new Promise((r) => setTimeout(r, 400))
+  for (let i = 1; i < maxAttempts; i++) {
+    const retryable =
+      result.outcome === 'waiting' ||
+      (result.outcome === 'failed' &&
+        Boolean(result.reason) &&
+        isRetryableViewsCategory(classifyViewsError(result.reason ?? '')))
+    if (!retryable) break
+    const wait = Math.min(2_000, Math.max(400, result.retryAfterMs ?? backoffMs(i)))
+    if (Date.now() + wait >= deadline) break
+    await new Promise((r) => setTimeout(r, wait))
     result = await attempt(null)
     result.platformsFixed = Math.max(result.platformsFixed, platformsFixed)
+  }
+  if (result.outcome === 'waiting' && options.retryTransient === true) {
+    return { outcome: 'skipped', views: row.views, platformsFixed: result.platformsFixed }
   }
   return result
 }
@@ -313,18 +332,22 @@ export async function refreshViews(
       await new Promise((r) => setTimeout(r, delayMs))
     }
 
-    const one = await refreshOneSubmission(row)
+    const single = Boolean(options.filters?.submissionId)
+    const one = await refreshOneSubmission(row, { retryTransient: single })
     platformsFixed += one.platformsFixed
     if (one.views != null) views = one.views
     else if (one.outcome !== 'failed') views = row.views
     if (one.outcome === 'updated') updated += 1
-    else if (one.outcome === 'skipped') skipped += 1
-    else {
+    else if (one.outcome === 'skipped' || one.outcome === 'waiting') {
+      skipped += 1
+      if (views == null) views = row.views
+    } else {
       failed += 1
       if (one.reason) failReasons.push(one.reason)
       if (one.reason && failureSamples.length < 12) {
         failureSamples.push({ id: row.id, url: row.url, reason: one.reason })
       }
+      if (single) views = row.views
     }
   }
 
