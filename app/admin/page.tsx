@@ -270,7 +270,7 @@ export default async function AdminPage({
   const selectedProject = findProjectById(projectsEarly, projectId ?? null)
   const miyqatScope = selectedProject != null && isMiyqatProjectName(selectedProject.name)
   const includeAllReposters = projectId != null
-  const includeAllCreators = miyqatScope
+  const includeAllCreators = false
 
   const tab = resolveAdminTab(sp.tab, sp.panel)
   const videosOpen = tab === 'today' && sp.panel === 'videos'
@@ -282,8 +282,9 @@ export default async function AdminPage({
   const projects = projectsEarly
 
   const creatorsBase = await getCreatorsWithProgressOnDate(selectedDay, projectId, roleSql, {
-    includeAllReposters,
+    includeAllReposters: tab === 'people' ? roleSql !== 'creator' : includeAllReposters,
     includeAllCreators,
+    projectMembersOnly: tab === 'people' && projectId != null,
   })
   const activeBase = creatorsBase.filter((c) => !c.paused_at)
 
@@ -1547,7 +1548,7 @@ export default async function AdminPage({
                         projects={projects}
                         roleFilter="creator"
                         today={today}
-                        currentProjectId={projectId}
+                        currentProjectId={side.project.id}
                         isOwner={isOwner}
                         leaders={leaderLinks.leaders}
                       />

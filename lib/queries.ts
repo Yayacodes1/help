@@ -401,13 +401,12 @@ export async function getCreatorsWithProgressOnDate(
   const pid = projectId ?? null
   const roleFilter = role ?? null
   const ids = opts?.creatorIds ?? null
-  // Miyqat: show every reposter + every creator (homes not assigned yet).
-  // Other projects: all reposters still, creators by home / unassigned / posts.
-  // projectMembersOnly: home project, or no home (Both) so a new person still shows.
-  // Reposters with a home project also show where they have posted.
+  // Creators stay on their home project. Never dump the other brand's roster
+  // onto Miqat/Notek. projectMembersOnly skips “posted here” cross-listings.
+  // Reposters can still be included everywhere when includeAllReposters is set.
   const membersOnly = opts?.projectMembersOnly ?? false
-  const includeAllReposters = !membersOnly && (opts?.includeAllReposters ?? pid != null)
-  const includeAllCreators = !membersOnly && (opts?.includeAllCreators ?? false)
+  const includeAllReposters = opts?.includeAllReposters ?? (!membersOnly && pid != null)
+  const includeAllCreators = opts?.includeAllCreators ?? false
   return (await sql`
     SELECT
       c.id, c.name, c.token, c.project_id, c.created_at, c.role, c.pay_currency, c.biweekly_amount::float AS biweekly_amount,
@@ -445,7 +444,7 @@ export async function getCreatorsWithProgressOnDate(
         OR c.project_id = ${pid}
         OR c.project_id IS NULL
         OR (
-          (c.role = 'reposter' OR c.project_id IS NULL OR NOT ${membersOnly}::boolean)
+          NOT ${membersOnly}::boolean
           AND EXISTS (
             SELECT 1 FROM submissions sx
             WHERE sx.creator_id = c.id AND sx.project_id = ${pid}

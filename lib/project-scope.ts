@@ -50,3 +50,19 @@ export function splitProjectPair<T extends { id: number; name: string }>(project
   if (notek && miqat && notek.id !== miqat.id) return [notek, miqat]
   return projects.slice(0, 2)
 }
+
+/**
+ * Manage list for one brand: creators stay on their home project.
+ * Reposters work for both, so they still appear.
+ */
+export function personBelongsOnProjectManage(
+  person: { role?: string | null; project_id?: number | null },
+  selectedProjectId: number | string | null | undefined,
+): boolean {
+  if (selectedProjectId == null || selectedProjectId === '') return true
+  const pid = Number(selectedProjectId)
+  if (!Number.isFinite(pid)) return true
+  if (person.role === 'reposter') return true
+  if (person.project_id == null) return true
+  return person.project_id === pid
+}

@@ -17,6 +17,7 @@ import { BulkReposterPay } from '@/components/admin/bulk-reposter-pay'
 import { RestoreStreaksButton } from '@/components/admin/restore-streaks-button'
 import { BrandHandleFields, PersonHandlesLine } from '@/components/person-handles'
 import { adminPersonHref } from '@/lib/admin-href'
+import { personBelongsOnProjectManage } from '@/lib/project-scope'
 import Link from 'next/link'
 
 function GoalPill({
@@ -69,10 +70,19 @@ export function CreatorsManager({
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<'name' | 'videos' | 'streak' | 'today'>('name')
 
+  const scopedCreators = useMemo(
+    () => creators.filter((c) => personBelongsOnProjectManage(c, currentProjectId)),
+    [creators, currentProjectId],
+  )
+  const scopedPaused = useMemo(
+    () => pausedCreators.filter((c) => personBelongsOnProjectManage(c, currentProjectId)),
+    [pausedCreators, currentProjectId],
+  )
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase().replace(/^@/, '')
     const list = q
-      ? creators.filter((c) =>
+      ? scopedCreators.filter((c) =>
           [
             c.name,
             c.tiktok_username,
@@ -83,7 +93,7 @@ export function CreatorsManager({
             c.miqat_instagram_username,
           ].some((v) => v?.toLowerCase().includes(q)),
         )
-      : creators
+      : scopedCreators
     const today = (c: CreatorTrackingRow) => c.today_instagram + c.today_tiktok
     return [...list].sort((a, b) => {
       if (sort === 'videos') return b.total_videos - a.total_videos || a.name.localeCompare(b.name)
@@ -91,7 +101,7 @@ export function CreatorsManager({
       if (sort === 'today') return today(b) - today(a) || a.name.localeCompare(b.name)
       return a.name.localeCompare(b.name)
     })
-  }, [creators, query, sort])
+  }, [scopedCreators, query, sort])
 
   const defaultRole: ParticipantRole =
     roleFilter === 'reposter' ? 'reposter' : 'creator'
@@ -527,16 +537,16 @@ export function CreatorsManager({
         )}
       </ul>
 
-      {pausedCreators.length > 0 ? (
+      {scopedPaused.length > 0 ? (
         <details className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 px-3 py-2">
           <summary className="cursor-pointer text-sm font-medium">
-            Paused ({pausedCreators.length})
+            Paused ({scopedPaused.length})
             <span className="ml-2 text-xs font-normal text-muted-foreground">
               stopped working with us — hidden from daily lists, still in analytics
             </span>
           </summary>
           <ul className="mt-2 flex flex-col divide-y divide-border">
-            {pausedCreators.map((c) => (
+            {scopedPaused.map((c) => (
               <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <div className="min-w-0">
                   <Link
