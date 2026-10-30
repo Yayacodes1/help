@@ -97,11 +97,7 @@ export async function handleRefreshJobPost(
     }
 
     const started = await startRefreshJob(actor, filtersFrom(body, extra))
-    const job =
-      started.status === 'running' && started.total > 0
-        ? (await drainRefreshJob(started.id, actor)) ?? started
-        : started
-    return NextResponse.json({ job })
+    return NextResponse.json({ job: started })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unknown refresh error'
     return NextResponse.json(

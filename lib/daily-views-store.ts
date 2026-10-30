@@ -39,7 +39,7 @@ export async function ensureViewSnapshotTable() {
       INSERT INTO submission_view_snapshots (submission_id, video_key, views, observed_at, riyadh_day)
       SELECT s.id,
              s.video_key,
-             s.views,
+             COALESCE(s.views, 0),
              s.views_fetched_at,
              (s.views_fetched_at AT TIME ZONE 'Asia/Riyadh')::date
       FROM submissions s
@@ -48,6 +48,8 @@ export async function ensureViewSnapshotTable() {
           SELECT 1 FROM submission_view_snapshots x WHERE x.submission_id = s.id
         )
     `
+  }).catch((err) => {
+    console.warn('[view-snapshots] table setup failed', err)
   })
 }
 
@@ -157,12 +159,10 @@ export async function kickCatalogViewRefresh(opts: { drainMs?: number } = {}): P
   }
   const { startRefreshJob, drainRefreshJob } = await import('@/lib/refresh-job')
   try {
-    const started = await startRefreshJob(
-      { kind: 'admin', actorId: 'cron-catalog' },
-      { catalog: true, allMatching: true },
-    )
+    const actor = { kind: 'cron' as const, actorId: 'cron-catalog' }
+    const started = await startRefreshJob(actor, { catalog: true, allMatching: true })
     if (opts.drainMs && started.status === 'running') {
-      const drained = await drainRefreshJob(started.id, { kind: 'admin', actorId: 'cron-catalog' }, opts.drainMs)
+      const drained = await drainRefreshJob(started.id, actor, opts.drainMs)
       return { started: true, jobId: drained?.id ?? started.id, status: drained?.status ?? started.status }
     }
     return { started: true, jobId: started.id, status: started.status }

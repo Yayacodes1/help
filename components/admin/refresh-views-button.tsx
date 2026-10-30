@@ -246,6 +246,19 @@ function formatClock(value?: string | null): string | null {
   return d.toLocaleString()
 }
 
+function announceJobRows(job: JobStatus) {
+  for (const row of job.updates ?? []) {
+    if (typeof row.viewsAfter === 'number') {
+      announceSubmissionViews(row.id, row.viewsAfter, { error: null })
+    }
+  }
+  for (const row of job.unchanged ?? []) {
+    if (typeof row.views === 'number') {
+      announceSubmissionViews(row.id, row.views, { error: null })
+    }
+  }
+}
+
 async function jobRequest(
   endpoint: string,
   body: Record<string, unknown>,
@@ -296,6 +309,7 @@ export function RefreshViewsButton({
   const [message, setMessage] = useState<string | null>(null)
   const [isError, setIsError] = useState(false)
   const [dismissed, setDismissed] = useState(false)
+  const [launching, setLaunching] = useState(false)
   const driveGen = useRef(0)
   const starting = useRef(false)
   const cancelled = useRef(false)
@@ -351,9 +365,6 @@ export function RefreshViewsButton({
     return () => {
       cancelled.current = true
       driveGen.current += 1
-      dismissedRef.current = true
-      ownedJobId.current = null
-      ownedCreatorId.current = null
       clearHideTimer()
     }
   }, [creatorId, jobEndpoint])
@@ -370,6 +381,7 @@ export function RefreshViewsButton({
         if (driveGen.current !== gen) break
         if (acceptJobUpdate(next)) {
           setJob(next)
+          announceJobRows(next)
         }
         if (next.status !== 'running') break
         if (next.processed <= lastProcessed.current) {
@@ -386,18 +398,6 @@ export function RefreshViewsButton({
             ? 'No videos on this page.'
             : `Done — ${next.succeeded + next.skipped} saved, ${next.failed} failed (${next.total} videos).`,
         )
-      }
-      if (!cancelled.current) {
-        for (const row of next.updates ?? []) {
-          if (typeof row.viewsAfter === 'number') {
-            announceSubmissionViews(row.id, row.viewsAfter, { error: null })
-          }
-        }
-        for (const row of next.unchanged ?? []) {
-          if (typeof row.views === 'number') {
-            announceSubmissionViews(row.id, row.views, { error: null })
-          }
-        }
       }
     } catch (e) {
       if (driveGen.current !== gen || cancelled.current || dismissedRef.current) return
@@ -432,14 +432,12 @@ export function RefreshViewsButton({
     const retryJobId = action === 'retry' ? ownedJobId.current : null
     if (action === 'retry' && retryJobId == null) return
     starting.current = true
+    setLaunching(true)
     clearHideTimer()
     dismissedRef.current = false
     setDismissed(false)
     setMessage(null)
     setIsError(false)
-    if (action !== 'retry') {
-      setJob(null)
-    }
     const filters = readFilters(
       searchParams,
       { from: defaultFrom, to: defaultTo },
@@ -477,16 +475,7 @@ export function RefreshViewsButton({
               : 'No videos on this page.'
             : `Done — ${started.succeeded + started.skipped} saved, ${started.failed} failed (${started.total} videos).`,
         )
-        for (const row of started.updates ?? []) {
-          if (typeof row.viewsAfter === 'number') {
-            announceSubmissionViews(row.id, row.viewsAfter, { error: null })
-          }
-        }
-        for (const row of started.unchanged ?? []) {
-          if (typeof row.views === 'number') {
-            announceSubmissionViews(row.id, row.views, { error: null })
-          }
-        }
+        announceJobRows(started)
       }
     } catch (e) {
       if (cancelled.current || dismissedRef.current) return
@@ -494,6 +483,7 @@ export function RefreshViewsButton({
       setMessage(e instanceof Error ? e.message : 'Refresh failed')
     } finally {
       starting.current = false
+      setLaunching(false)
     }
   }
 
@@ -504,7 +494,7 @@ export function RefreshViewsButton({
     pageCreatorId: creatorId ?? null,
     jobCreatorId: job?.creatorId ?? ownedCreatorId.current,
   })
-  const running = Boolean(showPanel && job?.status === 'running')
+  const running = Boolean(launching || (showPanel && job?.status === 'running'))
   const waiting = job?.waiting ?? 0
   const startedLabel = formatClock(job?.startedAt)
   const finishedLabel = formatClock(job?.finishedAt)
@@ -648,10 +638,8 @@ export function RefreshVideoButton({
   const [pending, setPending] = useState(false)
   const [failed, setFailed] = useState(Boolean(initialError))
   const [status, setStatus] = useState<'updated' | null>(null)
-  const [fading, setFading] = useState(false)
   const generation = useRef(0)
   const succeeded = useRef(false)
-  const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (succeeded.current) {
@@ -666,30 +654,20 @@ export function RefreshVideoButton({
       const detail = (event as CustomEvent<{ id?: number; error?: string | null }>).detail
       if (detail?.id !== submissionId) return
       if (detail.error === null) {
+        succeeded.current = true
         setFailed(false)
+        setStatus('updated')
       }
     }
     window.addEventListener(SUBMISSION_VIEWS_EVENT, onUpdate)
     return () => window.removeEventListener(SUBMISSION_VIEWS_EVENT, onUpdate)
   }, [submissionId])
 
-  useEffect(() => {
-    return () => {
-      if (fadeTimer.current) clearTimeout(fadeTimer.current)
-    }
-  }, [])
-
   async function run() {
     if (pending) return
     const my = ++generation.current
     setPending(true)
     setFailed(false)
-    setStatus(null)
-    setFading(false)
-    if (fadeTimer.current) {
-      clearTimeout(fadeTimer.current)
-      fadeTimer.current = null
-    }
     try {
       const data = await fetchChunk(0, 1, { submissionId }, endpoint)
       if (my !== generation.current) return
@@ -704,15 +682,6 @@ export function RefreshVideoButton({
       succeeded.current = true
       setFailed(false)
       setStatus('updated')
-      fadeTimer.current = setTimeout(() => {
-        if (my !== generation.current) return
-        setFading(true)
-        fadeTimer.current = setTimeout(() => {
-          if (my !== generation.current) return
-          setStatus(null)
-          setFading(false)
-        }, 400)
-      }, 2200)
     } catch {
       if (my !== generation.current) return
       setFailed(true)
@@ -740,13 +709,7 @@ export function RefreshVideoButton({
         {failed ? (
           <span className="text-destructive">Retry</span>
         ) : status === 'updated' ? (
-          <span
-            className={`text-emerald-700 transition-opacity duration-300 dark:text-emerald-300 ${
-              fading ? 'opacity-0' : 'opacity-100'
-            }`}
-          >
-            Updated
-          </span>
+          <span className="text-emerald-700 dark:text-emerald-300">Updated</span>
         ) : (
           <span className="opacity-0">Updated</span>
         )}

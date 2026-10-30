@@ -18,12 +18,12 @@ import {
 const BATCH = 25
 const CONCURRENCY = 2
 const MAX_ATTEMPTS = 3
-const ALL_MATCHING_CAP = 500
+const ALL_MATCHING_CAP = 8000
 const CATALOG_CAP = 8000
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 export type RefreshJobActor = {
-  kind: 'admin' | 'leader'
+  kind: 'admin' | 'leader' | 'cron'
   actorId?: string | null
   leaderId?: number | null
 }
@@ -721,11 +721,11 @@ export async function tickAnyRunningRefreshJob(): Promise<RefreshJobStatus | nul
     WHERE status = 'running'
     ORDER BY updated_at ASC
     LIMIT 1
-  `) as { id: number; actor_kind: 'admin' | 'leader'; leader_id: number | null }[]
+  `) as { id: number; actor_kind: 'admin' | 'leader' | 'cron'; leader_id: number | null }[]
   const row = rows[0]
   if (!row) return null
   return tickRefreshJob(row.id, {
-    kind: row.actor_kind,
+    kind: row.actor_kind === 'leader' ? 'leader' : row.actor_kind === 'cron' ? 'cron' : 'admin',
     leaderId: row.leader_id,
   })
 }

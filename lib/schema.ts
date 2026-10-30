@@ -354,8 +354,12 @@ async function runEnsureCreatorTrackingColumns() {
   const { ensureLeaderTables } = await import('@/lib/leaders')
   await ensureLeaderTables()
   await ensureRefreshJobTables()
-  const { ensureViewSnapshotTable } = await import('@/lib/daily-views-store')
-  await ensureViewSnapshotTable()
+  try {
+    const { ensureViewSnapshotTable } = await import('@/lib/daily-views-store')
+    await ensureViewSnapshotTable()
+  } catch (err) {
+    console.warn('[schema] view snapshots skipped', err)
+  }
 }
 
 export async function ensureRefreshJobTables() {
