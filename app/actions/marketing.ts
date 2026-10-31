@@ -1,6 +1,7 @@
 'use server'
 
 import { sql } from '@/lib/db'
+import { canSeeAhmedWallet } from '@/lib/admin-access'
 import { getAdminSession } from '@/lib/admin-auth'
 import { normalizeCurrency } from '@/lib/marketing'
 import { getWalletTotals, paymentSource } from '@/lib/wallet'
@@ -8,11 +9,11 @@ import { payCurrency } from '@/lib/format'
 import { usdToSar } from '@/lib/fx'
 import { revalidatePath } from 'next/cache'
 
-/** Returns the admin account id (yahya / ahmed). */
-async function requireAdmin(): Promise<string> {
+/** Ahmed’s wallet: Yahya and Ahmed only. */
+async function requireWalletAccess(): Promise<string> {
   const session = await getAdminSession()
-  if (!session) throw new Error('Unauthorized')
-  return session.id
+  if (!canSeeAhmedWallet(session?.id)) throw new Error('Unauthorized')
+  return session!.id
 }
 
 /** Only Yahya records or changes money sent to Ahmed. */
@@ -92,7 +93,7 @@ export async function deleteMarketingTransfer(id: number) {
 
 /** Log what money was used for. */
 export async function createMarketingExpense(formData: FormData) {
-  const by = await requireAdmin()
+  const by = await requireWalletAccess()
   const spentOn = parseDate(formData.get('spent_on'))
   const amount = parseAmount(formData.get('amount'))
   const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
@@ -127,7 +128,7 @@ export async function updateMarketingExpense(id: number, formData: FormData) {
 }
 
 export async function deleteMarketingExpense(id: number) {
-  await requireAdmin()
+  await requireWalletAccess()
   await sql`DELETE FROM marketing_expenses WHERE id = ${id}`
   revalidateMarketing()
 }
@@ -137,7 +138,7 @@ export async function deleteMarketingExpense(id: number) {
  * Or a single reason + amount.
  */
 export async function createMarketingRequest(formData: FormData) {
-  const by = await requireAdmin()
+  const by = await requireWalletAccess()
   const neededBy = parseDate(formData.get('needed_by'))
   const currency = normalizeCurrency((formData.get('currency') ?? '').toString())
   const title = parseText(formData.get('title'), 200)
@@ -175,7 +176,7 @@ export async function createMarketingRequest(formData: FormData) {
 }
 
 export async function cancelMarketingRequest(id: number) {
-  await requireAdmin()
+  await requireWalletAccess()
   await sql`
     UPDATE marketing_requests SET status = 'cancelled' WHERE id = ${id} AND status = 'open'
   `
@@ -187,7 +188,7 @@ export async function cancelMarketingRequest(id: number) {
  * `amount` is what actually arrived (defaults to the full request).
  */
 export async function fulfillMarketingRequest(id: number, formData: FormData) {
-  const by = await requireAdmin()
+  const by = await requireWalletAccess()
   const sentOn = parseDate(formData.get('sent_on')) ?? new Date().toISOString().slice(0, 10)
   const label = parseText(formData.get('label'), 200)
   const note = parseText(formData.get('note'), 2000)
@@ -235,7 +236,7 @@ export async function fulfillMarketingRequest(id: number, formData: FormData) {
  * "left" so the wallet matches his real balance.
  */
 export async function setWalletBalance(formData: FormData) {
-  const by = await requireAdmin()
+  const by = await requireWalletAccess()
   const raw = Number((formData.get('amount') ?? '').toString())
   if (!Number.isFinite(raw)) return { ok: false as const, error: 'Enter an amount.' }
   const typedCurrency = normalizeCurrency((formData.get('currency') ?? 'SAR').toString())
@@ -253,14 +254,14 @@ export async function setWalletBalance(formData: FormData) {
 }
 
 export async function deleteWalletAdjustment(id: number) {
-  await requireAdmin()
+  await requireWalletAccess()
   await sql`DELETE FROM wallet_adjustments WHERE id = ${id}`
   revalidateMarketing()
 }
 
 /** Set Ahmed's current leftover to 0. Does not erase sent money, payments, or spend history. */
 export async function resetAhmedWalletNow() {
-  const by = await requireAdmin()
+  const by = await requireWalletAccess()
   const { left } = await getWalletTotals()
   const counted = 0
   const diff = Math.round((counted - left) * 100) / 100
@@ -286,7 +287,7 @@ export type MoneyRequestInput = {
 
 /** Ask Yahya for money: one request with any number of lines. */
 export async function createMoneyRequest(input: MoneyRequestInput) {
-  const by = await requireAdmin()
+  const by = await requireWalletAccess()
   const items = input.items
     .map((i) => ({
       reason: i.reason.trim().slice(0, 500),
@@ -324,7 +325,7 @@ export type WalletPaymentInput = {
 
 /** Pay many people at once (each gets their own amount). */
 export async function recordWalletPayments(input: WalletPaymentInput) {
-  await requireAdmin()
+  await requireWalletAccess()
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.paidOn)) return { ok: false as const, error: 'Pick a date.' }
   const entries = input.entries
     .map((e) => ({

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import nextDynamic from 'next/dynamic'
 import { redirect } from 'next/navigation'
+import { canManageOutreachAccounts, canSeeAhmedWallet } from '@/lib/admin-access'
 import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import { ADMIN_TABS, resolveAdminTab } from '@/lib/admin-tabs'
 import { AdminTabs } from '@/components/admin/admin-tabs'
@@ -277,7 +278,8 @@ export default async function AdminPage({
   const { page: vPage, pageSize: vSize, offset: vOffset } = videoPaging(sp)
   const session = await getAdminSession()
   const isOwner = session?.role === 'owner'
-  /** Downloads in the daily sheet: Yahya and Ahmed. Money stays owner-only. */
+  const showWallet = canSeeAhmedWallet(session?.id)
+  /** Downloads in the daily sheet: every admin. Wallet stays Yahya + Ahmed. */
   const showDownloads = session != null
   const projects = projectsEarly
 
@@ -735,7 +737,9 @@ export default async function AdminPage({
     strikes: t('strikeCount'),
   }
 
-  const tabPanels: readonly string[] = ADMIN_TABS[tab]
+  const tabPanels: readonly string[] = showWallet
+    ? ADMIN_TABS[tab]
+    : ADMIN_TABS[tab].filter((id) => id !== 'marketing')
   const defaultPanel =
     sp.panel && tabPanels.includes(sp.panel)
       ? sp.panel
@@ -1359,6 +1363,8 @@ export default async function AdminPage({
           },
           ] : []),
           ...(moneyData ? [
+          ...(showWallet
+            ? [
           {
             id: 'marketing',
             title: "Ahmed's wallet",
@@ -1382,6 +1388,8 @@ export default async function AdminPage({
               />
             ),
           },
+            ]
+            : []),
           {
             id: 'commission',
             title: t('commissionBoard'),
@@ -1593,7 +1601,7 @@ export default async function AdminPage({
               </div>
             ),
           },
-          ...(session?.id === 'ahmed'
+          ...(canManageOutreachAccounts(session?.id)
             ? [
                 {
                   id: 'outreach',

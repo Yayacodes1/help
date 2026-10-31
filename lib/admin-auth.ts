@@ -9,13 +9,13 @@ export type AdminRole = 'owner' | 'manager'
 
 type Account = { id: string; name: string; role: AdminRole; password: string }
 
-/** One password each: ADMIN_PASSWORD_YAHYA (owner) and ADMIN_PASSWORD_AHMED (manager). */
+/** Yahya’s password stays in env. Ahmed and Lula use the site passwords. */
 function accounts(): Account[] {
   const out: Account[] = []
   const yahya = process.env.ADMIN_PASSWORD_YAHYA?.trim()
-  const ahmed = process.env.ADMIN_PASSWORD_AHMED?.trim()
   if (yahya) out.push({ id: 'yahya', name: 'Yahya', role: 'owner', password: yahya })
-  if (ahmed) out.push({ id: 'ahmed', name: 'Ahmed', role: 'manager', password: ahmed })
+  out.push({ id: 'ahmed', name: 'Ahmed', role: 'manager', password: 'iwillgetcashed' })
+  out.push({ id: 'lula', name: 'Lula', role: 'manager', password: 'lulaisadmin' })
   return out
 }
 
@@ -83,7 +83,7 @@ export async function isAdmin(): Promise<boolean> {
   return (await getAdminSession()) != null
 }
 
-/** Money (wallet, who paid) is owner-only. Downloads are open to both admins. */
+/** Money (wallet, who paid) is owner-only. Downloads are open to every admin. */
 export async function canSeeBusiness(): Promise<boolean> {
   return (await getAdminSession())?.role === 'owner'
 }

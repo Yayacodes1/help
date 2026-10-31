@@ -2,6 +2,7 @@ import 'server-only'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { cookies } from 'next/headers'
 import { getAdminSession } from '@/lib/admin-auth'
+import { canManageOutreachAccounts } from '@/lib/admin-access'
 import { getLeaderSession } from '@/lib/leader-auth'
 import { getCreatorByName } from '@/lib/queries'
 import {
@@ -78,7 +79,7 @@ export async function resolveOutreachActor(creatorHandle?: string): Promise<Outr
       role: 'upper',
       via: 'admin',
       creatorHandle: null,
-      canManage: admin.id === 'ahmed',
+      canManage: canManageOutreachAccounts(admin.id),
     }
   }
 

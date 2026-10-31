@@ -17,7 +17,7 @@ export async function OutreachAccess() {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-muted-foreground">
-        You already open the board as Ahmed. Add upper managers by a new name, or attach a leader or reposter they already use.
+        You already open the board as an admin. Add upper managers by a new name, or attach a leader or reposter they already use.
         Outreach people can be an existing reposter, or a new login who is not a reposter.
       </p>
       <OutreachAccessForms

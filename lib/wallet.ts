@@ -274,13 +274,14 @@ export async function getPayablePeople(today: string): Promise<WalletPerson[]> {
 
 /**
  * Who paid and who recorded it. Ahmed's payments always come out of his wallet.
- * Yahya's do too unless `paid_from` is 'direct' (he paid them himself).
+ * Lula's payments do not. Yahya's do unless `paid_from` is 'direct'.
  */
 export async function paymentSource(
   paidFrom?: FormDataEntryValue | string | null,
 ): Promise<{ paidBy: 'ahmed' | null; recordedBy: string | null }> {
   const session = await getAdminSession()
   if (!session) return { paidBy: null, recordedBy: null }
-  if (session.role === 'manager') return { paidBy: 'ahmed', recordedBy: session.id }
+  if (session.id === 'ahmed') return { paidBy: 'ahmed', recordedBy: session.id }
+  if (session.role === 'manager') return { paidBy: null, recordedBy: session.id }
   return { paidBy: paidFrom?.toString() === 'direct' ? null : 'ahmed', recordedBy: session.id }
 }

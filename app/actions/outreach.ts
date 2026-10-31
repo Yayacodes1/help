@@ -3,6 +3,7 @@
 import { randomBytes } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { canManageOutreachAccounts } from '@/lib/admin-access'
 import { getAdminSession } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
 import { hashPassword } from '@/lib/passwords'
@@ -37,9 +38,9 @@ async function requireUpper(creatorHandle?: string): Promise<OutreachActor> {
   return actor
 }
 
-async function requireAhmed() {
+async function requireOutreachAdmin() {
   const admin = await getAdminSession()
-  if (admin?.id !== 'ahmed') throw new Error('Unauthorized')
+  if (!canManageOutreachAccounts(admin?.id)) throw new Error('Unauthorized')
   return admin
 }
 
@@ -64,7 +65,7 @@ export async function logoutOutreach() {
 }
 
 export async function addOutreachMember(_prev: unknown, formData: FormData): Promise<OutreachActionState> {
-  await requireAhmed()
+  await requireOutreachAdmin()
   await ensureOutreachTables()
   const role = (formData.get('role') ?? '').toString() === 'upper' ? 'upper' : 'outreach'
   const mode = (formData.get('mode') ?? '').toString()
@@ -119,7 +120,7 @@ export async function addOutreachMember(_prev: unknown, formData: FormData): Pro
 }
 
 export async function removeOutreachMember(formData: FormData) {
-  await requireAhmed()
+  await requireOutreachAdmin()
   await ensureOutreachTables()
   const id = Number(formData.get('id'))
   if (!Number.isFinite(id) || id <= 0) return
