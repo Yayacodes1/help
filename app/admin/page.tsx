@@ -1525,6 +1525,8 @@ export default async function AdminPage({
                   moreTime: t('paymentPushForward'),
                   moreTimeHint: t('paymentPushHint'),
                   pushing: t('paymentPushing'),
+                  customDays: t('paymentPushCustom'),
+                  addDays: t('paymentPushAdd'),
                   weekdays:
                     locale === 'ar'
                       ? ['اثن', 'ثل', 'ارب', 'خم', 'جم', 'سب', 'أحد']

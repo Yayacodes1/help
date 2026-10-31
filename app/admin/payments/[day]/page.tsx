@@ -212,6 +212,8 @@ export default async function PaymentDayPage({
                             moreTime: t('paymentPushForward'),
                             hint: t('paymentPushHint'),
                             pushing: t('paymentPushing'),
+                            custom: t('paymentPushCustom'),
+                            add: t('paymentPushAdd'),
                           }}
                         />
                       ) : null}
