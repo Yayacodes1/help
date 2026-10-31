@@ -12,6 +12,7 @@ import {
   type ReportSquad,
 } from '@/lib/telegram-groups'
 import { formatDailyViewsSection, type DailyViewsCompare } from '@/lib/daily-views'
+import { formatCreatorReminder } from '@/lib/telegram-reminder'
 
 /**
  * `final`: the day that just closed at midnight Riyadh (sent at 12:00 AM).
@@ -399,27 +400,9 @@ function videosNeededToday(p: AttendancePerson): number {
   return Math.max(0, p.goalInstagram) + Math.max(0, p.goalTiktok)
 }
 
-/** Copy-ready reminder for a creator who is still behind today (Riyadh). */
-function creatorLiveReminder(p: AttendancePerson, dayLabel: string): string | null {
-  const posted = videosPostedToday(p)
-  const needed = videosNeededToday(p)
-  if (needed > 0 && posted >= needed) return null
-  if (posted <= 0) {
-    return (
-      '💐 رسالة تذكيرية\n' +
-      `مساك الله بالخير أختي ${p.name}، هذي رسالة تذكيرية بأنك ما نزلتي أي مقطع لليوم حتى الآن (${dayLabel}). يرجى نشر المقاطع المطلوبة قبل الساعة 12 منتصف الليل بتوقيت السعودية. وإذا حصل لك أي ظرف أو واجهتك أي مشكلة، ياليت تخبرينا. شاكرين لك تعاونك 🤍`
-    )
-  }
-  return (
-    '💐 رسالة تذكيرية\n' +
-    `مساك الله بالخير أختي ${p.name}،\n` +
-    `هذي رسالة تذكيرية بأنك نزلتي مقطع واحد فقط لليوم حتى الآن (${dayLabel})، وباقي عليك مقطع واحد عشان تكمّلين المطلوب منك لهذا اليوم. يرجى نشر المقطع المتبقي قبل الساعة 12 منتصف الليل بتوقيت السعودية. وإذا حصل لك أي ظرف أو واجهتك أي مشكلة، ياليت تخبرينا. شاكرين لك تعاونك 🤍`
-  )
-}
-
 function arabicTemplate(p: AttendancePerson, report: DayReport, opToday: string): string | null {
-  if (p.role === 'creator' && report.mode === 'live') {
-    return creatorLiveReminder(p, arDay(report.day))
+  if (p.role === 'creator') {
+    return formatCreatorReminder(p.name, videosPostedToday(p), videosNeededToday(p), arDay(report.day))
   }
   const deadline = 'قبل الساعة 12 منتصف الليل بتوقيت السعودية'
   const lines: string[] = []
@@ -486,8 +469,8 @@ export function buildMessageTemplates(
     const state =
       p.status === 'miss' || posted <= 0 ? "❌ didn't post" : `⚠️ needs ${missingEn(p)}`
     return (
-      `<b>${i + 1}/${rows.length} · ${escapeHtml(p.name)}</b> · ${noun} · ${state}\n` +
-      `<pre>${escapeHtml(body)}</pre>`
+      `<b>${i + 1}/${rows.length} · ${escapeHtml(p.name)}</b> · ${noun} · ${state}\n\n` +
+      escapeHtml(body)
     )
   })
 }
@@ -545,7 +528,7 @@ export async function sendAttendanceReports(
   if (templates.length > 0) {
     const head = await sendTelegramMessage(
       `✉️ ${noun.toUpperCase()} MESSAGES${scope} · ${dayTitle(report)}\n` +
-        `${templates.length} ${noun}${templates.length === 1 ? '' : 's'} behind. Tap the grey box to copy.`,
+        `${templates.length} ${noun}${templates.length === 1 ? '' : 's'} behind. Copy the reminder below.`,
       { chatId },
     )
     errors.push(head.error)
