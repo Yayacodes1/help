@@ -15,6 +15,7 @@ import { LanguageToggle } from '@/components/language-toggle'
 import { LogoutButton } from '@/components/admin/logout-button'
 import { StatCard } from '@/components/stat-card'
 import { PaymentDayActions } from '@/components/admin/payment-day-actions'
+import { PushContractForward } from '@/components/admin/push-contract-forward'
 import { participantRoleLabel } from '@/lib/participant-role'
 
 export const dynamic = 'force-dynamic'
@@ -202,6 +203,18 @@ export default async function PaymentDayPage({
                         currency={row.currency}
                         label={row.installmentLabel}
                       />
+                      {row.awaitingEligibility || row.remainingSar > 0.009 ? (
+                        <PushContractForward
+                          creatorId={row.creatorId}
+                          contractId={row.contractId}
+                          contractEnd={row.contractEnd}
+                          labels={{
+                            moreTime: t('paymentPushForward'),
+                            hint: t('paymentPushHint'),
+                            pushing: t('paymentPushing'),
+                          }}
+                        />
+                      ) : null}
                     </td>
                   </tr>
                 )

@@ -1521,6 +1521,10 @@ export default async function AdminPage({
                   legendSafe: t('paymentCalendarLegendSafe'),
                   paid: t('paymentCalendarPaid'),
                   toPay: t('paymentCalendarToPay'),
+                  videos: t('paymentDayVideos'),
+                  moreTime: t('paymentPushForward'),
+                  moreTimeHint: t('paymentPushHint'),
+                  pushing: t('paymentPushing'),
                   weekdays:
                     locale === 'ar'
                       ? ['اثن', 'ثل', 'ارب', 'خم', 'جم', 'سب', 'أحد']

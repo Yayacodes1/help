@@ -3,6 +3,7 @@ import { formatMoney, formatYearMonth } from '@/lib/format'
 import type { PaymentCalendarModel } from '@/lib/payment-calendar'
 import type { PayUrgency } from '@/lib/payment-calendar-math'
 import { MoneyPair } from '@/components/admin/money-pair'
+import { PushContractForward } from '@/components/admin/push-contract-forward'
 import { PaymentCalendarNav } from '@/components/admin/payment-calendar-nav'
 import { StatCard } from '@/components/stat-card'
 import { participantRoleLabel } from '@/lib/participant-role'
@@ -45,6 +46,10 @@ export function PaymentCalendarBoard({
     legendSafe: string
     paid: string
     toPay: string
+    videos: string
+    moreTime: string
+    moreTimeHint: string
+    pushing: string
   }
 }) {
   const hrefFor = (date: string) => {
@@ -63,6 +68,11 @@ export function PaymentCalendarBoard({
       remainingSar: number
       nextDue: string
       count: number
+      contractId: number
+      contractEnd: string | null
+      awaitingEligibility: boolean
+      videoCount: number
+      targetTotal: number
     }
   >()
   for (const row of unpaidRows) {
@@ -75,11 +85,23 @@ export function PaymentCalendarBoard({
         remainingSar: row.remainingSar,
         nextDue: row.dueDate,
         count: 1,
+        contractId: row.contractId,
+        contractEnd: row.contractEnd,
+        awaitingEligibility: row.awaitingEligibility,
+        videoCount: row.videoCount,
+        targetTotal: row.targetTotal,
       })
     } else {
       existing.remainingSar += row.remainingSar
       existing.count += 1
-      if (row.dueDate < existing.nextDue) existing.nextDue = row.dueDate
+      if (row.dueDate < existing.nextDue) {
+        existing.nextDue = row.dueDate
+        existing.contractId = row.contractId
+        existing.contractEnd = row.contractEnd
+        existing.awaitingEligibility = row.awaitingEligibility
+        existing.videoCount = row.videoCount
+        existing.targetTotal = row.targetTotal
+      }
     }
   }
   const unpaid = [...people.values()].sort(
@@ -195,12 +217,9 @@ export function PaymentCalendarBoard({
           </h4>
           <ul className="mt-3 flex max-h-80 flex-col gap-1 overflow-auto text-sm">
             {unpaid.map((row) => (
-              <li key={row.creatorId}>
-                <Link
-                  href={hrefFor(row.nextDue)}
-                  className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-accent"
-                >
-                  <span>
+              <li key={row.creatorId} className="rounded-lg px-2 py-1.5 hover:bg-accent/40">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <Link href={hrefFor(row.nextDue)} className="min-w-0">
                     <span className="font-medium">{row.creatorName}</span>
                     <span className="text-xs text-muted-foreground">
                       {' · '}
@@ -208,10 +227,31 @@ export function PaymentCalendarBoard({
                       {' · '}
                       {row.nextDue}
                       {row.count > 1 ? ` · ${row.count}` : ''}
+                      {row.targetTotal > 0
+                        ? ` · ${labels.videos} ${row.videoCount}/${row.targetTotal}`
+                        : ''}
                     </span>
-                  </span>
+                  </Link>
                   <MoneyPair sar={row.remainingSar} />
-                </Link>
+                </div>
+                {row.contractEnd ? (
+                  <div className="mt-1">
+                    {row.awaitingEligibility ? (
+                      <p className="mb-1 text-[10px] text-muted-foreground">{labels.moreTimeHint}</p>
+                    ) : null}
+                    <PushContractForward
+                      creatorId={row.creatorId}
+                      contractId={row.contractId}
+                      contractEnd={row.contractEnd}
+                      compact
+                      labels={{
+                        moreTime: labels.moreTime,
+                        hint: labels.moreTimeHint,
+                        pushing: labels.pushing,
+                      }}
+                    />
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>

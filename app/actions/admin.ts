@@ -862,6 +862,43 @@ export async function saveTimelineContract(formData: FormData) {
   return { ok: true as const }
 }
 
+/** Push a contract end later so they can finish videos; the last payment moves with it. */
+export async function extendContractForward(
+  creatorId: number,
+  contractId: number,
+  days: number,
+) {
+  await requireAdmin()
+  const personId = Math.floor(Number(creatorId))
+  const id = Math.floor(Number(contractId))
+  const n = Math.floor(Number(days))
+  if (!(personId > 0) || !(id > 0) || n < 1 || n > 60) {
+    return { ok: false as const, message: 'Pick 1–60 extra days.' }
+  }
+  const rows = (await sql`
+    SELECT id, end_date::text AS end_date
+    FROM contracts
+    WHERE id = ${id} AND creator_id = ${personId}
+    LIMIT 1
+  `) as { id: number; end_date: string | null }[]
+  const row = rows[0]
+  if (!row) return { ok: false as const, message: 'Contract not found.' }
+  if (!row.end_date) return { ok: false as const, message: 'This contract has no end date.' }
+  const nextEnd = addDays(row.end_date, n)
+  await sql`UPDATE contracts SET end_date = ${nextEnd}::date WHERE id = ${id}`
+  await sql`
+    UPDATE creators
+    SET contract_end = ${nextEnd}::date
+    WHERE id = ${personId}
+      AND (contract_end IS NULL OR contract_end = ${row.end_date}::date)
+  `
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${personId}`)
+  revalidatePath('/admin/payments', 'layout')
+  revalidatePath('/submit')
+  return { ok: true as const, endDate: nextEnd, days: n }
+}
+
 /** One-click: turn every non-current contract’s typed base+commission into real payments. */
 export async function recordPastContractsAsPaid(creatorId: number) {
   await requireAdmin()
