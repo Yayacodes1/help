@@ -16,6 +16,7 @@ const ADMIN_PANELS = new Set([
   'outflow',
   'calendar',
   'manage',
+  'timeline',
   'structure',
   'strikes',
 ])

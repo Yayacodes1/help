@@ -1,10 +1,12 @@
+import type { ReactNode } from 'react'
+
 export function StatCard({
   label,
   value,
   hint,
 }: {
   label: string
-  value: string | number
+  value: ReactNode
   hint?: string
 }) {
   return (

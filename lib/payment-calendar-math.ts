@@ -134,9 +134,12 @@ export function weekdayIndexMondayFirst(ymd: string): number {
   return (utc + 6) % 7
 }
 
-/** First pay is 15 days after contract start; later biweekly waves are +15 each (30, 45, …). */
-export const FIRST_PAY_AFTER_DAYS = 15
-export const BIWEEKLY_PAY_EVERY_DAYS = 15
+/** Nov 1 start → first 15-day-method pay on Nov 15. */
+export const FIFTEEN_DAY_OFFSET = 14
+export const FIFTEEN_DAY_STEP = 15
+export const TWO_WEEK_DAYS = 14
+
+export type PayTiming = 'fifteen' | 'upfront' | 'end'
 
 export type PayUrgency = 'urgent' | 'soon' | 'safe' | 'none'
 
@@ -162,42 +165,154 @@ export function urgencyFor(date: string, today: string, remainingSar: number): P
   return 'safe'
 }
 
+export function sarToUsd(sar: number): number {
+  return roundMoney((Number(sar) || 0) / SAR_PER_USD)
+}
+
+/** First half rounds up (39 → 20 + 19), same as contract pay entry. */
+export function splitInTwo(total: number): { first: number; second: number } {
+  const amount = roundMoney(total)
+  if (amount <= 0) return { first: 0, second: 0 }
+  const first = Math.ceil(amount / 2)
+  return { first, second: roundMoney(amount - first) }
+}
+
 /**
- * Biweekly: pay 15 days after start, then 30, 45, … until the contract ends.
- * Monthly: one payment on the contract end date.
+ * One amount per scheduled pay. Biweekly keeps the entered wave;
+ * monthly splits the month in two and repeats that wave until the contract ends.
+ * Flat commission sits on the last installment only.
+ */
+export function amountsForPaySlices(opts: {
+  baseAmount: number
+  cadence: 'monthly' | 'biweekly'
+  commission: number
+  sliceCount: number
+}): number[] {
+  const n = Math.max(0, Math.floor(opts.sliceCount))
+  if (n <= 0) return []
+  const base = roundMoney(opts.baseAmount)
+  const commission = roundMoney(opts.commission)
+  const amounts: number[] = []
+  if (n === 1) {
+    amounts.push(roundMoney(base + commission))
+    return amounts
+  }
+  if (opts.cadence === 'biweekly') {
+    for (let i = 0; i < n; i++) amounts.push(base)
+  } else {
+    const split = splitInTwo(base)
+    const wave = split.first
+    for (let i = 0; i < n; i++) {
+      amounts.push(n === 2 && i === 1 ? split.second : wave)
+    }
+  }
+  if (commission > 0.009) {
+    amounts[n - 1] = roundMoney(amounts[n - 1] + commission)
+  }
+  return amounts.map(roundMoney)
+}
+
+export function normalizePayTiming(value: string | null | undefined): PayTiming | null {
+  if (value === 'fifteen' || value === 'upfront' || value === 'end') return value
+  return null
+}
+
+export function resolvePayTiming(opts: {
+  stored?: string | null
+  startDate: string
+  endDate: string | null
+  paidOn?: string[]
+  notes?: string[]
+}): PayTiming {
+  const stored = normalizePayTiming(opts.stored)
+  if (stored) return stored
+  const notes = (opts.notes ?? []).join(' ').toLowerCase()
+  if (notes.includes('upfront')) return 'upfront'
+  const firstPaid = [...(opts.paidOn ?? [])].filter(Boolean).sort()[0]
+  if (firstPaid) {
+    const delta = daysAhead(opts.startDate, firstPaid)
+    if (delta >= -1 && delta <= 2) return 'upfront'
+  }
+  if (!opts.endDate) return 'fifteen'
+  const span = daysAhead(opts.startDate, opts.endDate) + 1
+  if (span > TWO_WEEK_DAYS + 3) return 'fifteen'
+  return 'end'
+}
+
+function installmentCount(startDate: string, endDate: string, every: number): number {
+  const span = daysAhead(startDate, endDate) + 1
+  if (span <= every + 3) return 1
+  return Math.max(2, Math.round(span / every))
+}
+
+function labelForSlice(timing: PayTiming, index: number, last: boolean, total: number): string {
+  if (timing === 'upfront' && index === 0) return 'Upfront'
+  if (last && (timing === 'end' || total === 1 || timing === 'fifteen')) return total === 1 ? 'Final payment' : 'Final payment'
+  if (index === 0) return 'First payment'
+  if (index === 1) return 'Second payment'
+  return `Payment ${index + 1}`
+}
+
+/**
+ * fifteen: first pay on day 15, then every 15 days, last pay on contract end.
+ * upfront: first pay on start, then every 2 weeks until the contract ends.
+ * end: one pay on the contract end date.
  */
 export function buildCreatorPaySchedule(opts: {
   startDate: string
   endDate: string | null
-  cadence: 'monthly' | 'biweekly'
+  timing: PayTiming
   through: string
   max?: number
 }): CreatorPaySlice[] {
   if (!opts.startDate) return []
   const end = opts.endDate
   const through = opts.through
-  const max = opts.max ?? 36
+  const max = opts.max ?? 24
+  const dates: string[] = []
 
-  if (opts.cadence === 'monthly' && end) {
-    if (end < opts.startDate) return []
-    return [{ dueOn: end, index: 0, label: 'Final payment' }]
+  if (opts.timing === 'end') {
+    const due = end && end <= through ? end : !end && through >= opts.startDate ? through : null
+    if (!due || due < opts.startDate) return []
+    return [{ dueOn: due, index: 0, label: 'Final payment' }]
   }
 
-  const out: CreatorPaySlice[] = []
-  for (let i = 0; i < max; i++) {
-    let due = addDays(opts.startDate, FIRST_PAY_AFTER_DAYS * (i + 1))
-    if (end && due > end) {
-      if (out.length === 0) due = end
-      else if (end > out[out.length - 1].dueOn) due = end
-      else break
+  if (!end) {
+    const first =
+      opts.timing === 'upfront' ? opts.startDate : addDays(opts.startDate, FIFTEEN_DAY_OFFSET)
+    const step = opts.timing === 'upfront' ? TWO_WEEK_DAYS : FIFTEEN_DAY_STEP
+    let due = first
+    for (let i = 0; i < max && due <= through; i++) {
+      if (due >= opts.startDate) dates.push(due)
+      due = addDays(due, step)
     }
-    if (due > through) break
-    if (due < opts.startDate) continue
-    const label = i === 0 ? 'First payment' : i === 1 ? 'Second payment' : `Payment ${i + 1}`
-    out.push({ dueOn: due, index: i, label })
-    if (end && due >= end) break
+  } else if (opts.timing === 'upfront') {
+    const count = Math.min(max, installmentCount(opts.startDate, end, TWO_WEEK_DAYS))
+    for (let i = 0; i < count; i++) {
+      const due = addDays(opts.startDate, TWO_WEEK_DAYS * i)
+      dates.push(due > end ? end : due)
+    }
+  } else {
+    const count = Math.min(max, installmentCount(opts.startDate, end, FIFTEEN_DAY_STEP))
+    const first = addDays(opts.startDate, FIFTEEN_DAY_OFFSET)
+    if (count <= 1) {
+      dates.push(end)
+    } else {
+      dates.push(first > end ? end : first)
+      for (let i = 1; i < count - 1; i++) {
+        const due = addDays(first, FIFTEEN_DAY_STEP * i)
+        if (due < end) dates.push(due)
+      }
+      dates.push(end)
+    }
   }
-  return out
+
+  const unique = [...new Set(dates.filter((d) => d >= opts.startDate && d <= through))].sort()
+  return unique.map((dueOn, index) => ({
+    dueOn,
+    index,
+    label: labelForSlice(opts.timing, index, index === unique.length - 1, unique.length),
+  }))
 }
 
 export function monthGridDates(start: string, end: string): string[] {

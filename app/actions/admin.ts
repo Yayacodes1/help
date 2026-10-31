@@ -18,6 +18,7 @@ import {
   verifyLogin,
 } from '@/lib/admin-auth'
 import {
+  getActiveContract,
   getPaidForContract,
   getPaymentsForContract,
   getServerToday,
@@ -104,6 +105,14 @@ function parseOptionalPositiveInt(value: FormDataEntryValue | null): number | nu
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
 }
 
+function parsePayTiming(
+  value: FormDataEntryValue | null,
+): 'fifteen' | 'upfront' | 'end' | null {
+  const raw = (value ?? '').toString().trim()
+  if (raw === 'fifteen' || raw === 'upfront' || raw === 'end') return raw
+  return null
+}
+
 function parseContractCountMode(value: FormDataEntryValue | null): CountMode | null {
   return normalizeCountMode((value ?? '').toString().trim())
 }
@@ -135,6 +144,7 @@ function parseContractQuotas(
     basePayCadence: normalizeBasePayCadence(
       (formData.get('base_pay_cadence') ?? '').toString(),
     ),
+    payTiming: parsePayTiming(formData.get('pay_timing')),
     countMode: parseContractCountMode(formData.get('count_mode')),
     viewsThreshold: parseOptionalPositiveInt(formData.get('views_threshold')),
     viewCommissionAmount: parseOptionalAmount(formData.get('view_commission_amount')),
@@ -547,7 +557,7 @@ export async function createContract(creatorId: number, formData: FormData) {
     INSERT INTO contracts (
       creator_id, name, start_date, end_date,
       goal_instagram, goal_tiktok, target_instagram, target_tiktok,
-      platforms, base_amount, base_pay_cadence, commission_amount,
+      platforms, base_amount, base_pay_cadence, pay_timing, commission_amount,
       count_mode, views_threshold, view_commission_amount, commission_reels,
       project_targets,
       schedule_type, schedule_every_days, schedule_weekdays, schedule_per_week
@@ -555,7 +565,7 @@ export async function createContract(creatorId: number, formData: FormData) {
     VALUES (
       ${creatorId}, ${name}, ${start}, ${end},
       ${q.goalInstagram}, ${q.goalTiktok}, ${q.targetInstagram}, ${q.targetTiktok},
-      ${q.platforms}, ${q.baseAmount}, ${q.basePayCadence}, ${q.commissionAmount},
+      ${q.platforms}, ${q.baseAmount}, ${q.basePayCadence}, ${q.payTiming}, ${q.commissionAmount},
       ${q.countMode}, ${q.viewsThreshold}, ${q.viewCommissionAmount}, ${q.commissionReels},
       ${q.projectTargets}::jsonb,
       ${q.scheduleType}, ${q.scheduleEveryDays}, ${q.scheduleWeekdays}, ${q.schedulePerWeek}
@@ -620,7 +630,7 @@ export async function startNewContract(creatorId: number, formData: FormData) {
     INSERT INTO contracts (
       creator_id, name, start_date, end_date,
       goal_instagram, goal_tiktok, target_instagram, target_tiktok,
-      platforms, base_amount, base_pay_cadence, commission_amount,
+      platforms, base_amount, base_pay_cadence, pay_timing, commission_amount,
       count_mode, views_threshold, view_commission_amount, commission_reels,
       project_targets,
       schedule_type, schedule_every_days, schedule_weekdays, schedule_per_week
@@ -628,7 +638,7 @@ export async function startNewContract(creatorId: number, formData: FormData) {
     VALUES (
       ${creatorId}, ${name}, ${start}, ${end},
       ${q.goalInstagram}, ${q.goalTiktok}, ${q.targetInstagram}, ${q.targetTiktok},
-      ${q.platforms}, ${q.baseAmount}, ${q.basePayCadence}, ${q.commissionAmount},
+      ${q.platforms}, ${q.baseAmount}, ${q.basePayCadence}, ${q.payTiming}, ${q.commissionAmount},
       ${q.countMode}, ${q.viewsThreshold}, ${q.viewCommissionAmount}, ${q.commissionReels},
       ${q.projectTargets}::jsonb,
       ${q.scheduleType}, ${q.scheduleEveryDays}, ${q.scheduleWeekdays}, ${q.schedulePerWeek}
@@ -734,6 +744,7 @@ export async function updateContract(id: number, creatorId: number, formData: Fo
         target_instagram = ${q.targetInstagram}, target_tiktok = ${q.targetTiktok},
         platforms = ${q.platforms},
         base_amount = ${q.baseAmount}, base_pay_cadence = ${q.basePayCadence},
+        pay_timing = ${q.payTiming},
         commission_amount = ${q.commissionAmount},
         count_mode = ${q.countMode}, views_threshold = ${q.viewsThreshold},
         view_commission_amount = ${q.viewCommissionAmount},
@@ -765,6 +776,86 @@ export async function updateContract(id: number, creatorId: number, formData: Fo
   revalidatePath('/admin')
   revalidatePath(`/admin/creators/${creatorId}`)
   revalidatePath('/submit')
+}
+
+/** People › Timeline Manage: dates + pay method only, then open Payment Calendar. */
+export async function saveTimelineContract(formData: FormData) {
+  await requireAdmin()
+  const creatorId = Number(formData.get('creator_id'))
+  if (!Number.isFinite(creatorId) || creatorId <= 0) {
+    return { ok: false as const, message: 'Missing person.' }
+  }
+  const start = parseOptionalDate(formData.get('start_date'))
+  const end = parseOptionalDate(formData.get('end_date'))
+  const payTiming = parsePayTiming(formData.get('pay_timing')) ?? 'fifteen'
+  if (!start) return { ok: false as const, message: 'Start date is required.' }
+  if (end && end < start) return { ok: false as const, message: 'End cannot be before start.' }
+
+  const existingIdRaw = Number(formData.get('contract_id'))
+  let contractId =
+    Number.isFinite(existingIdRaw) && existingIdRaw > 0 ? Math.floor(existingIdRaw) : null
+  if (contractId) {
+    const owned = (await sql`
+      SELECT id FROM contracts WHERE id = ${contractId} AND creator_id = ${creatorId} LIMIT 1
+    `) as { id: number }[]
+    if (!owned[0]) contractId = null
+  }
+  if (!contractId) {
+    const today = await getServerToday()
+    const active = await getActiveContract(creatorId, today)
+    contractId = active?.id ?? null
+  }
+
+  if (contractId) {
+    await sql`
+      UPDATE contracts
+      SET start_date = ${start}, end_date = ${end}, pay_timing = ${payTiming}
+      WHERE id = ${contractId} AND creator_id = ${creatorId}
+    `
+  } else {
+    const person = (await sql`
+      SELECT name, platforms, goal_instagram, goal_tiktok,
+             COALESCE(biweekly_amount, 0)::float AS biweekly_amount
+      FROM creators
+      WHERE id = ${creatorId}
+      LIMIT 1
+    `) as {
+      name: string
+      platforms: string | null
+      goal_instagram: number
+      goal_tiktok: number
+      biweekly_amount: number
+    }[]
+    const row = person[0]
+    if (!row) return { ok: false as const, message: 'Person not found.' }
+    const name = (row.name || 'Contract').trim() || 'Contract'
+    await sql`
+      INSERT INTO contracts (
+        creator_id, name, start_date, end_date,
+        platforms, goal_instagram, goal_tiktok,
+        target_instagram, target_tiktok,
+        base_amount, pay_timing
+      )
+      VALUES (
+        ${creatorId}, ${name}, ${start}, ${end},
+        ${row.platforms || 'both'}, ${row.goal_instagram || 0}, ${row.goal_tiktok || 0},
+        0, 0,
+        ${Number(row.biweekly_amount) || 0}, ${payTiming}
+      )
+    `
+  }
+
+  await sql`
+    UPDATE creators
+    SET contract_start = ${start}, contract_end = ${end}
+    WHERE id = ${creatorId}
+  `
+
+  const today = await getServerToday()
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  revalidatePath('/submit')
+  redirect(`/admin?tab=money&panel=calendar&calMonth=${today.slice(0, 7)}`)
 }
 
 /** One-click: turn every non-current contract’s typed base+commission into real payments. */

@@ -113,6 +113,7 @@ import { BreakRequestsBoard } from '@/components/admin/break-requests-board'
 import { listBreakRequests } from '@/lib/break-requests'
 import { getCompanyStructure } from '@/lib/company-structure'
 import { CompanyStructureBoard } from '@/components/admin/company-structure'
+import { TimelineManage } from '@/components/admin/timeline-manage'
 import { loadPaymentCalendar } from '@/lib/payment-calendar-data'
 import { parseCalendarRole } from '@/lib/payment-calendar'
 import { PaymentCalendarBoard } from '@/components/admin/payment-calendar'
@@ -705,6 +706,23 @@ export default async function AdminPage({
       : roleFilter === 'all'
         ? t('people')
         : t('creators')
+  const timelineLabels = {
+    title: t('timelineManage'),
+    hint: t('timelineManageHint'),
+    start: t('timelineStart'),
+    end: t('timelineEnd'),
+    pay: t('timelinePay'),
+    payFifteen: t('timelinePayFifteen'),
+    payUpfront: t('timelinePayUpfront'),
+    payEnd: t('timelinePayEnd'),
+    noContract: t('timelineNoContract'),
+    open: t('timelineOpen'),
+    save: t('timelineSave'),
+    cancel: t('timelineCancel'),
+    empty: t('timelineEmpty'),
+    paused: t('timelinePaused'),
+    saving: t('timelineSaving'),
+  }
   const activeTodayLabel =
     roleFilter === 'reposter'
       ? isToday
@@ -1672,6 +1690,58 @@ export default async function AdminPage({
                 />
                 <ProjectsManager key="projects-manager" projects={projects} />
               </div>
+            ),
+          },
+          {
+            id: 'timeline',
+            title: t('timelineManage'),
+            summary: splitData
+              ? `${splitSummary((side) => `${side.creators.length}`)} · ${t('roleFilterReposters')} ${sharedReposterActive.length}`
+              : `${creators.length} ${peopleNoun}`,
+            hint: t('timelineManageHint'),
+            children: splitData ? (
+              <div key="timeline-split" className="flex flex-col gap-4">
+                <SplitColumns
+                  sides={splitData.map((side) => ({
+                    key: `timeline-${side.project.id}`,
+                    title: side.project.name,
+                    summary: `${side.creators.length} ${t('roleFilterCreators').toLowerCase()}`,
+                    children: (
+                      <TimelineManage
+                        people={side.creators}
+                        pausedPeople={side.paused}
+                        today={today}
+                        currentProjectId={side.project.id}
+                        labels={timelineLabels}
+                      />
+                    ),
+                  }))}
+                />
+                <section className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-background/40 p-3">
+                  <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border pb-2">
+                    <h3 className="text-base font-semibold tracking-tight">
+                      {t('roleFilterReposters')} · {t('bothProjects')}
+                    </h3>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {sharedReposterActive.length} {t('roleFilterReposters').toLowerCase()}
+                    </span>
+                  </header>
+                  <TimelineManage
+                    people={sharedReposterActive}
+                    pausedPeople={sharedReposters.filter((c) => c.paused_at)}
+                    today={today}
+                    labels={timelineLabels}
+                  />
+                </section>
+              </div>
+            ) : (
+              <TimelineManage
+                people={creators}
+                pausedPeople={pausedCreators}
+                today={today}
+                currentProjectId={projectId}
+                labels={timelineLabels}
+              />
             ),
           },
           ...(companyStructure || companyStructureError

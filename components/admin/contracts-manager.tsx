@@ -254,12 +254,14 @@ function PayFields({
   base = 0,
   commission,
   cadence = 'monthly',
+  timing = null,
   requireBase = false,
   variant = 'current',
 }: {
   base?: number
   commission?: number | null
   cadence?: 'monthly' | 'biweekly'
+  timing?: 'fifteen' | 'upfront' | 'end' | null
   requireBase?: boolean
   variant?: 'current' | 'past'
 }) {
@@ -328,6 +330,51 @@ function PayFields({
             <span className="font-medium text-foreground">Monthly</span>
             {' — '}
             This is the full month. Each half gets half (e.g. 38 → Pay 19 + Pay 19).
+          </span>
+        </label>
+      </fieldset>
+      <fieldset className="grid gap-1.5">
+        <legend className="text-xs font-medium text-foreground">When we pay</legend>
+        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+          <input
+            type="radio"
+            name="pay_timing"
+            value="fifteen"
+            defaultChecked={timing === 'fifteen'}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="font-medium text-foreground">Every 15 days</span>
+            {' — '}
+            First pay 15 days after start, then the last pay at the contract end (Nov 1 → Nov 15, then end).
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+          <input
+            type="radio"
+            name="pay_timing"
+            value="upfront"
+            defaultChecked={timing === 'upfront'}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="font-medium text-foreground">Upfront</span>
+            {' — '}
+            Pay at the start for the first 2 weeks, then every 2 weeks until the contract ends.
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+          <input
+            type="radio"
+            name="pay_timing"
+            value="end"
+            defaultChecked={timing === 'end'}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="font-medium text-foreground">One payment at the end</span>
+            {' — '}
+            A single final payment on the last day of the contract.
           </span>
         </label>
       </fieldset>
@@ -830,7 +877,7 @@ export function ContractsManager({
             title="Pay (base)"
             hint="Fixed pay for the period. Flat bonus is optional."
           >
-            <PayFields base={Number(stickyBase) || 0} requireBase variant="current" />
+            <PayFields base={Number(stickyBase) || 0} requireBase variant="current" timing="fifteen" />
           </FormSection>
           <CommissionTermsFields />
         </form>
@@ -882,7 +929,7 @@ export function ContractsManager({
               <ProjectTargetFields projects={projects} />
             </FormSection>
             <FormSection title="Pay (base)" hint="Fixed pay for the period. Flat bonus is optional.">
-              <PayFields requireBase variant="current" />
+              <PayFields requireBase variant="current" timing="fifteen" />
             </FormSection>
             <CommissionTermsFields />
             <button
@@ -1022,6 +1069,13 @@ export function ContractsManager({
                           commission={contract.commission_amount}
                           cadence={
                             contract.base_pay_cadence === 'biweekly' ? 'biweekly' : 'monthly'
+                          }
+                          timing={
+                            contract.pay_timing === 'upfront' ||
+                            contract.pay_timing === 'end' ||
+                            contract.pay_timing === 'fifteen'
+                              ? contract.pay_timing
+                              : null
                           }
                           variant={pastVariant ? 'past' : 'current'}
                         />

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { formatMoney, formatYearMonth } from '@/lib/format'
 import type { PaymentCalendarModel } from '@/lib/payment-calendar'
 import type { PayUrgency } from '@/lib/payment-calendar-math'
+import { MoneyPair } from '@/components/admin/money-pair'
 import { PaymentCalendarNav } from '@/components/admin/payment-calendar-nav'
 import { StatCard } from '@/components/stat-card'
 import { participantRoleLabel } from '@/lib/participant-role'
@@ -11,14 +12,6 @@ const URGENCY_CLASS: Record<PayUrgency, string> = {
   soon: 'border-orange-500 bg-orange-500 text-white hover:brightness-110',
   safe: 'border-emerald-600 bg-emerald-600 text-white hover:brightness-110',
   none: 'border-border bg-card text-card-foreground hover:border-primary/50 hover:bg-accent',
-}
-
-function compactSar(n: number): string {
-  const rounded = Math.round(n)
-  if (Math.abs(n - rounded) < 0.009) {
-    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(rounded)
-  }
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
 }
 
 export function PaymentCalendarBoard({
@@ -60,8 +53,37 @@ export function PaymentCalendarBoard({
     if (model.role !== 'all') q.set('calRole', model.role)
     return `/admin/payments/${date}?${q.toString()}`
   }
-  const unpaid = [...model.items.filter((i) => i.remainingSar > 0.009)].sort(
-    (a, b) => a.dueDate.localeCompare(b.dueDate) || a.creatorName.localeCompare(b.creatorName),
+  const unpaidRows = model.items.filter((i) => i.remainingSar > 0.009)
+  const people = new Map<
+    number,
+    {
+      creatorId: number
+      creatorName: string
+      role: (typeof unpaidRows)[number]['role']
+      remainingSar: number
+      nextDue: string
+      count: number
+    }
+  >()
+  for (const row of unpaidRows) {
+    const existing = people.get(row.creatorId)
+    if (!existing) {
+      people.set(row.creatorId, {
+        creatorId: row.creatorId,
+        creatorName: row.creatorName,
+        role: row.role,
+        remainingSar: row.remainingSar,
+        nextDue: row.dueDate,
+        count: 1,
+      })
+    } else {
+      existing.remainingSar += row.remainingSar
+      existing.count += 1
+      if (row.dueDate < existing.nextDue) existing.nextDue = row.dueDate
+    }
+  }
+  const unpaid = [...people.values()].sort(
+    (a, b) => a.nextDue.localeCompare(b.nextDue) || a.creatorName.localeCompare(b.creatorName),
   )
   const monthLabel = formatYearMonth(model.month, locale)
 
@@ -85,18 +107,18 @@ export function PaymentCalendarBoard({
       <div className="grid gap-3 lg:grid-cols-3">
         <StatCard
           label={labels.total}
-          value={formatMoney(model.remainingScheduledSar, 'SAR')}
-          hint={`${labels.totalHint} · ${monthLabel} · ${labels.scheduled}: ${formatMoney(model.scheduledTotalSar, 'SAR')}`}
+          value={<MoneyPair sar={model.remainingScheduledSar} usd={model.remainingScheduledUsd} />}
+          hint={`${labels.totalHint} · ${monthLabel} · ${labels.scheduled}: ${formatMoney(model.scheduledTotalSar, 'SAR')}  ${formatMoney(model.scheduledTotalUsd, 'USD')}`}
         />
         <StatCard
           label={labels.commission}
-          value={formatMoney(model.commissionEarnedSar, 'SAR')}
+          value={<MoneyPair sar={model.commissionEarnedSar} />}
           hint={`${labels.earned} · ${monthLabel}`}
         />
         <StatCard
           label={labels.spent}
-          value={formatMoney(model.spentSar, 'SAR')}
-          hint={`${labels.remaining}: ${formatMoney(model.remainingScheduledSar, 'SAR')} · ${monthLabel}`}
+          value={<MoneyPair sar={model.spentSar} usd={model.spentUsd} />}
+          hint={`${labels.remaining}: ${formatMoney(model.remainingScheduledSar, 'SAR')}  ${formatMoney(model.remainingScheduledUsd, 'USD')} · ${monthLabel}`}
         />
       </div>
       <div className="flex flex-wrap gap-3 text-xs font-medium">
@@ -140,8 +162,8 @@ export function PaymentCalendarBoard({
               </span>
               {showPay ? (
                 <>
-                  <div className="mt-0.5 text-base font-bold leading-none tabular-nums sm:text-xl">
-                    {compactSar(day.remainingSar)}
+                  <div className="mt-0.5 leading-tight">
+                    <MoneyPair sar={day.remainingSar} usd={day.remainingUsd} big tone="inherit" />
                   </div>
                   <div className="mt-1 hidden min-h-0 flex-1 flex-col gap-0.5 overflow-hidden text-[10px] leading-tight sm:flex">
                     {day.names.slice(0, 3).map((name) => (
@@ -173,9 +195,9 @@ export function PaymentCalendarBoard({
           </h4>
           <ul className="mt-3 flex max-h-80 flex-col gap-1 overflow-auto text-sm">
             {unpaid.map((row) => (
-              <li key={row.key}>
+              <li key={row.creatorId}>
                 <Link
-                  href={hrefFor(row.dueDate)}
+                  href={hrefFor(row.nextDue)}
                   className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-accent"
                 >
                   <span>
@@ -184,12 +206,11 @@ export function PaymentCalendarBoard({
                       {' · '}
                       {participantRoleLabel(row.role)}
                       {' · '}
-                      {row.installmentLabel}
-                      {' · '}
-                      {row.dueDate}
+                      {row.nextDue}
+                      {row.count > 1 ? ` · ${row.count}` : ''}
                     </span>
                   </span>
-                  <span className="tabular-nums font-semibold">{formatMoney(row.remainingSar, 'SAR')}</span>
+                  <MoneyPair sar={row.remainingSar} />
                 </Link>
               </li>
             ))}
@@ -205,7 +226,7 @@ export function PaymentCalendarBoard({
                 <span>
                   {row.creatorName} · {row.contractName} · {row.installmentLabel}
                 </span>
-                <span className="tabular-nums">{formatMoney(row.dueAmountSar, 'SAR')}</span>
+                <MoneyPair sar={row.dueAmountSar} />
               </li>
             ))}
             {model.unscheduled.map((row) => (
@@ -213,7 +234,7 @@ export function PaymentCalendarBoard({
                 <span>
                   {row.creatorName} · {row.paidOn}
                 </span>
-                <span className="tabular-nums">{formatMoney(row.leftoverSar, 'SAR')}</span>
+                <MoneyPair sar={row.leftoverSar} />
               </li>
             ))}
           </ul>

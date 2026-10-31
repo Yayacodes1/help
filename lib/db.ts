@@ -131,6 +131,8 @@ export type Contract = {
    * - biweekly: pay per 14-day wave (month contract = 2×)
    */
   base_pay_cadence: 'monthly' | 'biweekly'
+  /** When we pay: fifteen = day 15 then end; upfront = start then every 2 weeks; end = one pay at the end. */
+  pay_timing?: 'fifteen' | 'upfront' | 'end' | null
   /** Commission (nullable until set later) */
   commission_amount: number | null
   /** Null = use house default */

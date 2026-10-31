@@ -21,7 +21,7 @@ export async function loadPaymentCalendar(opts: {
   const role = parseCalendarRole(opts.role)
   const { start, end } = calendarMonthRange(opts.month)
   const roleSql: ParticipantRole | null = role === 'all' ? null : role
-  const lookback = addDays(start, -40)
+  const lookback = addDays(start, -90)
   const lookahead = addDays(end, 40)
 
   const [contractRows, paymentRows, videoRows, board] = await Promise.all([
@@ -32,6 +32,7 @@ export async function loadPaymentCalendar(opts: {
              c.base_amount::float AS base_amount,
              c.commission_amount::float AS commission_amount,
              COALESCE(NULLIF(c.base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
+             c.pay_timing,
              c.target_instagram, c.target_tiktok, c.platforms,
              COALESCE(cr.pay_every_days, 14)::int AS pay_every_days,
              cr.id AS creator_id, cr.name AS creator_name, cr.role,
@@ -85,6 +86,7 @@ export async function loadPaymentCalendar(opts: {
       base_amount: number
       commission_amount: number | null
       base_pay_cadence: string
+      pay_timing: string | null
       target_instagram: number
       target_tiktok: number
       platforms: string | null
@@ -105,6 +107,7 @@ export async function loadPaymentCalendar(opts: {
     baseAmount: Number(row.base_amount) || 0,
     commissionAmount: row.commission_amount == null ? null : Number(row.commission_amount),
     basePayCadence: row.base_pay_cadence,
+    payTiming: row.pay_timing,
     targetInstagram: row.target_instagram,
     targetTiktok: row.target_tiktok,
     platforms: row.platforms,

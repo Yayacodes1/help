@@ -4,7 +4,8 @@ import { isAdmin } from '@/lib/admin-auth'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import { getLocale } from '@/lib/locale'
 import { createT, type MessageKey } from '@/lib/i18n'
-import { formatDate, formatMoney } from '@/lib/format'
+import { formatDate } from '@/lib/format'
+import { MoneyPair } from '@/components/admin/money-pair'
 import { getOperationalToday } from '@/lib/queries'
 import { parseYearMonth } from '@/lib/campaign'
 import { adminPersonHref } from '@/lib/admin-href'
@@ -83,18 +84,24 @@ export default async function PaymentDayPage({
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label={t('paymentDayRecipients')} value={detail.recipientCount} />
-        <StatCard label={t('paymentDayScheduled')} value={formatMoney(detail.scheduledSar, 'SAR')} />
+        <StatCard label={t('paymentDayScheduled')} value={<MoneyPair sar={detail.scheduledSar} />} />
         <StatCard
           label={t('paymentDayPaid')}
-          value={formatMoney(detail.paidThatDaySar, 'SAR')}
+          value={<MoneyPair sar={detail.paidThatDaySar} />}
           hint={t('paymentDayPaidHint')}
         />
-        <StatCard label={t('paymentDayOutstanding')} value={formatMoney(detail.outstandingSar, 'SAR')} />
+        <StatCard label={t('paymentDayOutstanding')} value={<MoneyPair sar={detail.outstandingSar} />} />
       </section>
-      <p className="mt-3 text-sm text-muted-foreground">
-        {t('paymentDayCommission')}: {formatMoney(detail.dayCommissionSar, 'SAR')}
-        {' · '}
-        {t('paymentCalendarCommission')}: {formatMoney(model.commissionEarnedSar, 'SAR')} ({t('paymentCalendarEarned')})
+      <p className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm text-muted-foreground">
+        <span className="inline-flex items-baseline gap-2">
+          {t('paymentDayCommission')}:
+          <MoneyPair sar={detail.dayCommissionSar} />
+        </span>
+        <span className="inline-flex items-baseline gap-2">
+          {t('paymentCalendarCommission')}:
+          <MoneyPair sar={model.commissionEarnedSar} />
+          <span>({t('paymentCalendarEarned')})</span>
+        </span>
       </p>
       <p className="mt-1 text-xs text-muted-foreground">{t('paymentDayCommissionHint')}</p>
 
@@ -147,7 +154,7 @@ export default async function PaymentDayPage({
                       </div>
                       {row.contractCommissionSar > 0.009 ? (
                         <div className="text-xs text-muted-foreground">
-                          {t('paymentDayContractCommission')}: {formatMoney(row.contractCommissionSar, 'SAR')}
+                          {t('paymentDayContractCommission')}: <MoneyPair sar={row.contractCommissionSar} />
                           {row.commissionInDue ? ` (${t('paymentDayIncludedInDue')})` : ''}
                         </div>
                       ) : null}
@@ -175,9 +182,15 @@ export default async function PaymentDayPage({
                         </div>
                       ) : null}
                     </td>
-                    <td className="px-3 py-3 text-right tabular-nums">{formatMoney(row.dueAmountSar, 'SAR')}</td>
-                    <td className="px-3 py-3 text-right tabular-nums">{formatMoney(row.paidAmountSar, 'SAR')}</td>
-                    <td className="px-3 py-3 text-right tabular-nums">{formatMoney(row.remainingSar, 'SAR')}</td>
+                    <td className="px-3 py-3 text-right">
+                      <MoneyPair sar={row.dueAmountSar} stacked />
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <MoneyPair sar={row.paidAmountSar} stacked />
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <MoneyPair sar={row.remainingSar} stacked />
+                    </td>
                     <td className="px-3 py-3">
                       <div className="text-xs font-semibold uppercase tracking-wide">
                         {t(STATUS_KEY[row.status])}
@@ -219,7 +232,7 @@ export default async function PaymentDayPage({
                     {row.note ? ` · ${row.note}` : ''}
                   </span>
                 </span>
-                <span className="tabular-nums">{formatMoney(row.amountSar, 'SAR')}</span>
+                <MoneyPair sar={row.amountSar} />
               </li>
             ))}
           </ul>

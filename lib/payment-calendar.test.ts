@@ -2,8 +2,11 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   amountToSar,
+  amountsForPaySlices,
   buildCreatorPaySchedule,
   monthGridDates,
+  resolvePayTiming,
+  sarToUsd,
   settleObligationsLite,
   urgencyFor,
 } from './payment-calendar-math.ts'
@@ -138,29 +141,83 @@ test('day scheduled total equals the sum of that day’s obligations', () => {
   assert.equal(new Set(day.map((i) => i.creatorId)).size, 2)
 })
 
-test('biweekly pay dates are 15 then 30 days after contract start', () => {
+test('15-day method: start Nov 1 → first pay Nov 15, second at contract end', () => {
   const slices = buildCreatorPaySchedule({
-    startDate: '2026-10-01',
-    endDate: '2026-11-15',
-    cadence: 'biweekly',
+    startDate: '2026-11-01',
+    endDate: '2026-11-30',
+    timing: 'fifteen',
     through: '2026-11-30',
   })
-  assert.equal(slices[0].dueOn, '2026-10-16')
-  assert.equal(slices[0].label, 'First payment')
-  assert.equal(slices[1].dueOn, '2026-10-31')
-  assert.equal(slices[1].label, 'Second payment')
+  assert.equal(slices.length, 2)
+  assert.equal(slices[0].dueOn, '2026-11-15')
+  assert.equal(slices[1].dueOn, '2026-11-30')
 })
 
-test('monthly pay date is the contract end', () => {
+test('upfront method: pay at start then every 2 weeks, not extra dues', () => {
+  const slices = buildCreatorPaySchedule({
+    startDate: '2026-10-01',
+    endDate: '2026-10-28',
+    timing: 'upfront',
+    through: '2026-10-31',
+  })
+  assert.equal(slices.length, 2)
+  assert.equal(slices[0].dueOn, '2026-10-01')
+  assert.equal(slices[0].label, 'Upfront')
+  assert.equal(slices[1].dueOn, '2026-10-15')
+})
+
+test('one-time method is a single pay on the contract end', () => {
   const slices = buildCreatorPaySchedule({
     startDate: '2026-10-01',
     endDate: '2026-10-31',
-    cadence: 'monthly',
+    timing: 'end',
     through: '2026-10-31',
   })
   assert.equal(slices.length, 1)
   assert.equal(slices[0].dueOn, '2026-10-31')
   assert.equal(slices[0].label, 'Final payment')
+})
+
+test('paid near start is inferred as upfront', () => {
+  assert.equal(
+    resolvePayTiming({
+      startDate: '2026-10-01',
+      endDate: '2026-10-28',
+      paidOn: ['2026-10-01'],
+      notes: ['upfront'],
+    }),
+    'upfront',
+  )
+})
+
+test('SAR and USD sit on the 3.75 rate', () => {
+  assert.equal(sarToUsd(75), 20)
+})
+
+test('upfront Novi-style: 200 then 200, not extra dues', () => {
+  const slices = buildCreatorPaySchedule({
+    startDate: '2026-10-01',
+    endDate: '2026-10-28',
+    timing: 'upfront',
+    through: '2026-10-31',
+  })
+  const amounts = amountsForPaySlices({
+    baseAmount: 200,
+    cadence: 'biweekly',
+    commission: 0,
+    sliceCount: slices.length,
+  })
+  assert.deepEqual(amounts, [200, 200])
+})
+
+test('monthly 400 over four 15-day pays stays 200 each', () => {
+  const amounts = amountsForPaySlices({
+    baseAmount: 400,
+    cadence: 'monthly',
+    commission: 0,
+    sliceCount: 4,
+  })
+  assert.deepEqual(amounts, [200, 200, 200, 200])
 })
 
 test('urgency is red for the next 3 days, orange for the next 2, green after that', () => {

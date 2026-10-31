@@ -565,6 +565,7 @@ export async function getContractsForCreator(creatorId: number): Promise<Contrac
            platforms,
            base_amount::float AS base_amount,
            COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
+           pay_timing,
            commission_amount::float AS commission_amount,
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
@@ -592,6 +593,7 @@ export async function getActiveContract(
            platforms,
            base_amount::float AS base_amount,
            COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
+           pay_timing,
            commission_amount::float AS commission_amount,
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
@@ -618,6 +620,7 @@ export async function getActiveContract(
            platforms,
            base_amount::float AS base_amount,
            COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
+           pay_timing,
            commission_amount::float AS commission_amount,
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
@@ -1678,6 +1681,7 @@ export async function getConsistencyForCreators(
              platforms,
              base_amount::float AS base_amount,
              COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
+             pay_timing,
              commission_amount::float AS commission_amount,
              count_mode, views_threshold,
              view_commission_amount::float AS view_commission_amount,
@@ -1823,6 +1827,11 @@ export type CreatorTrackingRow = CreatorProgress & {
   pay_due: boolean
   leader_id?: number | null
   leader_name?: string | null
+  contract_id: number | null
+  timeline_start: string | null
+  timeline_end: string | null
+  pay_timing: 'fifteen' | 'upfront' | 'end' | null
+  contract_name: string | null
 }
 
 export async function attachTracking(
@@ -1835,6 +1844,10 @@ export async function attachTracking(
     const active = packed?.active ?? null
     const goals = goalsForContract(c, active)
     const pay = paySummaryFrom(c, today, active)
+    const timing =
+      active?.pay_timing === 'fifteen' || active?.pay_timing === 'upfront' || active?.pay_timing === 'end'
+        ? active.pay_timing
+        : null
     return {
       ...c,
       goal_instagram: goals.goalInstagram,
@@ -1845,6 +1858,11 @@ export async function attachTracking(
       pay_due: pay.isDue,
       leader_id: c.leader_id ?? null,
       leader_name: c.leader_name ?? null,
+      contract_id: active?.id ?? null,
+      timeline_start: active?.start_date ?? c.contract_start,
+      timeline_end: active?.end_date ?? c.contract_end,
+      pay_timing: timing,
+      contract_name: active?.name ?? null,
     }
   })
 }
