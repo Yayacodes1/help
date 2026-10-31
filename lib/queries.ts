@@ -28,6 +28,10 @@ import {
 } from '@/lib/contract-halves'
 import { scheduleFromContract, type PostingSchedule } from '@/lib/posting-schedule'
 import { payCurrency } from '@/lib/format'
+import {
+  buildCreatorPaySchedule,
+  resolvePayTiming,
+} from '@/lib/payment-calendar-math'
 
 export async function getServerToday(): Promise<string> {
   const rows = (await sql`SELECT CURRENT_DATE::text AS today`) as { today: string }[]
@@ -1832,6 +1836,20 @@ export type CreatorTrackingRow = CreatorProgress & {
   timeline_end: string | null
   pay_timing: 'fifteen' | 'upfront' | 'end' | null
   contract_name: string | null
+  pay_display_currency: 'USD' | 'SAR'
+  has_two_pays: boolean
+  first_due: number
+  first_paid: number
+  first_balance: number
+  first_settled: boolean
+  first_due_on: string | null
+  first_label: string
+  second_due: number
+  second_paid: number
+  second_balance: number
+  second_settled: boolean
+  second_due_on: string | null
+  second_label: string
 }
 
 export async function attachTracking(
@@ -1839,15 +1857,64 @@ export async function attachTracking(
   today: string,
 ): Promise<CreatorTrackingRow[]> {
   const batch = await getConsistencyForCreators(creators, today)
+  const ids = creators.map((c) => c.id)
+  const paymentRows =
+    ids.length === 0
+      ? []
+      : ((await sql`
+          SELECT creator_id, contract_id, amount::float AS amount,
+                 paid_on::text AS paid_on, note
+          FROM payments
+          WHERE creator_id = ANY(${ids}::int[])
+          ORDER BY paid_on ASC, id ASC
+        `) as {
+          creator_id: number
+          contract_id: number | null
+          amount: number
+          paid_on: string
+          note: string | null
+        }[])
+  const paysByContract = new Map<number, { amount: number; paid_on: string; note: string | null }[]>()
+  for (const row of paymentRows) {
+    if (row.contract_id == null) continue
+    const list = paysByContract.get(row.contract_id) ?? []
+    list.push({ amount: row.amount, paid_on: row.paid_on, note: row.note })
+    paysByContract.set(row.contract_id, list)
+  }
   return creators.map((c) => {
     const packed = batch.get(c.id)
     const active = packed?.active ?? null
     const goals = goalsForContract(c, active)
     const pay = paySummaryFrom(c, today, active)
-    const timing =
+    const timingStored =
       active?.pay_timing === 'fifteen' || active?.pay_timing === 'upfront' || active?.pay_timing === 'end'
         ? active.pay_timing
         : null
+    const timing = active
+      ? resolvePayTiming({
+          stored: timingStored,
+          startDate: active.start_date,
+          endDate: active.end_date,
+          paidOn: (paysByContract.get(active.id) ?? []).map((p) => p.paid_on),
+          notes: (paysByContract.get(active.id) ?? []).map((p) => p.note ?? ''),
+        })
+      : null
+    const waves = active
+      ? contractWaveStatus({
+          start: active.start_date,
+          end: active.end_date,
+          minDue: minimumContractDue(active),
+          payments: paysByContract.get(active.id) ?? [],
+        })
+      : null
+    const slices = active
+      ? buildCreatorPaySchedule({
+          startDate: active.start_date,
+          endDate: active.end_date,
+          timing: timing ?? 'fifteen',
+          through: active.end_date ?? today,
+        })
+      : []
     return {
       ...c,
       goal_instagram: goals.goalInstagram,
@@ -1861,8 +1928,22 @@ export async function attachTracking(
       contract_id: active?.id ?? null,
       timeline_start: active?.start_date ?? c.contract_start,
       timeline_end: active?.end_date ?? c.contract_end,
-      pay_timing: timing,
+      pay_timing: timingStored ?? timing,
       contract_name: active?.name ?? null,
+      pay_display_currency: payCurrency(c.role, c.pay_currency),
+      has_two_pays: Boolean(waves?.hasTwoHalves),
+      first_due: waves?.firstDue ?? 0,
+      first_paid: waves?.firstPaid ?? 0,
+      first_balance: waves?.firstBalance ?? 0,
+      first_settled: waves?.firstSettled ?? true,
+      first_due_on: slices[0]?.dueOn ?? null,
+      first_label: slices[0]?.label ?? 'First payment',
+      second_due: waves?.secondDue ?? 0,
+      second_paid: waves?.secondPaid ?? 0,
+      second_balance: waves?.secondBalance ?? 0,
+      second_settled: waves?.secondSettled ?? true,
+      second_due_on: slices[1]?.dueOn ?? null,
+      second_label: slices[1]?.label ?? 'Second payment',
     }
   })
 }

@@ -1,11 +1,13 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { Pencil, Search, X } from 'lucide-react'
-import { saveTimelineContract } from '@/app/actions/admin'
+import { recordDueHalfPayment, saveTimelineContract } from '@/app/actions/admin'
 import type { CreatorTrackingRow } from '@/lib/queries'
 import { personBelongsOnProjectManage } from '@/lib/project-scope'
 import { participantRoleLabel } from '@/lib/participant-role'
+import { formatMoney } from '@/lib/format'
 
 export type TimelineLabels = {
   title: string
@@ -19,6 +21,14 @@ export type TimelineLabels = {
   noContract: string
   open: string
   save: string
+  saveOnly: string
+  payments: string
+  noAmount: string
+  firstPayment: string
+  secondPayment: string
+  payFirst: string
+  paySecond: string
+  paid: string
   cancel: string
   empty: string
   paused: string
@@ -67,6 +77,7 @@ export function TimelineManage({
   currentProjectId?: number | string | null
   labels: TimelineLabels
 }) {
+  const router = useRouter()
   const [editingId, setEditingId] = useState<number | null>(null)
   const [pending, startTransition] = useTransition()
   const [query, setQuery] = useState('')
@@ -102,18 +113,81 @@ export function TimelineManage({
   const inputClass =
     'h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
+  function payWave(person: CreatorTrackingRow, which: 'first' | 'second') {
+    if (!person.contract_id) return
+    setError(null)
+    startTransition(async () => {
+      await recordDueHalfPayment(person.id, person.contract_id!, which)
+      router.refresh()
+    })
+  }
+
+  function WavePay({
+    person,
+    which,
+  }: {
+    person: CreatorTrackingRow
+    which: 'first' | 'second'
+  }) {
+    const due = which === 'first' ? person.first_due : person.second_due
+    const paid = which === 'first' ? person.first_paid : person.second_paid
+    const balance = which === 'first' ? person.first_balance : person.second_balance
+    const settled = which === 'first' ? person.first_settled : person.second_settled
+    const dueOn = which === 'first' ? person.first_due_on : person.second_due_on
+    const title =
+      which === 'first'
+        ? person.first_label || labels.firstPayment
+        : person.second_label || labels.secondPayment
+    const payLabel = which === 'first' ? labels.payFirst : labels.paySecond
+    if (due <= 0.009 && paid <= 0.009 && which === 'second') return null
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-background/60 px-3 py-2">
+        <div className="min-w-0">
+          <div className="text-sm font-medium">{title}</div>
+          <div className="text-xs text-muted-foreground">
+            {dueOn ? <span className="tabular-nums">{dueOn}</span> : null}
+            {dueOn ? ' · ' : null}
+            {formatMoney(due, person.pay_display_currency)}
+            {paid > 0.009 ? ` · ${formatMoney(paid, person.pay_display_currency)} ${labels.paid.toLowerCase()}` : ''}
+          </div>
+        </div>
+        {settled || balance <= 0.009 ? (
+          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
+            {labels.paid}
+          </span>
+        ) : person.contract_id ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => payWave(person, which)}
+            className="h-8 shrink-0 rounded-lg bg-primary px-2.5 text-[11px] font-semibold text-primary-foreground disabled:opacity-60"
+          >
+            {payLabel} {formatMoney(balance, person.pay_display_currency)}
+          </button>
+        ) : null}
+      </div>
+    )
+  }
+
   function Editor({ person }: { person: CreatorTrackingRow }) {
     const timing =
       person.pay_timing === 'upfront' || person.pay_timing === 'end' || person.pay_timing === 'fifteen'
         ? person.pay_timing
         : 'fifteen'
+    const showPays = person.first_due > 0.009 || person.second_due > 0.009 || person.first_paid > 0.009
     return (
       <form
         action={(fd) => {
           setError(null)
           startTransition(async () => {
             const result = await saveTimelineContract(fd)
-            if (result && !result.ok) setError(result.message)
+            if (result && !result.ok) {
+              setError(result.message)
+              return
+            }
+            if ((fd.get('open_calendar') ?? '').toString() !== '1') {
+              router.refresh()
+            }
           })
         }}
         className="flex flex-col gap-3 rounded-lg border border-dashed border-border p-3"
@@ -169,10 +243,32 @@ export function TimelineManage({
             </span>
           </label>
         </fieldset>
+        <div className="grid gap-2">
+          <div className="text-xs font-medium text-foreground">{labels.payments}</div>
+          {showPays ? (
+            <>
+              <WavePay person={person} which="first" />
+              {person.has_two_pays ? <WavePay person={person} which="second" /> : null}
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">{labels.noAmount}</p>
+          )}
+        </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="submit"
+            name="open_calendar"
+            value="0"
+            disabled={pending}
+            className="h-10 rounded-lg border border-border px-3 text-sm font-semibold hover:bg-accent disabled:opacity-60"
+          >
+            {pending ? labels.saving : labels.saveOnly}
+          </button>
+          <button
+            type="submit"
+            name="open_calendar"
+            value="1"
             disabled={pending}
             className="h-10 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
           >
@@ -210,6 +306,19 @@ export function TimelineManage({
             {' · '}
             {timingLabel(person.pay_timing, labels)}
           </div>
+          {person.first_due > 0.009 || person.second_due > 0.009 ? (
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              {labels.firstPayment} {formatMoney(person.first_due, person.pay_display_currency)}
+              {person.first_settled ? ` · ${labels.paid}` : ''}
+              {person.has_two_pays ? (
+                <>
+                  {' · '}
+                  {labels.secondPayment} {formatMoney(person.second_due, person.pay_display_currency)}
+                  {person.second_settled ? ` · ${labels.paid}` : ''}
+                </>
+              ) : null}
+            </div>
+          ) : null}
         </div>
         <button
           type="button"

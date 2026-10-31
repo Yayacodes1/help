@@ -855,7 +855,11 @@ export async function saveTimelineContract(formData: FormData) {
   revalidatePath('/admin')
   revalidatePath(`/admin/creators/${creatorId}`)
   revalidatePath('/submit')
-  redirect(`/admin?tab=money&panel=calendar&calMonth=${today.slice(0, 7)}`)
+  const openCalendar = (formData.get('open_calendar') ?? '').toString() === '1'
+  if (openCalendar) {
+    redirect(`/admin?tab=money&panel=calendar&calMonth=${today.slice(0, 7)}`)
+  }
+  return { ok: true as const }
 }
 
 /** One-click: turn every non-current contract’s typed base+commission into real payments. */
