@@ -47,11 +47,11 @@ export function PushContractForward({
   return (
     <div className={compact ? 'flex flex-wrap items-center gap-1' : 'mt-2 flex flex-col gap-1'}>
       {!compact ? (
-        <p className="text-[11px] text-zinc-700 dark:text-zinc-200">{labels.hint}</p>
+        <p className="text-[11px] text-muted-foreground">{labels.hint}</p>
       ) : null}
       <div className="flex flex-wrap items-center gap-1">
         {compact ? (
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-200">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             {labels.moreTime}
           </span>
         ) : null}
@@ -62,7 +62,7 @@ export function PushContractForward({
             disabled={pending}
             onClick={() => push(days)}
             title={labels.hint}
-            className="h-7 rounded-md border border-zinc-400 bg-white px-2 text-[11px] font-semibold text-zinc-900 hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-500 dark:bg-zinc-800 dark:text-zinc-50 dark:hover:bg-zinc-700"
+            className="h-7 rounded-md border border-border px-2 text-[11px] font-semibold hover:bg-accent disabled:opacity-60"
           >
             {pending ? labels.pushing : `+${days}d`}
           </button>
@@ -83,13 +83,13 @@ export function PushContractForward({
               pushCustom()
             }
           }}
-          className="h-7 w-16 rounded-md border border-zinc-400 bg-white px-1.5 text-[11px] font-semibold tabular-nums text-zinc-900 placeholder:text-zinc-500 disabled:opacity-60 dark:border-zinc-500 dark:bg-zinc-800 dark:text-zinc-50 dark:placeholder:text-zinc-400"
+          className="h-7 w-16 rounded-md border border-border bg-background px-1.5 text-[11px] font-semibold tabular-nums"
         />
         <button
           type="button"
           disabled={pending}
           onClick={pushCustom}
-          className="h-7 rounded-md border border-zinc-400 bg-white px-2 text-[11px] font-semibold text-zinc-900 hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-500 dark:bg-zinc-800 dark:text-zinc-50 dark:hover:bg-zinc-700"
+          className="h-7 rounded-md border border-border px-2 text-[11px] font-semibold hover:bg-accent disabled:opacity-60"
         >
           {pending ? labels.pushing : labels.add}
         </button>

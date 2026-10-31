@@ -191,18 +191,11 @@ export function PaymentCalendarBoard({
                   </div>
                   <div className="mt-1 hidden min-h-0 flex-1 flex-col gap-0.5 overflow-hidden text-[10px] leading-tight sm:flex">
                     {day.names.slice(0, 3).map((name) => (
-                      <span
-                        key={name}
-                        className="truncate rounded-sm bg-zinc-200 px-1 font-semibold text-zinc-900"
-                      >
+                      <span key={name} className="truncate">
                         {name}
                       </span>
                     ))}
-                    {day.names.length > 3 ? (
-                      <span className="truncate rounded-sm bg-zinc-200 px-1 font-semibold text-zinc-900">
-                        +{day.names.length - 3}
-                      </span>
-                    ) : null}
+                    {day.names.length > 3 ? <span>+{day.names.length - 3}</span> : null}
                   </div>
                   <div className="mt-auto pt-0.5 text-[10px] font-medium sm:hidden">
                     {day.unpaidCount}
@@ -224,16 +217,13 @@ export function PaymentCalendarBoard({
           <h4 className="text-sm font-semibold">
             {labels.toPay} · {unpaid.length}
           </h4>
-          <ul className="mt-3 flex max-h-80 flex-col gap-2 overflow-auto text-sm">
+          <ul className="mt-3 flex max-h-80 flex-col gap-1 overflow-auto text-sm">
             {unpaid.map((row) => (
-              <li
-                key={row.creatorId}
-                className="rounded-lg border border-zinc-300 bg-zinc-200 px-3 py-2 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-50"
-              >
+              <li key={row.creatorId} className="rounded-lg border border-border bg-card px-3 py-2 hover:bg-accent/40">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <Link href={hrefFor(row.nextDue)} className="min-w-0">
-                    <span className="font-semibold text-zinc-900 dark:text-zinc-50">{row.creatorName}</span>
-                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-200">
+                    <span className="font-medium">{row.creatorName}</span>
+                    <span className="text-xs text-muted-foreground">
                       {' · '}
                       {participantRoleLabel(row.role)}
                       {' · '}
@@ -244,16 +234,12 @@ export function PaymentCalendarBoard({
                         : ''}
                     </span>
                   </Link>
-                  <span className="font-semibold text-zinc-900 dark:text-zinc-50">
-                    <MoneyPair sar={row.remainingSar} />
-                  </span>
+                  <MoneyPair sar={row.remainingSar} />
                 </div>
                 {row.contractEnd ? (
                   <div className="mt-1">
                     {row.awaitingEligibility ? (
-                      <p className="mb-1 text-[10px] font-medium text-zinc-700 dark:text-zinc-200">
-                        {labels.moreTimeHint}
-                      </p>
+                      <p className="mb-1 text-[10px] text-muted-foreground">{labels.moreTimeHint}</p>
                     ) : null}
                     <PushContractForward
                       creatorId={row.creatorId}
