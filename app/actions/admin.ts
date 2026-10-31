@@ -1040,6 +1040,7 @@ export async function recordDueHalfPayment(
   await sql`UPDATE creators SET last_paid_at = ${today} WHERE id = ${creatorId}`
   revalidatePath('/admin')
   revalidatePath(`/admin/creators/${creatorId}`)
+  revalidatePath('/admin/payments', 'layout')
   revalidatePath('/submit')
   return { ok: true as const, count: toRecord.length }
 }

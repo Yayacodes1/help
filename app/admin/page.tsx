@@ -111,6 +111,11 @@ import { MiqatContestPanel } from '@/components/admin/miqat-contest-panel'
 import { QuickBreakPicker } from '@/components/admin/quick-break-picker'
 import { BreakRequestsBoard } from '@/components/admin/break-requests-board'
 import { listBreakRequests } from '@/lib/break-requests'
+import { getCompanyStructure } from '@/lib/company-structure'
+import { CompanyStructureBoard } from '@/components/admin/company-structure'
+import { loadPaymentCalendar } from '@/lib/payment-calendar-data'
+import { parseCalendarRole } from '@/lib/payment-calendar'
+import { PaymentCalendarBoard } from '@/components/admin/payment-calendar'
 
 export const dynamic = 'force-dynamic'
 
@@ -156,6 +161,8 @@ export default async function AdminPage({
     cmContract?: string
     vPage?: string
     vSize?: string
+    calMonth?: string
+    calRole?: string
     /** Side by side: `role<projectId>`, `aFrom<projectId>`, `aTo<projectId>`. */
     [key: string]: string | undefined
   }>
@@ -468,6 +475,28 @@ export default async function AdminPage({
       : null
   const analyticsData = tab === 'analytics' ? await loadAnalytics() : null
   const moneyData = tab === 'money' ? await loadMoney() : null
+  const calMonth = parseYearMonth(sp.calMonth, opToday)
+  const calRole = parseCalendarRole(sp.calRole)
+  let calendarData: Awaited<ReturnType<typeof loadPaymentCalendar>> | null = null
+  let calendarError: string | null = null
+  if (tab === 'money' && sp.panel === 'calendar') {
+    try {
+      calendarData = await loadPaymentCalendar({ month: calMonth, today: opToday, role: calRole })
+    } catch (err) {
+      console.error('[admin] payment calendar', err)
+      calendarError = t('paymentCalendarError')
+    }
+  }
+  let companyStructure: Awaited<ReturnType<typeof getCompanyStructure>> | null = null
+  let companyStructureError: string | null = null
+  if (tab === 'people') {
+    try {
+      companyStructure = await getCompanyStructure()
+    } catch (err) {
+      console.error('[admin] company structure', err)
+      companyStructureError = t('companyStructureError')
+    }
+  }
   const twodayData = tab === 'twoday' ? { requests: await listBreakRequests({ limit: 80 }) } : null
   const { submissions, videoStats, strikeBoard, attendance, contractReviews, leaderBoard, leaderDirectory, activityMarks } =
     todayData ?? ({} as Awaited<ReturnType<typeof loadToday>>)
@@ -1436,6 +1465,41 @@ export default async function AdminPage({
             ),
           },
           {
+            id: 'calendar',
+            title: t('paymentCalendar'),
+            summary: formatYearMonth(calMonth, locale),
+            hint: t('paymentCalendarHint'),
+            children: calendarError ? (
+              <p className="text-sm text-destructive">{calendarError}</p>
+            ) : calendarData ? (
+              <PaymentCalendarBoard
+                model={calendarData}
+                locale={locale}
+                labels={{
+                  prev: t('paymentCalendarPrev'),
+                  next: t('paymentCalendarNext'),
+                  today: t('paymentCalendarToday'),
+                  creators: t('roleFilterCreators'),
+                  reposters: t('roleFilterReposters'),
+                  both: t('roleFilterAll'),
+                  spent: t('paymentCalendarSpent'),
+                  remaining: t('paymentCalendarRemaining'),
+                  commission: t('paymentCalendarCommission'),
+                  earned: t('paymentCalendarEarned'),
+                  weekdays:
+                    locale === 'ar'
+                      ? ['اثن', 'ثل', 'ارب', 'خم', 'جم', 'سب', 'أحد']
+                      : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                  unscheduled: t('paymentCalendarUnscheduled'),
+                  empty: t('paymentCalendarEmpty'),
+                  people: t('people'),
+                }}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('loadingPage')}</p>
+            ),
+          },
+          {
             id: 'paydue',
             title: t('payDue'),
             summary: payDueCount === 0 ? t('allClear') : `${payDueCount}`,
@@ -1601,6 +1665,46 @@ export default async function AdminPage({
               </div>
             ),
           },
+          ...(companyStructure || companyStructureError
+            ? [
+                {
+                  id: 'structure',
+                  title: t('companyStructure'),
+                  summary: companyStructure
+                    ? `${companyStructure.leaders.length + companyStructure.outreach.length + companyStructure.reposters.length}`
+                    : '—',
+                  hint: t('companyStructureHint'),
+                  children: companyStructureError ? (
+                    <p className="text-sm text-destructive">{companyStructureError}</p>
+                  ) : companyStructure ? (
+                    <CompanyStructureBoard
+                      data={{
+                        ...companyStructure,
+                        executives: companyStructure.executives.map((row) => ({
+                          ...row,
+                          label:
+                            row.id === 'ceo'
+                              ? t('companyCeo')
+                              : row.id === 'coo'
+                                ? t('companyCoo')
+                                : t('companyDeputyCoo'),
+                        })),
+                      }}
+                      canEdit={session != null}
+                      labels={{
+                        notAssigned: t('companyNotAssigned'),
+                        save: t('companySave'),
+                        clear: t('companyClear'),
+                        leaders: t('roleFilterLeaders'),
+                        outreach: t('companyOutreach'),
+                        reposters: t('roleFilterReposters'),
+                        empty: t('companyEmpty'),
+                      }}
+                    />
+                  ) : null,
+                },
+              ]
+            : []),
           ...(canManageOutreachAccounts(session?.id)
             ? [
                 {

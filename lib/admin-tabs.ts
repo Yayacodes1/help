@@ -2,8 +2,8 @@ export const ADMIN_TABS = {
   today: ['leaders', 'progress', 'attention', 'reviews', 'strikes', 'videos'],
   twoday: ['quickBreak', 'breakRequests'],
   analytics: ['analytics', 'ranking', 'projectviews', 'topvideos', 'miqatcontest'],
-  money: ['marketing', 'commission', 'paydue', 'payments', 'outflow'],
-  people: ['manage', 'outreach'],
+  money: ['marketing', 'commission', 'calendar', 'paydue', 'payments', 'outflow'],
+  people: ['manage', 'structure', 'outreach'],
 } as const
 
 export type AdminTab = keyof typeof ADMIN_TABS

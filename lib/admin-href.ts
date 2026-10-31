@@ -14,7 +14,9 @@ const ADMIN_PANELS = new Set([
   'payments',
   'marketing',
   'outflow',
+  'calendar',
   'manage',
+  'structure',
   'strikes',
 ])
 

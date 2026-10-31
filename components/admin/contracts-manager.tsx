@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, useTransition, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useTransition, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 import type { ContractCompareRow } from '@/lib/queries'
 import type { Project } from '@/lib/db'
@@ -633,6 +633,13 @@ export function ContractsManager({
   })
   const unpaidPastTotal = needsRecord.reduce((sum, r) => sum + r.balance, 0)
 
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, '')
+    if (!hash) return
+    const node = document.getElementById(hash)
+    node?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [])
+
   return (
     <CurrencyContext.Provider value={currency}>
     <div className="flex flex-col gap-4">
@@ -900,7 +907,7 @@ export function ContractsManager({
                 } = row
                 const pastVariant = isPast && !isActive
                 return (
-                  <li key={contract.id} className="py-3 first:pt-0 last:pb-0">
+                  <li id={`contract-${contract.id}`} key={contract.id} className="scroll-mt-24 py-3 first:pt-0 last:pb-0">
                     <form
                       action={(fd) =>
                         startTransition(() => updateContract(contract.id, creatorId, fd))

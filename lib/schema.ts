@@ -353,6 +353,12 @@ async function runEnsureCreatorTrackingColumns() {
   await ensureStreakSettingsTable()
   const { ensureLeaderTables } = await import('@/lib/leaders')
   await ensureLeaderTables()
+  try {
+    const { ensureCompanyRoleTable } = await import('@/lib/company-structure')
+    await ensureCompanyRoleTable()
+  } catch (err) {
+    console.warn('[schema] company roles skipped', err)
+  }
   await ensureRefreshJobTables()
   try {
     const { ensureViewSnapshotTable } = await import('@/lib/daily-views-store')
