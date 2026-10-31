@@ -197,6 +197,8 @@ export function TimelineManage({
               return
             }
             if ((fd.get('open_calendar') ?? '').toString() !== '1') {
+              setEditingId(null)
+              setError(null)
               router.refresh()
             }
           })
