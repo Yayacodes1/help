@@ -30,6 +30,7 @@ import { scheduleFromContract, type PostingSchedule } from '@/lib/posting-schedu
 import { payCurrency } from '@/lib/format'
 import {
   buildCreatorPaySchedule,
+  normalizePayTiming,
   resolvePayTiming,
 } from '@/lib/payment-calendar-math'
 
@@ -925,7 +926,9 @@ export function targetVideoTotal(contract: Contract): number {
 
 export function expectedContractPay(contract: Contract): number | null {
   const everyDays = 14
+  const oneTime = normalizePayTiming(contract.pay_timing) === 'end'
   const hasHalves =
+    !oneTime &&
     !!contract.end_date &&
     contractSupportsBiweeklyHalves(contract.start_date, contract.end_date, everyDays)
   const base = periodBaseTotal(
@@ -941,10 +944,15 @@ export function expectedContractPay(contract: Contract): number | null {
 
 /** Minimum owed for balance math: period base + commission (0 if TBD). */
 export function minimumContractDue(
-  contract: Pick<Contract, 'start_date' | 'end_date' | 'base_amount' | 'base_pay_cadence' | 'commission_amount'>,
+  contract: Pick<
+    Contract,
+    'start_date' | 'end_date' | 'base_amount' | 'base_pay_cadence' | 'commission_amount' | 'pay_timing'
+  >,
 ): number {
   const everyDays = 14
+  const oneTime = normalizePayTiming(contract.pay_timing) === 'end'
   const hasHalves =
+    !oneTime &&
     !!contract.end_date &&
     contractSupportsBiweeklyHalves(contract.start_date, contract.end_date, everyDays)
   const base = periodBaseTotal(
@@ -1148,6 +1156,7 @@ export async function getContractComparisons(
 
       let halves: ContractHalfStatus[] = []
       if (
+        normalizePayTiming(contract.pay_timing) !== 'end' &&
         contract.end_date &&
         contractSupportsBiweeklyHalves(contract.start_date, contract.end_date, everyDays)
       ) {
@@ -1361,11 +1370,19 @@ export async function getPaymentDueList(
       const paidAmount =
         Math.round(payments.reduce((s, p) => s + (Number(p.amount) || 0), 0) * 100) / 100
       const minDue = minimumContractDue(contract)
+      const timing = resolvePayTiming({
+        stored: contract.pay_timing,
+        startDate: contract.start_date,
+        endDate: contract.end_date,
+        paidOn: payments.map((p) => p.paid_on),
+        notes: payments.map((p) => p.note ?? ''),
+      })
       const waves = contractWaveStatus({
         start: contract.start_date,
         end: contract.end_date,
         minDue,
         payments,
+        timing,
       })
       const videoRate =
         targets > 0
@@ -1382,42 +1399,65 @@ export async function getPaymentDueList(
       const fullySettled = minDue > 0 && paidAmount >= minDue - 0.009
       const live =
         contract.start_date <= today && (contract.end_date == null || contract.end_date >= today)
-      if (live && !waves.firstSettled && (minDue > 0 || commissionMissing)) {
-        const daysOn = daysBetweenInclusive(contract.start_date, today)
-        const windowRow = withWaves(
-          buildDueRow({
-            creator,
-            contract,
-            dueDate: addDays(contract.start_date, PAY_WINDOW_DAYS - 1),
-            reason: 'pay_schedule',
-            paidAmount,
-            counts,
-            settled: false,
-          }),
-          waves,
-        )
-        windowRow.daysOnContract = daysOn
-        windowRow.windowDays = PAY_WINDOW_DAYS
-        if (daysOn >= PAY_WINDOW_DAYS) urgent.push(windowRow)
-        else willPay.push(windowRow)
-      }
-      if (live && waves.hasTwoHalves && (minDue > 0 || commissionMissing)) {
-        const daysOn = daysBetweenInclusive(contract.start_date, today)
-        const secondRow = withWaves(
-          buildDueRow({
-            creator,
-            contract,
-            dueDate: addDays(contract.start_date, PAY_WINDOW_DAYS - 1),
-            reason: 'pay_schedule',
-            paidAmount,
-            counts,
-            settled: waves.firstSettled && waves.secondSettled,
-          }),
-          waves,
-        )
-        secondRow.daysOnContract = daysOn
-        secondRow.windowDays = PAY_WINDOW_DAYS
-        second.push(secondRow)
+      if (timing === 'end') {
+        if (
+          !fullySettled &&
+          contract.end_date &&
+          (minDue > 0 || commissionMissing)
+        ) {
+          const endRow = withWaves(
+            buildDueRow({
+              creator,
+              contract,
+              dueDate: contract.end_date,
+              reason: 'pay_schedule',
+              paidAmount,
+              counts,
+              settled: false,
+            }),
+            waves,
+          )
+          if (contract.end_date <= today) urgent.push(endRow)
+          else willPay.push(endRow)
+        }
+      } else {
+        if (live && !waves.firstSettled && (minDue > 0 || commissionMissing)) {
+          const daysOn = daysBetweenInclusive(contract.start_date, today)
+          const windowRow = withWaves(
+            buildDueRow({
+              creator,
+              contract,
+              dueDate: addDays(contract.start_date, PAY_WINDOW_DAYS - 1),
+              reason: 'pay_schedule',
+              paidAmount,
+              counts,
+              settled: false,
+            }),
+            waves,
+          )
+          windowRow.daysOnContract = daysOn
+          windowRow.windowDays = PAY_WINDOW_DAYS
+          if (daysOn >= PAY_WINDOW_DAYS) urgent.push(windowRow)
+          else willPay.push(windowRow)
+        }
+        if (live && waves.hasTwoHalves && (minDue > 0 || commissionMissing)) {
+          const daysOn = daysBetweenInclusive(contract.start_date, today)
+          const secondRow = withWaves(
+            buildDueRow({
+              creator,
+              contract,
+              dueDate: addDays(contract.start_date, PAY_WINDOW_DAYS - 1),
+              reason: 'pay_schedule',
+              paidAmount,
+              counts,
+              settled: waves.firstSettled && waves.secondSettled,
+            }),
+            waves,
+          )
+          secondRow.daysOnContract = daysOn
+          secondRow.windowDays = PAY_WINDOW_DAYS
+          second.push(secondRow)
+        }
       }
 
       // Pay due: video target finished and money not fully recorded. End date ignored.
@@ -1886,10 +1926,7 @@ export async function attachTracking(
     const active = packed?.active ?? null
     const goals = goalsForContract(c, active)
     const pay = paySummaryFrom(c, today, active)
-    const timingStored =
-      active?.pay_timing === 'fifteen' || active?.pay_timing === 'upfront' || active?.pay_timing === 'end'
-        ? active.pay_timing
-        : null
+    const timingStored = normalizePayTiming(active?.pay_timing)
     const timing = active
       ? resolvePayTiming({
           stored: timingStored,
@@ -1905,6 +1942,7 @@ export async function attachTracking(
           end: active.end_date,
           minDue: minimumContractDue(active),
           payments: paysByContract.get(active.id) ?? [],
+          timing: timing ?? undefined,
         })
       : null
     const slices = active

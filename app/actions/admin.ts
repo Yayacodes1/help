@@ -790,6 +790,9 @@ export async function saveTimelineContract(formData: FormData) {
   const payTiming = parsePayTiming(formData.get('pay_timing')) ?? 'fifteen'
   if (!start) return { ok: false as const, message: 'Start date is required.' }
   if (end && end < start) return { ok: false as const, message: 'End cannot be before start.' }
+  if (payTiming === 'end' && !end) {
+    return { ok: false as const, message: 'End date is required for a one-time payment.' }
+  }
 
   const existingIdRaw = Number(formData.get('contract_id'))
   let contractId =
@@ -857,7 +860,8 @@ export async function saveTimelineContract(formData: FormData) {
   revalidatePath('/submit')
   const openCalendar = (formData.get('open_calendar') ?? '').toString() === '1'
   if (openCalendar) {
-    redirect(`/admin?tab=money&panel=calendar&calMonth=${today.slice(0, 7)}`)
+    const calMonth = (payTiming === 'end' && end ? end : today).slice(0, 7)
+    redirect(`/admin?tab=money&panel=calendar&calMonth=${calMonth}`)
   }
   return { ok: true as const }
 }
@@ -1117,7 +1121,8 @@ export async function recordDueHalfPayment(
   const today = await getServerToday()
   const rows = (await sql`
     SELECT id, name, start_date::text AS start_date, end_date::text AS end_date,
-           base_amount::float AS base_amount, base_pay_cadence, commission_amount::float AS commission_amount
+           base_amount::float AS base_amount, base_pay_cadence, pay_timing,
+           commission_amount::float AS commission_amount
     FROM contracts
     WHERE id = ${contractId} AND creator_id = ${creatorId}
     LIMIT 1
@@ -1128,6 +1133,7 @@ export async function recordDueHalfPayment(
     end_date: string | null
     base_amount: number
     base_pay_cadence: string | null
+    pay_timing: string | null
     commission_amount: number | null
   }[]
   const contract = rows[0]
@@ -1146,6 +1152,7 @@ export async function recordDueHalfPayment(
     end: contract.end_date,
     minDue,
     payments,
+    timing: contract.pay_timing,
   })
   const source = await paymentSource(null)
   const toRecord: Array<{ amount: number; note: string }> = []

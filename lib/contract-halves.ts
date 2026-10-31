@@ -135,10 +135,13 @@ export function contractWaveStatus(opts: {
   minDue: number
   payments: HalfPayment[]
   everyDays?: number
+  timing?: string | null
 }): ContractWaveStatus {
   const every = opts.everyDays ?? 14
   const minDue = roundMoney(opts.minDue)
-  const hasTwoHalves = !!opts.end && contractSupportsBiweeklyHalves(opts.start, opts.end, every)
+  const oneTime = (opts.timing ?? '').toString().trim() === 'end'
+  const hasTwoHalves =
+    !oneTime && !!opts.end && contractSupportsBiweeklyHalves(opts.start, opts.end, every)
   if (!hasTwoHalves) {
     const paid = roundMoney(opts.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0))
     const balance = Math.max(0, roundMoney(minDue - paid))

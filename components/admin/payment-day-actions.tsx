@@ -10,18 +10,17 @@ export function PaymentDayActions({
   contractId,
   remainingSar,
   currency,
-  label,
+  which = 'first',
 }: {
   creatorId: number
   contractId: number
   remainingSar: number
   currency: 'USD' | 'SAR'
-  label: string
+  which?: 'first' | 'second'
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   if (remainingSar <= 0.009) return null
-  const which = label.toLowerCase().includes('final') || label.toLowerCase().includes('2nd') ? 'second' : 'first'
   return (
     <button
       type="button"

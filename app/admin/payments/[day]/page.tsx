@@ -201,7 +201,7 @@ export default async function PaymentDayPage({
                         contractId={row.contractId}
                         remainingSar={row.remainingSar}
                         currency={row.currency}
-                        label={row.installmentLabel}
+                        which={row.installmentIndex === 0 ? 'first' : 'second'}
                       />
                       {row.awaitingEligibility || row.remainingSar > 0.009 ? (
                         <PushContractForward

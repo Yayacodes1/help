@@ -215,18 +215,22 @@ export function obligationsFromContract(
     paidOn: contractPayments.map((p) => p.paidOn),
     notes: contractPayments.map((p) => p.note ?? ''),
   })
+  const scheduleThrough = timing === 'end' ? (contract.endDate ?? through) : through
   const slices = buildCreatorPaySchedule({
     startDate: contract.startDate,
     endDate: contract.endDate,
     timing,
-    through,
+    through: scheduleThrough,
   })
-  const sliceAmounts = amountsForPaySlices({
-    baseAmount: contract.baseAmount,
-    cadence,
-    commission,
-    sliceCount: slices.length,
-  })
+  const sliceAmounts =
+    timing === 'end'
+      ? slices.map(() => roundMoney(contract.baseAmount + commission))
+      : amountsForPaySlices({
+          baseAmount: contract.baseAmount,
+          cadence,
+          commission,
+          sliceCount: slices.length,
+        })
   const schedule: BiweeklyInstallment[] = slices.map((slice, i) => ({
     dueOn: slice.dueOn,
     amount: sliceAmounts[i] ?? 0,

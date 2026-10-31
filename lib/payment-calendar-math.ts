@@ -213,7 +213,9 @@ export function amountsForPaySlices(opts: {
 }
 
 export function normalizePayTiming(value: string | null | undefined): PayTiming | null {
-  if (value === 'fifteen' || value === 'upfront' || value === 'end') return value
+  const raw = (value ?? '').toString().trim().toLowerCase()
+  if (raw === 'fifteen' || raw === 'upfront' || raw === 'end') return raw
+  if (raw === 'one-time' || raw === 'onetime' || raw === 'once' || raw === 'final') return 'end'
   return null
 }
 
@@ -272,9 +274,8 @@ export function buildCreatorPaySchedule(opts: {
   const dates: string[] = []
 
   if (opts.timing === 'end') {
-    const due = end && end <= through ? end : !end && through >= opts.startDate ? through : null
-    if (!due || due < opts.startDate) return []
-    return [{ dueOn: due, index: 0, label: 'Final payment' }]
+    if (!end || end < opts.startDate) return []
+    return [{ dueOn: end, index: 0, label: 'Final payment' }]
   }
 
   if (!end) {

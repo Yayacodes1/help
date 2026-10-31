@@ -178,6 +178,34 @@ test('one-time method is a single pay on the contract end', () => {
   assert.equal(slices[0].label, 'Final payment')
 })
 
+test('one-time stays one pay on the last day even for a long contract', () => {
+  const slices = buildCreatorPaySchedule({
+    startDate: '2026-11-01',
+    endDate: '2026-11-30',
+    timing: 'end',
+    through: '2026-11-15',
+  })
+  assert.equal(slices.length, 1)
+  assert.equal(slices[0].dueOn, '2026-11-30')
+  const amounts = amountsForPaySlices({
+    baseAmount: 400,
+    cadence: 'monthly',
+    commission: 50,
+    sliceCount: slices.length,
+  })
+  assert.deepEqual(amounts, [450])
+})
+
+test('one-time with no contract end has no scheduled pay', () => {
+  const slices = buildCreatorPaySchedule({
+    startDate: '2026-11-01',
+    endDate: null,
+    timing: 'end',
+    through: '2026-11-30',
+  })
+  assert.equal(slices.length, 0)
+})
+
 test('paid near start is inferred as upfront', () => {
   assert.equal(
     resolvePayTiming({
