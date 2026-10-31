@@ -133,6 +133,8 @@ export type Contract = {
   base_pay_cadence: 'monthly' | 'biweekly'
   /** When we pay: fifteen = day 15 then end; upfront = start then every 2 weeks; end = one pay at the end. */
   pay_timing?: 'fifteen' | 'upfront' | 'end' | null
+  /** Admin marked the contract details as finished. */
+  details_done?: boolean
   /** Commission (nullable until set later) */
   commission_amount: number | null
   /** Null = use house default */

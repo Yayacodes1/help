@@ -15,6 +15,7 @@ const ADMIN_PANELS = new Set([
   'marketing',
   'outflow',
   'calendar',
+  'archive',
   'manage',
   'timeline',
   'structure',

@@ -39,7 +39,7 @@ import { getTeamMembers } from '@/lib/leader-portal'
 import { getActivityForDay } from '@/lib/activity'
 import { getTaskCalendar, getTaskChecksForDay, listLeaderTasks } from '@/lib/tasks'
 import { REPOSTER_TABS, resolveReposterTab } from '@/lib/reposter-tabs'
-import { monthRange } from '@/lib/campaign'
+import { addDays, monthRange } from '@/lib/campaign'
 import { getLeagueBoard } from '@/lib/ranking'
 import { CONTEST, isContestLive } from '@/lib/contest'
 import { findMiyqatProject } from '@/lib/project-scope'
@@ -90,6 +90,7 @@ export async function ReposterDashboard({
     getLeaderForCreator(creator.id).catch(() => null),
   ])
   const date = DATE_RE.test(searchParams.date ?? '') ? searchParams.date! : today
+  const checkDay = addDays(today, -1)
   const taskDay = DATE_RE.test(searchParams.taskDay ?? '') ? searchParams.taskDay! : today
   const { start: monthStart, end: monthEnd } = monthRange(today)
   const teamIds = link?.teamIds ?? []
@@ -145,17 +146,17 @@ export async function ReposterDashboard({
     const [progress, activityMarks, tasks, checked, calendar, handles, myChecks, groupSubs, videoStats] = await Promise.all([
       teamIds.length > 0
         ? timed('reposter-team-progress', () =>
-            getCreatorsWithProgressOnDate(date, undefined, 'creator', {
+            getCreatorsWithProgressOnDate(checkDay, undefined, 'creator', {
               creatorIds: teamIds,
             }),
           ).catch(() => [])
         : Promise.resolve([]),
-      getActivityForDay(date, videoIds).catch(() => ({})),
+      getActivityForDay(checkDay, videoIds).catch(() => ({})),
       link ? listLeaderTasks(link.leaderId, { today }).catch(() => []) : Promise.resolve([]),
       getTaskChecksForDay(creator.id, taskDay).catch(() => new Set<number>()),
       link ? getTaskCalendar(creator.id, link.leaderId, today).catch(() => []) : Promise.resolve([]),
       getLoginHandles(videoIds).catch(() => new Map()),
-      getReposterChecksForDay(creator.id, date).catch(() => new Set<number>()),
+      getReposterChecksForDay(creator.id, checkDay).catch(() => new Set<number>()),
       videosOpen
         ? getAdminSubmissions({
             from: date,
@@ -208,7 +209,7 @@ export async function ReposterDashboard({
         children: (
           <ReposterDailyCheck
             people={checkPeople}
-            day={date}
+            day={checkDay}
             marks={activityMarks}
             actorUsername={username}
             labels={{

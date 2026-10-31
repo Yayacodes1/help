@@ -314,6 +314,7 @@ async function runEnsureCreatorTrackingColumns() {
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS commission_reels integer`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS base_pay_cadence text NOT NULL DEFAULT 'monthly'`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS pay_timing text`
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS details_done boolean NOT NULL DEFAULT false`
   await sql`
     UPDATE contracts
     SET base_pay_cadence = 'monthly'

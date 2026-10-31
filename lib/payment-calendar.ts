@@ -156,6 +156,11 @@ export type PaymentCalendarModel = {
   scheduledTotalUsd: number
   remainingScheduledSar: number
   remainingScheduledUsd: number
+  expenseSar: number
+  expenseUsd: number
+  nextMonth: string
+  nextScheduledSar: number
+  nextScheduledUsd: number
   commissionEarnedSar: number
   commissionRecordedSar: number
   commissionDueSar: number
@@ -322,6 +327,8 @@ export function buildPaymentCalendarModel(opts: {
   commissionEarnedSar: number
   commissionRecordedSar: number
   commissionDueSar: number
+  nextMonth?: string
+  nextScheduledSar?: number
 }): PaymentCalendarModel {
   const { start, end } = calendarMonthRange(opts.month)
   const through = end
@@ -412,6 +419,11 @@ export function buildPaymentCalendarModel(opts: {
     scheduledTotalUsd: sarToUsd(scheduledTotalSar),
     remainingScheduledSar,
     remainingScheduledUsd: sarToUsd(remainingScheduledSar),
+    expenseSar: roundMoney(spentSar + remainingScheduledSar),
+    expenseUsd: sarToUsd(roundMoney(spentSar + remainingScheduledSar)),
+    nextMonth: opts.nextMonth ?? '',
+    nextScheduledSar: roundMoney(opts.nextScheduledSar ?? 0),
+    nextScheduledUsd: sarToUsd(opts.nextScheduledSar ?? 0),
     commissionEarnedSar: roundMoney(opts.commissionEarnedSar),
     commissionRecordedSar: roundMoney(opts.commissionRecordedSar),
     commissionDueSar: roundMoney(opts.commissionDueSar),

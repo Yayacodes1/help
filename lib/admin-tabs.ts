@@ -2,7 +2,7 @@ export const ADMIN_TABS = {
   today: ['leaders', 'progress', 'attention', 'reviews', 'strikes', 'videos'],
   twoday: ['quickBreak', 'breakRequests'],
   analytics: ['analytics', 'ranking', 'projectviews', 'topvideos', 'miqatcontest'],
-  money: ['marketing', 'commission', 'calendar', 'paydue', 'payments', 'outflow'],
+  money: ['marketing', 'commission', 'calendar', 'paydue', 'payments', 'archive', 'outflow'],
   people: ['manage', 'timeline', 'structure', 'outreach'],
 } as const
 

@@ -1877,6 +1877,8 @@ export type CreatorTrackingRow = CreatorProgress & {
   pay_timing: 'fifteen' | 'upfront' | 'end' | null
   contract_name: string | null
   pay_display_currency: 'USD' | 'SAR'
+  pay_amount: number
+  details_done: boolean
   has_two_pays: boolean
   first_due: number
   first_paid: number
@@ -1914,6 +1916,22 @@ export async function attachTracking(
           paid_on: string
           note: string | null
         }[])
+  const contractIds = [
+    ...new Set(
+      creators
+        .map((c) => batch.get(c.id)?.active?.id)
+        .filter((id): id is number => typeof id === 'number' && id > 0),
+    ),
+  ]
+  const doneRows =
+    contractIds.length === 0
+      ? []
+      : ((await sql`
+          SELECT id, COALESCE(details_done, false) AS details_done
+          FROM contracts
+          WHERE id = ANY(${contractIds}::int[])
+        `) as { id: number; details_done: boolean }[])
+  const doneByContract = new Map(doneRows.map((row) => [row.id, Boolean(row.details_done)]))
   const paysByContract = new Map<number, { amount: number; paid_on: string; note: string | null }[]>()
   for (const row of paymentRows) {
     if (row.contract_id == null) continue
@@ -1969,6 +1987,8 @@ export async function attachTracking(
       pay_timing: timingStored ?? timing,
       contract_name: active?.name ?? null,
       pay_display_currency: payCurrency(c.role, c.pay_currency),
+      pay_amount: Number(active?.base_amount) || 0,
+      details_done: active ? doneByContract.get(active.id) === true : false,
       has_two_pays: Boolean(waves?.hasTwoHalves),
       first_due: waves?.firstDue ?? 0,
       first_paid: waves?.firstPaid ?? 0,

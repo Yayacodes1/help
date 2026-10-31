@@ -809,10 +809,12 @@ export async function saveTimelineContract(formData: FormData) {
     contractId = active?.id ?? null
   }
 
+  const baseAmount = parseAmount(formData.get('base_amount'))
   if (contractId) {
     await sql`
       UPDATE contracts
-      SET start_date = ${start}, end_date = ${end}, pay_timing = ${payTiming}
+      SET start_date = ${start}, end_date = ${end}, pay_timing = ${payTiming},
+          base_amount = ${baseAmount}
       WHERE id = ${contractId} AND creator_id = ${creatorId}
     `
   } else {
@@ -843,7 +845,7 @@ export async function saveTimelineContract(formData: FormData) {
         ${creatorId}, ${name}, ${start}, ${end},
         ${row.platforms || 'both'}, ${row.goal_instagram || 0}, ${row.goal_tiktok || 0},
         0, 0,
-        ${Number(row.biweekly_amount) || 0}, ${payTiming}
+        ${baseAmount || Number(row.biweekly_amount) || 0}, ${payTiming}
       )
     `
   }
@@ -863,6 +865,22 @@ export async function saveTimelineContract(formData: FormData) {
     const calMonth = (payTiming === 'end' && end ? end : today).slice(0, 7)
     redirect(`/admin?tab=money&panel=calendar&calMonth=${calMonth}`)
   }
+  return { ok: true as const }
+}
+
+/** Timeline Manage: the contract details are filled in. Does not end the contract or record a payment. */
+export async function markContractDetailsDone(creatorId: number, contractId: number, done: boolean) {
+  await requireAdmin()
+  const personId = Math.floor(Number(creatorId))
+  const id = Math.floor(Number(contractId))
+  if (!(personId > 0) || !(id > 0)) return { ok: false as const }
+  await sql`
+    UPDATE contracts
+    SET details_done = ${Boolean(done)}
+    WHERE id = ${id} AND creator_id = ${personId}
+  `
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${personId}`)
   return { ok: true as const }
 }
 

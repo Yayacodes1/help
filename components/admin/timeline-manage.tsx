@@ -2,8 +2,8 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Pencil, Search, X } from 'lucide-react'
-import { recordDueHalfPayment, saveTimelineContract } from '@/app/actions/admin'
+import { Heart, Pencil, Search, X } from 'lucide-react'
+import { markContractDetailsDone, recordDueHalfPayment, saveTimelineContract } from '@/app/actions/admin'
 import type { CreatorTrackingRow } from '@/lib/queries'
 import { personBelongsOnProjectManage } from '@/lib/project-scope'
 import { participantRoleLabel } from '@/lib/participant-role'
@@ -15,6 +15,8 @@ export type TimelineLabels = {
   start: string
   end: string
   pay: string
+  amount: string
+  detailsDone: string
   payFifteen: string
   payUpfront: string
   payEnd: string
@@ -112,6 +114,15 @@ export function TimelineManage({
 
   const inputClass =
     'h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+  function toggleDone(person: CreatorTrackingRow) {
+    if (!person.contract_id) return
+    setError(null)
+    startTransition(async () => {
+      await markContractDetailsDone(person.id, person.contract_id!, !person.details_done)
+      router.refresh()
+    })
+  }
 
   function payWave(person: CreatorTrackingRow, which: 'first' | 'second') {
     if (!person.contract_id) return
@@ -216,6 +227,18 @@ export function TimelineManage({
             />
           </label>
         </div>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          {labels.amount} · {person.pay_display_currency}
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            name="base_amount"
+            defaultValue={person.pay_amount || ''}
+            placeholder="0.00"
+            className={inputClass}
+          />
+        </label>
         <fieldset className="grid gap-1.5">
           <legend className="text-xs font-medium text-foreground">{labels.pay}</legend>
           <label className="flex items-start gap-2 text-xs text-muted-foreground">
@@ -305,6 +328,12 @@ export function TimelineManage({
             <DateRange start={person.timeline_start} end={person.timeline_end} openLabel={labels.open} />
             {' · '}
             {timingLabel(person.pay_timing, labels)}
+            {person.pay_amount > 0.009 ? (
+              <>
+                {' · '}
+                {formatMoney(person.pay_amount, person.pay_display_currency)}
+              </>
+            ) : null}
           </div>
           {person.first_due > 0.009 || person.second_due > 0.009 ? (
             <div className="mt-0.5 text-xs text-muted-foreground">
@@ -320,17 +349,31 @@ export function TimelineManage({
             </div>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setEditingId(person.id)
-            setError(null)
-          }}
-          className="rounded-md border border-border p-1.5 hover:bg-accent"
-          title="Edit"
-        >
-          <Pencil className="size-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            disabled={pending || !person.contract_id}
+            onClick={() => toggleDone(person)}
+            aria-pressed={person.details_done}
+            title={labels.detailsDone}
+            className={`rounded-md border border-border p-1.5 hover:bg-accent disabled:opacity-40 ${
+              person.details_done ? 'text-blue-600' : 'text-muted-foreground'
+            }`}
+          >
+            <Heart className={`size-3.5 ${person.details_done ? 'fill-current' : ''}`} />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setEditingId(person.id)
+              setError(null)
+            }}
+            className="rounded-md border border-border p-1.5 hover:bg-accent"
+            title="Edit"
+          >
+            <Pencil className="size-3.5" />
+          </button>
+        </div>
       </div>
     )
   }

@@ -155,15 +155,32 @@ export async function loadPaymentCalendar(opts: {
     platform: row.platform,
   }))
 
-  return buildPaymentCalendarModel({
-    month: opts.month,
+  const shared = {
     today: opts.today,
     role,
     contracts,
     payments,
     videos,
+  }
+  const current = buildPaymentCalendarModel({
+    ...shared,
+    month: opts.month,
     commissionEarnedSar: board.totals.commissionEarned,
     commissionRecordedSar: 0,
     commissionDueSar: Math.max(0, board.totals.commissionEarned),
   })
+  const nextMonth = addDays(end, 1).slice(0, 7)
+  const next = buildPaymentCalendarModel({
+    ...shared,
+    month: nextMonth,
+    commissionEarnedSar: 0,
+    commissionRecordedSar: 0,
+    commissionDueSar: 0,
+  })
+  return {
+    ...current,
+    nextMonth,
+    nextScheduledSar: next.scheduledTotalSar,
+    nextScheduledUsd: next.scheduledTotalUsd,
+  }
 }

@@ -115,6 +115,8 @@ import { getCompanyStructure } from '@/lib/company-structure'
 import { CompanyStructureBoard } from '@/components/admin/company-structure'
 import { TimelineManage } from '@/components/admin/timeline-manage'
 import { loadPaymentCalendar } from '@/lib/payment-calendar-data'
+import { loadPaymentArchive } from '@/lib/payment-archive'
+import { PaymentArchive } from '@/components/admin/payment-archive'
 import { parseCalendarRole } from '@/lib/payment-calendar'
 import { PaymentCalendarBoard } from '@/components/admin/payment-calendar'
 
@@ -488,6 +490,16 @@ export default async function AdminPage({
       calendarError = t('paymentCalendarError')
     }
   }
+  let archiveData: Awaited<ReturnType<typeof loadPaymentArchive>> | null = null
+  let archiveError: string | null = null
+  if (tab === 'money' && sp.panel === 'archive') {
+    try {
+      archiveData = await loadPaymentArchive(opToday)
+    } catch (err) {
+      console.error('[admin] payment archive', err)
+      archiveError = t('paymentCalendarError')
+    }
+  }
   let companyStructure: Awaited<ReturnType<typeof getCompanyStructure>> | null = null
   let companyStructureError: string | null = null
   if (tab === 'people') {
@@ -712,6 +724,8 @@ export default async function AdminPage({
     start: t('timelineStart'),
     end: t('timelineEnd'),
     pay: t('timelinePay'),
+    amount: t('timelineAmount'),
+    detailsDone: t('timelineDetailsDone'),
     payFifteen: t('timelinePayFifteen'),
     payUpfront: t('timelinePayUpfront'),
     payEnd: t('timelinePayEnd'),
@@ -1520,6 +1534,13 @@ export default async function AdminPage({
                   legendSoon: t('paymentCalendarLegendSoon'),
                   legendSafe: t('paymentCalendarLegendSafe'),
                   paid: t('paymentCalendarPaid'),
+                  expense: t('paymentCalendarExpense'),
+                  expenseHint: t('paymentCalendarExpenseHint'),
+                  still: t('paymentCalendarStill'),
+                  nextBooked: t('paymentCalendarNextBooked'),
+                  thisWeek: t('paymentCalendarThisWeek'),
+                  later: t('paymentCalendarLater'),
+                  legendPaid: t('paymentCalendarLegendPaid'),
                   toPay: t('paymentCalendarToPay'),
                   videos: t('paymentDayVideos'),
                   moreTime: t('paymentPushForward'),
@@ -1605,6 +1626,30 @@ export default async function AdminPage({
                   defaultTo={payTo}
                 />
               </Suspense>
+            ),
+          },
+          {
+            id: 'archive',
+            title: t('paymentArchive'),
+            summary: formatYearMonth(opToday.slice(0, 7), locale),
+            hint: t('paymentArchiveHint'),
+            children: archiveError ? (
+              <p className="text-sm text-destructive">{archiveError}</p>
+            ) : archiveData ? (
+              <PaymentArchive
+                month={archiveData.month}
+                locale={locale}
+                people={archiveData.people}
+                labels={{
+                  card: t('paymentArchiveCard'),
+                  empty: t('paymentArchiveEmpty'),
+                  finished: t('paymentArchiveFinished'),
+                  open: t('paymentArchiveOpen'),
+                  videos: t('paymentArchiveVideos'),
+                }}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('loadingPage')}</p>
             ),
           },
           {

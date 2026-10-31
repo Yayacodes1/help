@@ -1,18 +1,100 @@
 import Link from 'next/link'
 import { formatMoney, formatYearMonth } from '@/lib/format'
 import type { PaymentCalendarModel } from '@/lib/payment-calendar'
-import type { PayUrgency } from '@/lib/payment-calendar-math'
+import { daysAhead, type PayUrgency } from '@/lib/payment-calendar-math'
 import { MoneyPair } from '@/components/admin/money-pair'
 import { PushContractForward } from '@/components/admin/push-contract-forward'
 import { PaymentCalendarNav } from '@/components/admin/payment-calendar-nav'
 import { StatCard } from '@/components/stat-card'
-import { participantRoleLabel } from '@/lib/participant-role'
+import { participantRoleLabel, type ParticipantRole } from '@/lib/participant-role'
 
 const URGENCY_CLASS: Record<PayUrgency, string> = {
   urgent: 'border-red-600 bg-red-600 text-white hover:brightness-110',
   soon: 'border-orange-500 bg-orange-500 text-white hover:brightness-110',
   safe: 'border-emerald-600 bg-emerald-600 text-white hover:brightness-110',
   none: 'border-border bg-card text-card-foreground hover:border-primary/50 hover:bg-accent',
+}
+
+const PAID_CLASS = 'border-blue-600 bg-blue-600 text-white hover:brightness-110'
+
+function PayPeople({
+  title,
+  rows,
+  open = false,
+  hrefFor,
+  labels,
+}: {
+  title: string
+  open?: boolean
+  hrefFor: (date: string) => string
+  rows: Array<{
+    creatorId: number
+    creatorName: string
+    role: ParticipantRole
+    remainingSar: number
+    nextDue: string
+    count: number
+    contractId: number
+    contractEnd: string | null
+    awaitingEligibility: boolean
+    videoCount: number
+    targetTotal: number
+  }>
+  labels: {
+    videos: string
+    moreTime: string
+    moreTimeHint: string
+    pushing: string
+    customDays: string
+    addDays: string
+  }
+}) {
+  if (rows.length === 0) return null
+  return (
+    <details open={open || undefined} className="mt-3">
+      <summary className="cursor-pointer text-xs font-semibold">{title}</summary>
+      <ul className="mt-2 flex max-h-80 flex-col gap-1 overflow-auto text-sm">
+        {rows.map((row) => (
+          <li key={row.creatorId} className="rounded-lg border border-border bg-card px-3 py-2 hover:bg-accent/40">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <Link href={hrefFor(row.nextDue)} className="min-w-0">
+                <span className="font-medium">{row.creatorName}</span>
+                <span className="text-xs text-muted-foreground">
+                  {' · '}
+                  {participantRoleLabel(row.role)}
+                  {' · '}
+                  {row.nextDue}
+                  {row.count > 1 ? ` · ${row.count}` : ''}
+                  {row.targetTotal > 0 ? ` · ${labels.videos} ${row.videoCount}/${row.targetTotal}` : ''}
+                </span>
+              </Link>
+              <MoneyPair sar={row.remainingSar} />
+            </div>
+            {row.contractEnd ? (
+              <div className="mt-1">
+                {row.awaitingEligibility ? (
+                  <p className="mb-1 text-[10px] text-muted-foreground">{labels.moreTimeHint}</p>
+                ) : null}
+                <PushContractForward
+                  creatorId={row.creatorId}
+                  contractId={row.contractId}
+                  contractEnd={row.contractEnd}
+                  compact
+                  labels={{
+                    moreTime: labels.moreTime,
+                    hint: labels.moreTimeHint,
+                    pushing: labels.pushing,
+                    custom: labels.customDays,
+                    add: labels.addDays,
+                  }}
+                />
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
 }
 
 export function PaymentCalendarBoard({
@@ -45,6 +127,13 @@ export function PaymentCalendarBoard({
     legendSoon: string
     legendSafe: string
     paid: string
+    expense: string
+    expenseHint: string
+    still: string
+    nextBooked: string
+    thisWeek: string
+    later: string
+    legendPaid: string
     toPay: string
     videos: string
     moreTime: string
@@ -109,6 +198,8 @@ export function PaymentCalendarBoard({
   const unpaid = [...people.values()].sort(
     (a, b) => a.nextDue.localeCompare(b.nextDue) || a.creatorName.localeCompare(b.creatorName),
   )
+  const dueSoon = unpaid.filter((row) => daysAhead(model.today, row.nextDue) <= 7)
+  const dueLater = unpaid.filter((row) => daysAhead(model.today, row.nextDue) > 7)
   const monthLabel = formatYearMonth(model.month, locale)
 
   return (
@@ -130,9 +221,9 @@ export function PaymentCalendarBoard({
       <p className="text-sm text-muted-foreground">{labels.rule}</p>
       <div className="grid gap-3 lg:grid-cols-3">
         <StatCard
-          label={labels.total}
-          value={<MoneyPair sar={model.remainingScheduledSar} usd={model.remainingScheduledUsd} />}
-          hint={`${labels.totalHint} · ${monthLabel} · ${labels.scheduled}: ${formatMoney(model.scheduledTotalSar, 'SAR')}  ${formatMoney(model.scheduledTotalUsd, 'USD')}`}
+          label={labels.expense}
+          value={<MoneyPair sar={model.expenseSar} usd={model.expenseUsd} />}
+          hint={`${labels.expenseHint} · ${labels.paid} ${formatMoney(model.spentSar, 'SAR')} ${formatMoney(model.spentUsd, 'USD')} · ${labels.still} ${formatMoney(model.remainingScheduledSar, 'SAR')} ${formatMoney(model.remainingScheduledUsd, 'USD')}`}
         />
         <StatCard
           label={labels.commission}
@@ -140,9 +231,9 @@ export function PaymentCalendarBoard({
           hint={`${labels.earned} · ${monthLabel}`}
         />
         <StatCard
-          label={labels.spent}
-          value={<MoneyPair sar={model.spentSar} usd={model.spentUsd} />}
-          hint={`${labels.remaining}: ${formatMoney(model.remainingScheduledSar, 'SAR')}  ${formatMoney(model.remainingScheduledUsd, 'USD')} · ${monthLabel}`}
+          label={labels.nextBooked}
+          value={<MoneyPair sar={model.nextScheduledSar} usd={model.nextScheduledUsd} />}
+          hint={model.nextMonth ? formatYearMonth(model.nextMonth, locale) : ''}
         />
       </div>
       <div className="flex flex-wrap gap-3 text-xs font-medium">
@@ -157,6 +248,10 @@ export function PaymentCalendarBoard({
         <span className="inline-flex items-center gap-1.5">
           <span className="size-3 rounded-sm bg-emerald-600" />
           {labels.legendSafe}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-3 rounded-sm bg-blue-600" />
+          {labels.legendPaid}
         </span>
       </div>
       <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -178,7 +273,7 @@ export function PaymentCalendarBoard({
               key={day.date}
               href={hrefFor(day.date)}
               className={`flex min-h-16 flex-col rounded-lg border p-1 text-left sm:min-h-28 sm:p-2 ${
-                URGENCY_CLASS[day.urgency]
+                paidOff ? PAID_CLASS : URGENCY_CLASS[day.urgency]
               } ${day.isToday ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' : ''}`}
             >
               <span className={`tabular-nums text-xs ${day.isToday ? 'font-bold' : 'font-medium'}`}>
@@ -217,48 +312,21 @@ export function PaymentCalendarBoard({
           <h4 className="text-sm font-semibold">
             {labels.toPay} · {unpaid.length}
           </h4>
-          <ul className="mt-3 flex max-h-80 flex-col gap-1 overflow-auto text-sm">
-            {unpaid.map((row) => (
-              <li key={row.creatorId} className="rounded-lg border border-border bg-card px-3 py-2 hover:bg-accent/40">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <Link href={hrefFor(row.nextDue)} className="min-w-0">
-                    <span className="font-medium">{row.creatorName}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {' · '}
-                      {participantRoleLabel(row.role)}
-                      {' · '}
-                      {row.nextDue}
-                      {row.count > 1 ? ` · ${row.count}` : ''}
-                      {row.targetTotal > 0
-                        ? ` · ${labels.videos} ${row.videoCount}/${row.targetTotal}`
-                        : ''}
-                    </span>
-                  </Link>
-                  <MoneyPair sar={row.remainingSar} />
-                </div>
-                {row.contractEnd ? (
-                  <div className="mt-1">
-                    {row.awaitingEligibility ? (
-                      <p className="mb-1 text-[10px] text-muted-foreground">{labels.moreTimeHint}</p>
-                    ) : null}
-                    <PushContractForward
-                      creatorId={row.creatorId}
-                      contractId={row.contractId}
-                      contractEnd={row.contractEnd}
-                      compact
-                      labels={{
-                        moreTime: labels.moreTime,
-                        hint: labels.moreTimeHint,
-                        pushing: labels.pushing,
-                        custom: labels.customDays,
-                        add: labels.addDays,
-                      }}
-                    />
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <PayPeople
+            title={`${labels.thisWeek} · ${dueSoon.length}`}
+            rows={dueSoon}
+            open
+            hrefFor={hrefFor}
+            labels={labels}
+          />
+          {dueLater.length > 0 ? (
+            <PayPeople
+              title={`${labels.later} · ${dueLater.length}`}
+              rows={dueLater}
+              hrefFor={hrefFor}
+              labels={labels}
+            />
+          ) : null}
         </section>
       ) : null}
       {model.unscheduled.length > 0 || model.undated.length > 0 ? (
