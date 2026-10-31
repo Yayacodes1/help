@@ -1,6 +1,5 @@
 import { addDays, calendarMonthRange } from '@/lib/campaign'
 import {
-  buildBiweeklySchedule,
   inferBiweeklyInstallments,
   typicalBiweeklyAmount,
   type BiweeklyInstallment,
@@ -15,13 +14,16 @@ import { normalizePlatforms, videoCompletionRate } from '@/lib/platforms-mode'
 import type { ParticipantRole } from '@/lib/participant-role'
 import {
   amountToSar,
+  buildCreatorPaySchedule,
   monthGridDates,
   roundMoney,
   settleObligationsLite,
   statusFor,
+  urgencyFor,
+  type PayUrgency,
 } from '@/lib/payment-calendar-math'
 
-export { amountToSar, monthGridDates, roundMoney, statusFor }
+export { amountToSar, monthGridDates, roundMoney, statusFor, urgencyFor, type PayUrgency }
 
 function targetVideoTotal(platforms: string | null, ig: number, tt: number): number {
   const mode = normalizePlatforms(platforms)
@@ -135,9 +137,12 @@ export type CalendarDayCell = {
   remainingSar: number
   paidSar: number
   recipientCount: number
+  unpaidCount: number
   creators: number
   reposters: number
   statuses: CalendarPayStatus[]
+  urgency: PayUrgency
+  names: string[]
   items: SettledObligation[]
 }
 
@@ -148,6 +153,7 @@ export type PaymentCalendarModel = {
   today: string
   role: CalendarRoleFilter
   spentSar: number
+  scheduledTotalSar: number
   remainingScheduledSar: number
   commissionEarnedSar: number
   commissionRecordedSar: number
@@ -199,50 +205,35 @@ export function obligationsFromContract(
   const base = periodBaseTotal(contract.baseAmount, cadence, hasHalves)
   const commission = contract.commissionAmount == null ? 0 : Number(contract.commissionAmount)
   const full = roundMoney(base + commission)
-  const every = contract.payEveryDays > 0 ? contract.payEveryDays : 14
+  const every = contract.payEveryDays > 0 ? contract.payEveryDays : 15
   const currency = payCurrency(contract.role, contract.payCurrency)
   const commissionInDue = Boolean(contract.endDate)
   if (base <= 0 && commission <= 0) return []
 
+  const slices = buildCreatorPaySchedule({
+    startDate: contract.startDate,
+    endDate: contract.endDate,
+    cadence,
+    through,
+  })
   const split = inferBiweeklyInstallments(full)
-  let schedule: BiweeklyInstallment[] = []
-  if (!contract.endDate) {
-    const wave = typicalBiweeklyAmount({
-      baseAmount: base,
-      startDate: contract.startDate,
-      endDate: null,
-      payEveryDays: every,
-    })
-    if (wave > 0.009) {
-      schedule = buildBiweeklySchedule({
-        startDate: contract.startDate,
-        endDate: null,
-        through,
-        first: wave,
-        second: wave,
-        everyDays: every,
-      })
+  const wave = typicalBiweeklyAmount({
+    baseAmount: base,
+    startDate: contract.startDate,
+    endDate: contract.endDate,
+    payEveryDays: every,
+  })
+  const schedule: BiweeklyInstallment[] = slices.map((slice) => {
+    let amount = full
+    if (slices.length === 2) amount = slice.index === 0 ? split.first : split.second
+    else if (slices.length > 2) amount = wave > 0.009 ? wave : split.first
+    return {
+      dueOn: slice.dueOn,
+      amount,
+      index: slice.index,
+      label: slice.label,
     }
-  } else if (hasHalves) {
-    schedule = buildBiweeklySchedule({
-      startDate: contract.startDate,
-      endDate: contract.endDate,
-      through,
-      first: split.first,
-      second: split.second,
-      everyDays: every,
-      max: 4,
-    }).slice(0, 2)
-  } else if (full > 0.009) {
-    schedule = [
-      {
-        dueOn: contract.endDate,
-        amount: full,
-        index: 0,
-        label: 'Final payment',
-      },
-    ]
-  }
+  })
 
   const counts = videosForContract(hits, contract.creatorId, contract.startDate, contract.endDate)
   const targetTotal = targetVideoTotal(
@@ -274,14 +265,7 @@ export function obligationsFromContract(
       contractStart: contract.startDate,
       contractEnd: contract.endDate,
       installmentIndex: inst.index,
-      installmentLabel:
-        !contract.endDate
-          ? inst.label
-          : inst.index === 0
-            ? 'First payment'
-            : inst.label.toLowerCase().includes('2nd')
-              ? 'Final payment'
-              : inst.label,
+      installmentLabel: inst.label,
       dueDate: inst.dueOn || '',
       dueAmount: roundMoney(inst.amount),
       dueAmountSar: amountToSar(inst.amount, currency),
@@ -370,6 +354,9 @@ export function buildPaymentCalendarModel(opts: {
   const spentSar = roundMoney(
     txns.filter((p) => p.paidOn >= start && p.paidOn <= end).reduce((s, p) => s + p.amountSar, 0),
   )
+  const scheduledTotalSar = roundMoney(
+    monthItems.reduce((s, i) => s + i.dueAmountSar, 0),
+  )
   const remainingScheduledSar = roundMoney(
     monthItems.reduce((s, i) => s + i.remainingSar, 0),
   )
@@ -384,19 +371,25 @@ export function buildPaymentCalendarModel(opts: {
 
   const days = monthGridDates(start, end).map((date) => {
     const dayItems = byDate.get(date) ?? []
+    const unpaid = dayItems.filter((i) => i.remainingSar > 0.009)
     const recipients = new Set(dayItems.map((i) => i.creatorId))
     const statuses = [...new Set(dayItems.map((i) => i.status))]
+    const remainingSar = roundMoney(dayItems.reduce((s, i) => s + i.remainingSar, 0))
+    const names = [...new Map(unpaid.map((i) => [i.creatorId, i.creatorName])).values()]
     return {
       date,
       inMonth: date >= start && date <= end,
       isToday: date === opts.today,
       scheduledSar: roundMoney(dayItems.reduce((s, i) => s + i.dueAmountSar, 0)),
-      remainingSar: roundMoney(dayItems.reduce((s, i) => s + i.remainingSar, 0)),
+      remainingSar,
       paidSar: roundMoney(dayItems.reduce((s, i) => s + i.paidAmountSar, 0)),
       recipientCount: recipients.size,
-      creators: new Set(dayItems.filter((i) => i.role === 'creator').map((i) => i.creatorId)).size,
-      reposters: new Set(dayItems.filter((i) => i.role === 'reposter').map((i) => i.creatorId)).size,
+      unpaidCount: new Set(unpaid.map((i) => i.creatorId)).size,
+      creators: new Set(unpaid.filter((i) => i.role === 'creator').map((i) => i.creatorId)).size,
+      reposters: new Set(unpaid.filter((i) => i.role === 'reposter').map((i) => i.creatorId)).size,
       statuses,
+      urgency: urgencyFor(date, opts.today, remainingSar),
+      names,
       items: dayItems,
     }
   })
@@ -408,6 +401,7 @@ export function buildPaymentCalendarModel(opts: {
     today: opts.today,
     role: opts.role,
     spentSar,
+    scheduledTotalSar,
     remainingScheduledSar,
     commissionEarnedSar: roundMoney(opts.commissionEarnedSar),
     commissionRecordedSar: roundMoney(opts.commissionRecordedSar),
@@ -429,9 +423,12 @@ export function dayFromModel(model: PaymentCalendarModel, date: string) {
     remainingSar: 0,
     paidSar: 0,
     recipientCount: 0,
+    unpaidCount: 0,
     creators: 0,
     reposters: 0,
     statuses: [] as CalendarPayStatus[],
+    urgency: 'none' as const,
+    names: [] as string[],
     items: [] as SettledObligation[],
   }
   const actualPayments = model.payments.filter((p) => p.paidOn === date)

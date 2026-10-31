@@ -1486,6 +1486,15 @@ export default async function AdminPage({
                   remaining: t('paymentCalendarRemaining'),
                   commission: t('paymentCalendarCommission'),
                   earned: t('paymentCalendarEarned'),
+                  total: t('paymentCalendarTotal'),
+                  totalHint: t('paymentCalendarTotalHint'),
+                  scheduled: t('paymentCalendarScheduled'),
+                  rule: t('paymentCalendarRule'),
+                  legendUrgent: t('paymentCalendarLegendUrgent'),
+                  legendSoon: t('paymentCalendarLegendSoon'),
+                  legendSafe: t('paymentCalendarLegendSafe'),
+                  paid: t('paymentCalendarPaid'),
+                  toPay: t('paymentCalendarToPay'),
                   weekdays:
                     locale === 'ar'
                       ? ['اثن', 'ثل', 'ارب', 'خم', 'جم', 'سب', 'أحد']

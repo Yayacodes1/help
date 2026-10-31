@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   amountToSar,
+  buildCreatorPaySchedule,
   monthGridDates,
   settleObligationsLite,
+  urgencyFor,
 } from './payment-calendar-math.ts'
 
 test('paying later settles the original due and does not add another obligation', () => {
@@ -134,4 +136,39 @@ test('day scheduled total equals the sum of that day’s obligations', () => {
   const scheduled = day.reduce((s, i) => s + i.dueAmountSar, 0)
   assert.equal(scheduled, 150)
   assert.equal(new Set(day.map((i) => i.creatorId)).size, 2)
+})
+
+test('biweekly pay dates are 15 then 30 days after contract start', () => {
+  const slices = buildCreatorPaySchedule({
+    startDate: '2026-10-01',
+    endDate: '2026-11-15',
+    cadence: 'biweekly',
+    through: '2026-11-30',
+  })
+  assert.equal(slices[0].dueOn, '2026-10-16')
+  assert.equal(slices[0].label, 'First payment')
+  assert.equal(slices[1].dueOn, '2026-10-31')
+  assert.equal(slices[1].label, 'Second payment')
+})
+
+test('monthly pay date is the contract end', () => {
+  const slices = buildCreatorPaySchedule({
+    startDate: '2026-10-01',
+    endDate: '2026-10-31',
+    cadence: 'monthly',
+    through: '2026-10-31',
+  })
+  assert.equal(slices.length, 1)
+  assert.equal(slices[0].dueOn, '2026-10-31')
+  assert.equal(slices[0].label, 'Final payment')
+})
+
+test('urgency is red for the next 3 days, orange for the next 2, green after that', () => {
+  assert.equal(urgencyFor('2026-10-31', '2026-11-01', 100), 'urgent')
+  assert.equal(urgencyFor('2026-11-01', '2026-11-01', 100), 'urgent')
+  assert.equal(urgencyFor('2026-11-04', '2026-11-01', 100), 'urgent')
+  assert.equal(urgencyFor('2026-11-05', '2026-11-01', 100), 'soon')
+  assert.equal(urgencyFor('2026-11-06', '2026-11-01', 100), 'soon')
+  assert.equal(urgencyFor('2026-11-07', '2026-11-01', 100), 'safe')
+  assert.equal(urgencyFor('2026-11-01', '2026-11-01', 0), 'none')
 })

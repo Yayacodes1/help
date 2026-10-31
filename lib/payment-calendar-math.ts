@@ -134,6 +134,72 @@ export function weekdayIndexMondayFirst(ymd: string): number {
   return (utc + 6) % 7
 }
 
+/** First pay is 15 days after contract start; later biweekly waves are +15 each (30, 45, …). */
+export const FIRST_PAY_AFTER_DAYS = 15
+export const BIWEEKLY_PAY_EVERY_DAYS = 15
+
+export type PayUrgency = 'urgent' | 'soon' | 'safe' | 'none'
+
+export type CreatorPaySlice = {
+  dueOn: string
+  index: number
+  label: string
+}
+
+export function daysAhead(today: string, date: string): number {
+  const a = Date.parse(`${today}T00:00:00Z`)
+  const b = Date.parse(`${date}T00:00:00Z`)
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0
+  return Math.round((b - a) / 86_400_000)
+}
+
+/** Red = overdue through the next 3 days; orange = the 2 days after that; green = later. */
+export function urgencyFor(date: string, today: string, remainingSar: number): PayUrgency {
+  if (remainingSar <= 0.009) return 'none'
+  const ahead = daysAhead(today, date)
+  if (ahead <= 3) return 'urgent'
+  if (ahead <= 5) return 'soon'
+  return 'safe'
+}
+
+/**
+ * Biweekly: pay 15 days after start, then 30, 45, … until the contract ends.
+ * Monthly: one payment on the contract end date.
+ */
+export function buildCreatorPaySchedule(opts: {
+  startDate: string
+  endDate: string | null
+  cadence: 'monthly' | 'biweekly'
+  through: string
+  max?: number
+}): CreatorPaySlice[] {
+  if (!opts.startDate) return []
+  const end = opts.endDate
+  const through = opts.through
+  const max = opts.max ?? 36
+
+  if (opts.cadence === 'monthly' && end) {
+    if (end < opts.startDate) return []
+    return [{ dueOn: end, index: 0, label: 'Final payment' }]
+  }
+
+  const out: CreatorPaySlice[] = []
+  for (let i = 0; i < max; i++) {
+    let due = addDays(opts.startDate, FIRST_PAY_AFTER_DAYS * (i + 1))
+    if (end && due > end) {
+      if (out.length === 0) due = end
+      else if (end > out[out.length - 1].dueOn) due = end
+      else break
+    }
+    if (due > through) break
+    if (due < opts.startDate) continue
+    const label = i === 0 ? 'First payment' : i === 1 ? 'Second payment' : `Payment ${i + 1}`
+    out.push({ dueOn: due, index: i, label })
+    if (end && due >= end) break
+  }
+  return out
+}
+
 export function monthGridDates(start: string, end: string): string[] {
   const lead = weekdayIndexMondayFirst(start)
   const dates: string[] = []

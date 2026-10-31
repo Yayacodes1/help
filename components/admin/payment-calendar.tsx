@@ -1,19 +1,24 @@
 import Link from 'next/link'
 import { formatMoney, formatYearMonth } from '@/lib/format'
-import type { CalendarPayStatus, PaymentCalendarModel } from '@/lib/payment-calendar'
+import type { PaymentCalendarModel } from '@/lib/payment-calendar'
+import type { PayUrgency } from '@/lib/payment-calendar-math'
 import { PaymentCalendarNav } from '@/components/admin/payment-calendar-nav'
 import { StatCard } from '@/components/stat-card'
+import { participantRoleLabel } from '@/lib/participant-role'
 
-const STATUS_CLASS: Record<CalendarPayStatus, string> = {
-  paid: 'bg-emerald-500',
-  partial: 'bg-sky-500',
-  due: 'bg-amber-500',
-  overdue: 'bg-destructive',
-  scheduled: 'bg-muted-foreground/50',
+const URGENCY_CLASS: Record<PayUrgency, string> = {
+  urgent: 'border-red-600 bg-red-600 text-white hover:brightness-110',
+  soon: 'border-orange-500 bg-orange-500 text-white hover:brightness-110',
+  safe: 'border-emerald-600 bg-emerald-600 text-white hover:brightness-110',
+  none: 'border-border bg-card text-card-foreground hover:border-primary/50 hover:bg-accent',
 }
 
-function statusDot(status: CalendarPayStatus) {
-  return <span className={`inline-block size-1.5 rounded-full ${STATUS_CLASS[status]}`} title={status} />
+function compactSar(n: number): string {
+  const rounded = Math.round(n)
+  if (Math.abs(n - rounded) < 0.009) {
+    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(rounded)
+  }
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
 }
 
 export function PaymentCalendarBoard({
@@ -34,10 +39,19 @@ export function PaymentCalendarBoard({
     remaining: string
     commission: string
     earned: string
+    total: string
+    totalHint: string
+    scheduled: string
     weekdays: string[]
     unscheduled: string
     empty: string
     people: string
+    rule: string
+    legendUrgent: string
+    legendSoon: string
+    legendSafe: string
+    paid: string
+    toPay: string
   }
 }) {
   const hrefFor = (date: string) => {
@@ -46,6 +60,10 @@ export function PaymentCalendarBoard({
     if (model.role !== 'all') q.set('calRole', model.role)
     return `/admin/payments/${date}?${q.toString()}`
   }
+  const unpaid = [...model.items.filter((i) => i.remainingSar > 0.009)].sort(
+    (a, b) => a.dueDate.localeCompare(b.dueDate) || a.creatorName.localeCompare(b.creatorName),
+  )
+  const monthLabel = formatYearMonth(model.month, locale)
 
   return (
     <div className="flex flex-col gap-4">
@@ -62,18 +80,38 @@ export function PaymentCalendarBoard({
           both: labels.both,
         }}
       />
-      <h3 className="text-lg font-semibold tracking-tight">{formatYearMonth(model.month, locale)}</h3>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <h3 className="text-lg font-semibold tracking-tight">{monthLabel}</h3>
+      <p className="text-sm text-muted-foreground">{labels.rule}</p>
+      <div className="grid gap-3 lg:grid-cols-3">
+        <StatCard
+          label={labels.total}
+          value={formatMoney(model.remainingScheduledSar, 'SAR')}
+          hint={`${labels.totalHint} · ${monthLabel} · ${labels.scheduled}: ${formatMoney(model.scheduledTotalSar, 'SAR')}`}
+        />
         <StatCard
           label={labels.commission}
           value={formatMoney(model.commissionEarnedSar, 'SAR')}
-          hint={`${labels.earned} · ${formatYearMonth(model.month, locale)}`}
+          hint={`${labels.earned} · ${monthLabel}`}
         />
         <StatCard
           label={labels.spent}
           value={formatMoney(model.spentSar, 'SAR')}
-          hint={`${labels.remaining}: ${formatMoney(model.remainingScheduledSar, 'SAR')} · ${formatYearMonth(model.month, locale)}`}
+          hint={`${labels.remaining}: ${formatMoney(model.remainingScheduledSar, 'SAR')} · ${monthLabel}`}
         />
+      </div>
+      <div className="flex flex-wrap gap-3 text-xs font-medium">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-3 rounded-sm bg-red-600" />
+          {labels.legendUrgent}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-3 rounded-sm bg-orange-500" />
+          {labels.legendSoon}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-3 rounded-sm bg-emerald-600" />
+          {labels.legendSafe}
+        </span>
       </div>
       <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {labels.weekdays.map((day) => (
@@ -85,38 +123,79 @@ export function PaymentCalendarBoard({
       <div className="grid grid-cols-7 gap-1">
         {model.days.map((day) => {
           if (!day.inMonth) {
-            return <div key={day.date} className="min-h-20 rounded-lg bg-muted/20" />
+            return <div key={day.date} className="min-h-16 rounded-lg bg-muted/20 sm:min-h-28" />
           }
+          const showPay = day.remainingSar > 0.009
+          const paidOff = day.recipientCount > 0 && !showPay
           return (
             <Link
               key={day.date}
               href={hrefFor(day.date)}
-              className={`flex min-h-[4.25rem] flex-col gap-0.5 rounded-lg border p-1 text-left text-[11px] transition-colors hover:border-primary/50 hover:bg-accent sm:min-h-24 sm:p-2 sm:text-xs ${
-                day.isToday ? 'border-primary bg-primary/5' : 'border-border bg-card'
-              }`}
+              className={`flex min-h-16 flex-col rounded-lg border p-1 text-left sm:min-h-28 sm:p-2 ${
+                URGENCY_CLASS[day.urgency]
+              } ${day.isToday ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' : ''}`}
             >
-              <div className="flex items-center justify-between">
-                <span className={`tabular-nums ${day.isToday ? 'font-bold' : 'font-medium'}`}>
-                  {Number(day.date.slice(8))}
-                </span>
-                <span className="flex gap-0.5">{day.statuses.map((s) => <span key={s}>{statusDot(s)}</span>)}</span>
-              </div>
-              {day.recipientCount > 0 ? (
+              <span className={`tabular-nums text-xs ${day.isToday ? 'font-bold' : 'font-medium'}`}>
+                {Number(day.date.slice(8))}
+              </span>
+              {showPay ? (
                 <>
-                  <div className="truncate tabular-nums font-semibold">{formatMoney(day.scheduledSar, 'SAR')}</div>
-                  <div className="text-[10px] leading-tight text-muted-foreground">
-                    {day.recipientCount} {labels.people}
-                    {day.creators ? ` · C${day.creators}` : ''}
-                    {day.reposters ? ` · R${day.reposters}` : ''}
+                  <div className="mt-0.5 text-base font-bold leading-none tabular-nums sm:text-xl">
+                    {compactSar(day.remainingSar)}
+                  </div>
+                  <div className="mt-1 hidden min-h-0 flex-1 flex-col gap-0.5 overflow-hidden text-[10px] leading-tight sm:flex">
+                    {day.names.slice(0, 3).map((name) => (
+                      <span key={name} className="truncate">
+                        {name}
+                      </span>
+                    ))}
+                    {day.names.length > 3 ? <span>+{day.names.length - 3}</span> : null}
+                  </div>
+                  <div className="mt-auto pt-0.5 text-[10px] font-medium sm:hidden">
+                    {day.unpaidCount}
                   </div>
                 </>
+              ) : paidOff ? (
+                <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide opacity-80">
+                  {labels.paid}
+                </div>
               ) : (
-                <div className="text-[10px] text-muted-foreground/70">—</div>
+                <div className="mt-1 text-[10px] opacity-40">—</div>
               )}
             </Link>
           )
         })}
       </div>
+      {unpaid.length > 0 ? (
+        <section className="rounded-xl border border-border bg-card p-4">
+          <h4 className="text-sm font-semibold">
+            {labels.toPay} · {unpaid.length}
+          </h4>
+          <ul className="mt-3 flex max-h-80 flex-col gap-1 overflow-auto text-sm">
+            {unpaid.map((row) => (
+              <li key={row.key}>
+                <Link
+                  href={hrefFor(row.dueDate)}
+                  className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-accent"
+                >
+                  <span>
+                    <span className="font-medium">{row.creatorName}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {' · '}
+                      {participantRoleLabel(row.role)}
+                      {' · '}
+                      {row.installmentLabel}
+                      {' · '}
+                      {row.dueDate}
+                    </span>
+                  </span>
+                  <span className="tabular-nums font-semibold">{formatMoney(row.remainingSar, 'SAR')}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {model.unscheduled.length > 0 || model.undated.length > 0 ? (
         <section className="rounded-xl border border-dashed border-border p-4">
           <h4 className="text-sm font-semibold">{labels.unscheduled}</h4>
