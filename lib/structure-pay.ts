@@ -6,7 +6,7 @@ import { ensureLeaderTables } from '@/lib/leaders'
 import { ensureOutreachTables } from '@/lib/outreach'
 import type { StructurePaySlot, StructurePayTiming } from '@/lib/company-roles'
 import type { CalendarContractInput } from '@/lib/payment-calendar'
-import { normalizePayTiming } from '@/lib/payment-calendar-math'
+import { normalizePayTiming, resolvePayTiming } from '@/lib/payment-calendar-math'
 
 type StoredPay = {
   subject_key: string
@@ -237,7 +237,13 @@ export async function loadStructurePaySlots(viewerId: string | null | undefined)
         contractId: person.contract_id,
         start: person.start_date,
         end: person.end_date,
-        timing: timingOf(person.pay_timing),
+        timing: person.start_date
+          ? resolvePayTiming({
+              stored: person.pay_timing,
+              startDate: person.start_date,
+              endDate: person.end_date,
+            })
+          : timingOf(person.pay_timing),
         amount: Number(person.base_amount) || 0,
         currency: currencyOf(person.pay_currency ?? (person.role === 'reposter' ? 'USD' : 'SAR')),
         scheduled: false,

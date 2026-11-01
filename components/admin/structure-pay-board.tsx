@@ -89,14 +89,27 @@ function PayRow({
         </div>
         {slot.tier === 'reposter' ? <PersonHandlesLine person={slot} /> : null}
         <p className="text-xs text-muted-foreground">
-          <span className="tabular-nums">
-            {slot.start ?? '—'}
-            {' → '}
-            {slot.end ?? 'open'}
-          </span>
-          {' · '}
-          {timingLabel(slot.timing)}
-          {slot.amount > 0.009 ? ` · ${formatMoney(slot.amount, slot.currency)}` : ''}
+          {slot.start ? (
+            <>
+              <span className="tabular-nums">
+                {slot.start}
+                {' → '}
+                {slot.end ?? 'open'}
+              </span>
+              {' · '}
+              {timingLabel(slot.timing)}
+              {slot.amount > 0.009 ? ` · ${formatMoney(slot.amount, slot.currency)}` : ''}
+            </>
+          ) : slot.amount > 0.009 ? (
+            <>
+              Not on the calendar yet
+              {' · '}
+              {timingLabel(slot.timing)}
+              {` · ${formatMoney(slot.amount, slot.currency)}`}
+            </>
+          ) : (
+            'No pay set'
+          )}
         </p>
       </div>
       {canEdit ? (
