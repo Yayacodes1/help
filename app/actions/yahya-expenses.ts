@@ -5,8 +5,8 @@ import { canMoveYahyaExpenses } from '@/lib/admin-access'
 import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import {
   addYahyaOtherExpense,
-  addYahyaPersonToList,
   clearYahyaPersonOverride,
+  createYahyaCustomPerson,
   deleteYahyaOtherExpense,
   setYahyaHome,
   setYahyaPersonMonthly,
@@ -59,6 +59,7 @@ export async function saveYahyaPersonMonthly(input: {
   creatorId?: number | null
   leaderId?: number | null
   otherId?: number | null
+  customId?: number | null
 }) {
   await requireAdmin()
   const res = await setYahyaPersonMonthly(input)
@@ -87,19 +88,18 @@ export async function saveYahyaHome(input: {
   return res
 }
 
+/** Type a new name into Creators / Reposters / Leaders. */
 export async function addYahyaPerson(input: {
   yearMonth: string
-  personKey: string
+  name: string
   home: 'creators' | 'reposters' | 'leaders'
   amount: number
   currency: 'USD' | 'SAR'
   scope: 'site' | 'page'
-  creatorId?: number | null
-  leaderId?: number | null
 }) {
   const gate = await requireMovers()
   if (!gate.ok) return gate
-  const res = await addYahyaPersonToList(input)
+  const res = await createYahyaCustomPerson(input)
   if (res.ok) refresh()
   return res
 }

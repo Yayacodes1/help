@@ -27,7 +27,6 @@ import {
   saveYahyaPersonMonthly,
 } from '@/app/actions/yahya-expenses'
 import type {
-  YahyaAddCandidate,
   YahyaExpenseCategory,
   YahyaExpensePerson,
   YahyaExpensesSnapshot,
@@ -104,41 +103,20 @@ function filterAndSortPeople(
   })
 }
 
-function candidatesForHome(
-  candidates: YahyaAddCandidate[],
-  home: PeopleHome,
-): YahyaAddCandidate[] {
-  const preferred =
-    home === 'creators' ? 'creator' : home === 'reposters' ? 'reposter' : 'leader'
-  const first = candidates.filter((c) => c.kind === preferred)
-  const rest = candidates.filter((c) => c.kind !== preferred)
-  return [...first, ...rest]
-}
-
 function InlineAddPerson({
   yearMonth,
   home,
-  candidates,
 }: {
   yearMonth: string
   home: PeopleHome
-  candidates: YahyaAddCandidate[]
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
-  const [personKey, setPersonKey] = useState('')
+  const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState<'SAR' | 'USD'>('SAR')
-  const [scope, setScope] = useState<'page' | 'site'>('page')
-  const list = useMemo(() => candidatesForHome(candidates, home), [candidates, home])
-  const selected = list.find((c) => c.key === personKey) ?? null
-
-  useEffect(() => {
-    if (!selected) return
-    setCurrency(selected.currency)
-    setAmount(selected.suggestedMonthly > 0 ? String(selected.suggestedMonthly) : '')
-  }, [selected])
+  const [scope, setScope] = useState<'page' | 'site'>('site')
 
   if (!open) {
     return (
@@ -160,24 +138,21 @@ function InlineAddPerson({
       className="border-t border-border bg-secondary/20 px-3 py-3"
       onSubmit={(e) => {
         e.preventDefault()
-        if (!selected) return
         const n = Number(amount)
         startTransition(async () => {
           const res = await addYahyaPerson({
             yearMonth,
-            personKey: selected.key,
+            name,
             home,
             amount: n,
             currency,
             scope,
-            creatorId: selected.creatorId,
-            leaderId: selected.leaderId,
           })
           if (!res.ok) {
             alert(res.error)
             return
           }
-          setPersonKey('')
+          setName('')
           setAmount('')
           setOpen(false)
           router.refresh()
@@ -185,7 +160,7 @@ function InlineAddPerson({
       }}
     >
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold">Add to this list</p>
+        <p className="text-xs font-semibold">Add someone to this list</p>
         <button
           type="button"
           onClick={() => setOpen(false)}
@@ -194,90 +169,76 @@ function InlineAddPerson({
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
-      {list.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Nobody left to add. New people show up automatically once they have pay.
-        </p>
-      ) : (
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="flex min-w-[160px] flex-1 flex-col gap-1 text-[11px] text-muted-foreground">
-            Person
-            <select
-              required
-              value={personKey}
-              onChange={(e) => setPersonKey(e.target.value)}
-              className="h-9 rounded-lg border border-input bg-background px-2 text-sm text-foreground"
-            >
-              <option value="">Pick someone…</option>
-              {list.map((c) => (
-                <option key={c.key} value={c.key}>
-                  {c.name}
-                  {c.kind !== (home === 'creators' ? 'creator' : home === 'reposters' ? 'reposter' : 'leader')
-                    ? ` · ${c.kind}`
-                    : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex w-28 flex-col gap-1 text-[11px] text-muted-foreground">
-            Monthly
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              required
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="h-9 rounded-lg border border-input bg-background px-2 text-sm tabular-nums text-foreground"
-            />
-          </label>
-          <div className="inline-flex h-9 rounded-lg border border-border bg-background p-0.5">
-            {(['SAR', 'USD'] as const).map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setCurrency(c)}
-                className={
-                  (currency === c ? 'bg-foreground text-background ' : 'text-muted-foreground ') +
-                  'rounded-md px-2.5 text-xs font-semibold'
-                }
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-          <div className="inline-flex h-9 rounded-lg border border-border bg-background p-0.5">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex min-w-[160px] flex-1 flex-col gap-1 text-[11px] text-muted-foreground">
+          Name
+          <input
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Type their name…"
+            autoFocus
+            className="h-9 rounded-lg border border-input bg-background px-2 text-sm text-foreground"
+          />
+        </label>
+        <label className="flex w-28 flex-col gap-1 text-[11px] text-muted-foreground">
+          Monthly
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            required
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="h-9 rounded-lg border border-input bg-background px-2 text-sm tabular-nums text-foreground"
+          />
+        </label>
+        <div className="inline-flex h-9 rounded-lg border border-border bg-background p-0.5">
+          {(['SAR', 'USD'] as const).map((c) => (
             <button
+              key={c}
               type="button"
-              onClick={() => setScope('page')}
+              onClick={() => setCurrency(c)}
               className={
-                (scope === 'page' ? 'bg-foreground text-background ' : 'text-muted-foreground ') +
+                (currency === c ? 'bg-foreground text-background ' : 'text-muted-foreground ') +
                 'rounded-md px-2.5 text-xs font-semibold'
               }
             >
-              This page
+              {c}
             </button>
-            <button
-              type="button"
-              onClick={() => setScope('site')}
-              className={
-                (scope === 'site' ? 'bg-foreground text-background ' : 'text-muted-foreground ') +
-                'rounded-md px-2.5 text-xs font-semibold'
-              }
-            >
-              Whole site
-            </button>
-          </div>
+          ))}
+        </div>
+        <div className="inline-flex h-9 rounded-lg border border-border bg-background p-0.5">
           <button
-            type="submit"
-            disabled={pending || !personKey}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+            type="button"
+            onClick={() => setScope('page')}
+            className={
+              (scope === 'page' ? 'bg-foreground text-background ' : 'text-muted-foreground ') +
+              'rounded-md px-2.5 text-xs font-semibold'
+            }
           >
-            <Plus className="h-3.5 w-3.5" />
-            {pending ? '…' : 'Add'}
+            This page
+          </button>
+          <button
+            type="button"
+            onClick={() => setScope('site')}
+            className={
+              (scope === 'site' ? 'bg-foreground text-background ' : 'text-muted-foreground ') +
+              'rounded-md px-2.5 text-xs font-semibold'
+            }
+          >
+            Whole site
           </button>
         </div>
-      )}
+        <button
+          type="submit"
+          disabled={pending || !name.trim()}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {pending ? '…' : 'Add'}
+        </button>
+      </div>
     </form>
   )
 }
@@ -361,7 +322,7 @@ function PersonRow({
   const [editing, setEditing] = useState(false)
   const [amount, setAmount] = useState(String(person.nativeMonthly))
   const [currency, setCurrency] = useState(person.currency)
-  const [scope, setScope] = useState<'page' | 'site'>('page')
+  const [scope, setScope] = useState<'page' | 'site'>('site')
 
   useEffect(() => {
     if (!editing) {
@@ -469,15 +430,21 @@ function PersonRow({
                   disabled={pending}
                   onClick={() =>
                     startTransition(async () => {
+                      const n = Number(amount)
+                      if (!Number.isFinite(n) || n < 0) {
+                        alert('Enter a valid monthly amount.')
+                        return
+                      }
                       const res = await saveYahyaPersonMonthly({
                         yearMonth,
                         personKey: person.key,
-                        amount: Number(amount),
+                        amount: n,
                         currency,
                         scope,
                         creatorId: person.creatorId,
                         leaderId: person.leaderId,
                         otherId: person.otherId,
+                        customId: person.customId,
                       })
                       if (!res.ok) alert(res.error)
                       else {
@@ -536,7 +503,6 @@ function CategoryBlock({
   query,
   letter,
   sort,
-  candidates,
   otherItems,
 }: {
   category: YahyaExpenseCategory
@@ -548,7 +514,6 @@ function CategoryBlock({
   query: string
   letter: string | null
   sort: SortMode
-  candidates: YahyaAddCandidate[]
   otherItems: YahyaExpensesSnapshot['other']
 }) {
   const [open, setOpen] = useState(false)
@@ -638,7 +603,7 @@ function CategoryBlock({
             </>
           )}
           {canMove && peopleHome ? (
-            <InlineAddPerson yearMonth={yearMonth} home={peopleHome} candidates={candidates} />
+            <InlineAddPerson yearMonth={yearMonth} home={peopleHome} />
           ) : null}
         </div>
       ) : null}
@@ -1043,7 +1008,6 @@ export function YahyaExpensesPanel({
             query={query}
             letter={letter}
             sort={sort}
-            candidates={snapshot.addCandidates}
             otherItems={snapshot.other}
           />
         ))}
@@ -1059,7 +1023,6 @@ export function YahyaExpensesPanel({
             query={query}
             letter={letter}
             sort={sort}
-            candidates={snapshot.addCandidates}
             otherItems={snapshot.other}
           />
         ) : null}

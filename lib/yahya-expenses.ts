@@ -42,6 +42,8 @@ export type YahyaExpensePerson = {
   creatorId: number | null
   leaderId: number | null
   otherId: number | null
+  /** Typed-in person on this expenses page (not a real creator/leader row). */
+  customId: number | null
   /** True when this month has a page-only override. */
   pageOverride: boolean
   /** Dual-role: linked as a reposter or leader elsewhere. */
@@ -102,7 +104,7 @@ export type YahyaExpensesSnapshot = {
 const HOMES = new Set<YahyaHome>(['creators', 'reposters', 'leaders', 'both', 'hidden'])
 
 export async function ensureYahyaExpenseTables() {
-  return ensureOnce('yahya_expenses', async () => {
+  return ensureOnce('yahya_expenses_v2', async () => {
     await sql`
       CREATE TABLE IF NOT EXISTS yahya_other_expenses (
         id SERIAL PRIMARY KEY,
@@ -135,7 +137,65 @@ export async function ensureYahyaExpenseTables() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `
+    await sql`
+      CREATE TABLE IF NOT EXISTS yahya_custom_people (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        home TEXT NOT NULL,
+        amount NUMERIC(12,2) NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'SAR',
+        year_month TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS yahya_custom_people_month_idx
+      ON yahya_custom_people (year_month)
+    `
   })
+}
+
+export type YahyaCustomPerson = {
+  id: number
+  name: string
+  home: 'creators' | 'reposters' | 'leaders'
+  amount: number
+  currency: 'USD' | 'SAR'
+  yearMonth: string | null
+  amountUsd: number
+}
+
+async function listYahyaCustomPeople(yearMonth: string): Promise<YahyaCustomPerson[]> {
+  await ensureYahyaExpenseTables()
+  const rows = (await sql`
+    SELECT id, name, home, amount::float AS amount, currency, year_month
+    FROM yahya_custom_people
+    WHERE year_month IS NULL OR year_month = ${yearMonth}
+    ORDER BY name ASC
+  `) as {
+    id: number
+    name: string
+    home: string
+    amount: number
+    currency: string
+    year_month: string | null
+  }[]
+  return rows
+    .filter(
+      (r) => r.home === 'creators' || r.home === 'reposters' || r.home === 'leaders',
+    )
+    .map((r) => {
+      const currency: 'USD' | 'SAR' = r.currency === 'USD' ? 'USD' : 'SAR'
+      return {
+        id: r.id,
+        name: r.name,
+        home: r.home as 'creators' | 'reposters' | 'leaders',
+        amount: Number(r.amount) || 0,
+        currency,
+        yearMonth: r.year_month,
+        amountUsd: round2(toUsd(r.amount, currency)),
+      }
+    })
 }
 
 export async function listYahyaOtherExpenses(yearMonth: string): Promise<YahyaOtherExpense[]> {
@@ -235,7 +295,7 @@ export async function getYahyaExpensesSnapshot(opts: {
   const { start: from, end: to } = calendarMonthBounds(yearMonth)
   const today = opts.today
 
-  const [outflow, leadersDir, other, overrides, homes] = await Promise.all([
+  const [outflow, leadersDir, other, overrides, homes, customs] = await Promise.all([
     getOutflowSnapshot({
       from,
       to,
@@ -249,12 +309,12 @@ export async function getYahyaExpensesSnapshot(opts: {
     listYahyaOtherExpenses(yearMonth),
     listOverrides(yearMonth),
     listHomes(),
+    listYahyaCustomPeople(yearMonth),
   ])
 
   const creatorRaws: RawPerson[] = []
   const reposterRaws: RawPerson[] = []
   for (const p of outflow.peopleTotals) {
-    if (p.monthly <= 0) continue
     const isReposter = p.role === 'reposter'
     const key = isReposter ? `reposter-${p.creator_id}` : `creator-${p.creator_id}`
     const currency = p.currency
@@ -265,6 +325,8 @@ export async function getYahyaExpensesSnapshot(opts: {
       { monthlyUsd: round2(p.monthly), currency, nativeMonthly },
       overrides,
     )
+    // Keep people with a page override even when their base monthly is 0.
+    if (paid.monthlyUsd <= 0 && !paid.pageOverride) continue
     const raw: RawPerson = {
       key,
       name: p.creator_name,
@@ -403,6 +465,7 @@ export async function getYahyaExpensesSnapshot(opts: {
       creatorId: raw.creatorId,
       leaderId: raw.leaderId,
       otherId: null,
+      customId: null,
       pageOverride: raw.pageOverride,
       also: opts.also,
       home: opts.home,
@@ -491,6 +554,41 @@ export async function getYahyaExpensesSnapshot(opts: {
     pushPerson(bucket, raw, { home, homeKey: raw.key, isDual: false, also: null })
   }
 
+  // Typed-in people (not linked to creators/leaders tables).
+  for (const custom of customs) {
+    const key = `custom-${custom.id}`
+    const paid = applyOverride(
+      key,
+      {
+        monthlyUsd: custom.amountUsd,
+        currency: custom.currency,
+        nativeMonthly: custom.amount,
+      },
+      overrides,
+    )
+    const row: YahyaExpensePerson = {
+      key,
+      name: custom.name,
+      role: custom.home === 'leaders' ? 'management' : custom.home.replace(/s$/, ''),
+      categoryId: custom.home,
+      monthlyUsd: paid.monthlyUsd,
+      currency: paid.currency,
+      nativeMonthly: paid.nativeMonthly,
+      creatorId: null,
+      leaderId: null,
+      otherId: null,
+      customId: custom.id,
+      pageOverride: paid.pageOverride || custom.yearMonth === yearMonth,
+      also: null,
+      home: custom.home,
+      homeKey: key,
+      isDual: false,
+    }
+    if (custom.home === 'creators') creators.push(row)
+    else if (custom.home === 'reposters') reposters.push(row)
+    else leaders.push(row)
+  }
+
   creators.sort((a, b) => a.name.localeCompare(b.name))
   reposters.sort((a, b) => a.name.localeCompare(b.name))
   leaders.sort((a, b) => a.name.localeCompare(b.name))
@@ -506,6 +604,7 @@ export async function getYahyaExpensesSnapshot(opts: {
     creatorId: null,
     leaderId: null,
     otherId: o.id,
+    customId: null,
     pageOverride: false,
     also: null,
     home: 'creators',
@@ -733,6 +832,7 @@ export async function setYahyaPlacement(input: {
  * Save a monthly amount.
  * - scope `site`: updates real pay everywhere (creators biweekly = monthly/2, leaders monthly).
  * - scope `page`: override for this month on Yahya's expenses only.
+ * Always also writes a page override so this tab shows the new number immediately.
  */
 export async function setYahyaPersonMonthly(input: {
   yearMonth: string
@@ -743,6 +843,7 @@ export async function setYahyaPersonMonthly(input: {
   creatorId?: number | null
   leaderId?: number | null
   otherId?: number | null
+  customId?: number | null
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   await ensureYahyaExpenseTables()
   if (!/^\d{4}-\d{2}$/.test(input.yearMonth)) return { ok: false, error: 'Bad month' }
@@ -751,48 +852,34 @@ export async function setYahyaPersonMonthly(input: {
   const currency = input.currency === 'USD' ? 'USD' : 'SAR'
   const rounded = round2(amount)
 
-  if (input.scope === 'page') {
-    if (input.otherId != null) {
-      await sql`
-        UPDATE yahya_other_expenses
-        SET amount = ${rounded}, currency = ${currency}
-        WHERE id = ${input.otherId}
-      `
-      return { ok: true }
-    }
+  async function writePageOverride() {
     await sql`
       INSERT INTO yahya_expense_overrides (year_month, person_key, amount, currency, updated_at)
       VALUES (${input.yearMonth}, ${input.personKey}, ${rounded}, ${currency}, NOW())
       ON CONFLICT (year_month, person_key) DO UPDATE
         SET amount = EXCLUDED.amount, currency = EXCLUDED.currency, updated_at = NOW()
     `
-    return { ok: true }
   }
 
-  if (input.leaderId != null && input.personKey.startsWith('leader-')) {
-    await sql`
-      UPDATE leaders
-      SET monthly_pay = ${rounded}, pay_currency = ${currency}
-      WHERE id = ${input.leaderId}
-    `
-    await sql`
-      DELETE FROM yahya_expense_overrides
-      WHERE year_month = ${input.yearMonth} AND person_key = ${input.personKey}
-    `
-    return { ok: true }
-  }
-
-  if (input.creatorId != null) {
-    const biweekly = round2(rounded / 2)
-    await sql`
-      UPDATE creators
-      SET pay_currency = ${currency}, biweekly_amount = ${biweekly}
-      WHERE id = ${input.creatorId}
-    `
-    await sql`
-      DELETE FROM yahya_expense_overrides
-      WHERE year_month = ${input.yearMonth} AND person_key = ${input.personKey}
-    `
+  if (input.customId != null || input.personKey.startsWith('custom-')) {
+    const customId =
+      input.customId ??
+      (Number(input.personKey.replace(/^custom-/, '')) || null)
+    if (customId == null || !(customId > 0)) return { ok: false, error: 'Unknown person' }
+    if (input.scope === 'site') {
+      await sql`
+        UPDATE yahya_custom_people
+        SET amount = ${rounded}, currency = ${currency}, year_month = NULL
+        WHERE id = ${customId}
+      `
+    } else {
+      await sql`
+        UPDATE yahya_custom_people
+        SET amount = ${rounded}, currency = ${currency}, year_month = ${input.yearMonth}
+        WHERE id = ${customId}
+      `
+    }
+    await writePageOverride()
     return { ok: true }
   }
 
@@ -805,7 +892,73 @@ export async function setYahyaPersonMonthly(input: {
     return { ok: true }
   }
 
-  return { ok: false, error: 'Unknown person' }
+  if (input.scope === 'page') {
+    await writePageOverride()
+    return { ok: true }
+  }
+
+  // site-wide — update real pay, and keep a page override so this tab refreshes correctly
+  if (input.leaderId != null && input.personKey.startsWith('leader-')) {
+    await sql`
+      UPDATE leaders
+      SET monthly_pay = ${rounded}, pay_currency = ${currency}
+      WHERE id = ${input.leaderId}
+    `
+    await writePageOverride()
+    return { ok: true }
+  }
+
+  if (input.creatorId != null) {
+    const biweekly = round2(rounded / 2)
+    await sql`
+      UPDATE creators
+      SET pay_currency = ${currency}, biweekly_amount = ${biweekly}
+      WHERE id = ${input.creatorId}
+    `
+    await writePageOverride()
+    return { ok: true }
+  }
+
+  // Fallback: still save as a page override so the number sticks on this tab.
+  await writePageOverride()
+  return { ok: true }
+}
+
+/** Type a brand-new name into Creators / Reposters / Leaders on this expenses page. */
+export async function createYahyaCustomPerson(input: {
+  yearMonth: string
+  name: string
+  home: 'creators' | 'reposters' | 'leaders'
+  amount: number
+  currency: 'USD' | 'SAR'
+  scope: 'site' | 'page'
+}): Promise<{ ok: true; id: number } | { ok: false; error: string }> {
+  await ensureYahyaExpenseTables()
+  const name = input.name.trim()
+  if (!name) return { ok: false, error: 'Enter a name' }
+  if (!/^\d{4}-\d{2}$/.test(input.yearMonth)) return { ok: false, error: 'Bad month' }
+  if (input.home !== 'creators' && input.home !== 'reposters' && input.home !== 'leaders') {
+    return { ok: false, error: 'Bad list' }
+  }
+  const amount = Number(input.amount)
+  if (!Number.isFinite(amount) || amount < 0) return { ok: false, error: 'Bad amount' }
+  const currency = input.currency === 'USD' ? 'USD' : 'SAR'
+  const rounded = round2(amount)
+  const yearMonth = input.scope === 'site' ? null : input.yearMonth
+  const rows = (await sql`
+    INSERT INTO yahya_custom_people (name, home, amount, currency, year_month)
+    VALUES (${name}, ${input.home}, ${rounded}, ${currency}, ${yearMonth})
+    RETURNING id
+  `) as { id: number }[]
+  const id = rows[0]?.id
+  if (!id) return { ok: false, error: 'Could not add person' }
+  await sql`
+    INSERT INTO yahya_expense_overrides (year_month, person_key, amount, currency, updated_at)
+    VALUES (${input.yearMonth}, ${`custom-${id}`}, ${rounded}, ${currency}, NOW())
+    ON CONFLICT (year_month, person_key) DO UPDATE
+      SET amount = EXCLUDED.amount, currency = EXCLUDED.currency, updated_at = NOW()
+  `
+  return { ok: true, id }
 }
 
 export async function clearYahyaPersonOverride(input: {
