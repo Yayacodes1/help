@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { setCreatorUrgent } from '@/app/actions/admin'
 import { adminPersonHref } from '@/lib/admin-href'
 import { MoneyPair } from '@/components/admin/money-pair'
+import { SplitColumns } from '@/components/admin/split-columns'
 import type { ParticipantRole } from '@/lib/participant-role'
 
 type UrgentPayRow = {
@@ -44,18 +45,27 @@ export function UrgentList({
   rows: UrgentPayRow[]
   locale: string
   canRemove: boolean
-  labels: { empty: string; noDate: string; paid: string; remove: string }
+  labels: {
+    empty: string
+    noDate: string
+    paid: string
+    remove: string
+    creators: string
+    reposters: string
+  }
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
+  const creators = rows.filter((row) => row.role !== 'reposter')
+  const reposters = rows.filter((row) => row.role === 'reposter')
 
-  if (rows.length === 0) {
-    return <p className="text-sm text-muted-foreground">{labels.empty}</p>
-  }
-
-  return (
+  function list(side: UrgentPayRow[]) {
+    if (side.length === 0) {
+      return <p className="text-sm text-muted-foreground">{labels.empty}</p>
+    }
+    return (
     <ul className="flex flex-col gap-2">
-      {rows.map((row) => (
+      {side.map((row) => (
         <li key={row.id} className="rounded-xl border border-border bg-card px-4 py-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <Link
@@ -91,5 +101,15 @@ export function UrgentList({
         </li>
       ))}
     </ul>
+    )
+  }
+
+  return (
+    <SplitColumns
+      sides={[
+        { key: 'creators', title: labels.creators, summary: creators.length, children: list(creators) },
+        { key: 'reposters', title: labels.reposters, summary: reposters.length, children: list(reposters) },
+      ]}
+    />
   )
 }

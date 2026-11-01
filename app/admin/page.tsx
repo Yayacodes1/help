@@ -113,6 +113,7 @@ import { BreakRequestsBoard } from '@/components/admin/break-requests-board'
 import { listBreakRequests } from '@/lib/break-requests'
 import { getCompanyStructure } from '@/lib/company-structure'
 import { TimelineManage } from '@/components/admin/timeline-manage'
+import { TimelineRoleSwitch } from '@/components/admin/timeline-role-switch'
 import { loadPaymentCalendar } from '@/lib/payment-calendar-data'
 import { loadPaymentArchive } from '@/lib/payment-archive'
 import { PaymentArchive } from '@/components/admin/payment-archive'
@@ -1730,7 +1731,7 @@ export default async function AdminPage({
                 {
                   id: 'urgent',
                   title: t('urgentList'),
-                  summary: `${urgentList.rows.length}`,
+                  summary: `${urgentList.rows.filter((row) => row.role !== 'reposter').length} ${t('roleFilterCreators').toLowerCase()} · ${urgentList.rows.filter((row) => row.role === 'reposter').length} ${t('roleFilterReposters').toLowerCase()}`,
                   hint: t('urgentListHint'),
                   children: (
                     <UrgentList
@@ -1742,6 +1743,8 @@ export default async function AdminPage({
                         noDate: t('urgentListNoDate'),
                         paid: t('urgentListPaid'),
                         remove: t('urgentListRemove'),
+                        creators: t('roleFilterCreators'),
+                        reposters: t('roleFilterReposters'),
                       }}
                     />
                   ),
@@ -1904,105 +1907,55 @@ export default async function AdminPage({
           {
             id: 'timeline',
             title: t('timelineManage'),
-            summary:
-              roleFilter === 'reposter'
-                ? `${rosterReposters.length} ${t('roleFilterReposters').toLowerCase()}`
-                : splitData && roleFilter !== 'reposter'
-                  ? roleFilter === 'all'
-                    ? `${splitSummary((side) => `${creatorsOnProject(side.project.id).length}`)} · ${t('roleFilterReposters')} ${rosterReposters.length}`
-                    : splitSummary((side) => `${creatorsOnProject(side.project.id).length}`)
-                  : roleCountSummary(rosterCreators.length, rosterReposters.length),
+            summary: `${rosterCreators.length} ${t('roleFilterCreators').toLowerCase()} · ${rosterReposters.length} ${t('roleFilterReposters').toLowerCase()}`,
             hint: t('timelineManageHint'),
-            children: splitData && roleFilter !== 'reposter' ? (
-              <div key="timeline-split" className="flex flex-col gap-4">
-                <SplitColumns
-                  sides={splitData.map((side) => ({
-                    key: `timeline-${side.project.id}`,
-                    title: side.project.name,
-                    summary: roleCountSummary(creatorsOnProject(side.project.id).length, rosterReposters.length),
-                    children: (
-                      <div className="flex flex-col gap-4">
-                        {manageShowsCreators ? (
-                        <TimelineManage
-                          people={creatorsOnProject(side.project.id)}
-                          pausedPeople={pausedCreatorsOnProject(side.project.id)}
-                          today={today}
-                          currentProjectId={side.project.id}
-                          labels={{ ...timelineLabels, title: t('roleFilterCreators'), hint: '' }}
-                          urgentIds={urgentList.ids}
-                          canSendUrgent={canSendUrgent}
-                        />
-                        ) : null}
-                        {manageShowsReposters ? (
-                        <TimelineManage
-                          people={rosterReposters}
-                          pausedPeople={rosterPausedReposters}
-                          today={today}
-                          labels={{ ...timelineLabels, title: t('roleFilterReposters'), hint: '' }}
-                          urgentIds={urgentList.ids}
-                          canSendUrgent={canSendUrgent}
-                        />
-                        ) : null}
-                      </div>
-                    ),
-                  }))}
-                />
-                {roleFilter === 'all' ? (
-                <section className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-background/40 p-3">
-                  <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border pb-2">
-                    <h3 className="text-base font-semibold tracking-tight">
-                      {t('roleFilterReposters')} · {t('bothProjects')}
-                    </h3>
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {rosterReposters.length} {t('roleFilterReposters').toLowerCase()} · {rosterCreators.length}{' '}
-                      {t('roleFilterCreators').toLowerCase()}
-                    </span>
-                  </header>
-                  <div className="flex flex-col gap-4">
-                    <TimelineManage
-                      people={rosterReposters}
-                      pausedPeople={rosterPausedReposters}
-                      today={today}
-                      labels={{ ...timelineLabels, title: t('roleFilterReposters'), hint: '' }}
-                      urgentIds={urgentList.ids}
-                      canSendUrgent={canSendUrgent}
+            children: (
+              <TimelineRoleSwitch
+                initial={roleFilter === 'reposter' ? 'reposter' : 'creator'}
+                labels={{ creators: t('roleFilterCreators'), reposters: t('roleFilterReposters') }}
+                creators={
+                  splitData ? (
+                    <SplitColumns
+                      sides={splitData.map((side) => ({
+                        key: `timeline-${side.project.id}`,
+                        title: side.project.name,
+                        summary: `${creatorsOnProject(side.project.id).length}`,
+                        children: (
+                          <TimelineManage
+                            people={creatorsOnProject(side.project.id)}
+                            pausedPeople={pausedCreatorsOnProject(side.project.id)}
+                            today={today}
+                            currentProjectId={side.project.id}
+                            labels={{ ...timelineLabels, title: t('roleFilterCreators'), hint: '' }}
+                            urgentIds={urgentList.ids}
+                            canSendUrgent={canSendUrgent}
+                          />
+                        ),
+                      }))}
                     />
+                  ) : (
                     <TimelineManage
                       people={rosterCreators}
                       pausedPeople={rosterPausedCreators}
                       today={today}
+                      currentProjectId={projectId}
                       labels={{ ...timelineLabels, title: t('roleFilterCreators'), hint: '' }}
                       urgentIds={urgentList.ids}
                       canSendUrgent={canSendUrgent}
                     />
-                  </div>
-                </section>
-                ) : null}
-              </div>
-            ) : (
-              <div className="flex flex-col gap-4">
-                {manageShowsCreators ? (
-                <TimelineManage
-                  people={rosterCreators}
-                  pausedPeople={rosterPausedCreators}
-                  today={today}
-                  currentProjectId={projectId}
-                  labels={{ ...timelineLabels, title: t('roleFilterCreators'), hint: '' }}
-                  urgentIds={urgentList.ids}
-                  canSendUrgent={canSendUrgent}
-                />
-                ) : null}
-                {manageShowsReposters ? (
-                <TimelineManage
-                  people={rosterReposters}
-                  pausedPeople={rosterPausedReposters}
-                  today={today}
-                  labels={{ ...timelineLabels, title: t('roleFilterReposters'), hint: '' }}
-                  urgentIds={urgentList.ids}
-                  canSendUrgent={canSendUrgent}
-                />
-                ) : null}
-              </div>
+                  )
+                }
+                reposters={
+                  <TimelineManage
+                    people={rosterReposters}
+                    pausedPeople={rosterPausedReposters}
+                    today={today}
+                    labels={{ ...timelineLabels, title: t('roleFilterReposters'), hint: '' }}
+                    urgentIds={urgentList.ids}
+                    canSendUrgent={canSendUrgent}
+                  />
+                }
+              />
             ),
           },
           ...(companyStructure || companyStructureError
