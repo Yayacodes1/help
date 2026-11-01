@@ -2,18 +2,22 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Check, ChevronDown, Plus, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { formatMoney } from '@/lib/format'
 import { usdToSar } from '@/lib/fx'
 import { shiftYearMonth } from '@/lib/biweekly'
 import {
   addYahyaExpenseItem,
   removeYahyaExpenseItem,
+  resetYahyaPersonOverride,
+  saveYahyaPersonMonthly,
+  saveYahyaPlacement,
 } from '@/app/actions/yahya-expenses'
 import type {
   YahyaExpenseCategory,
   YahyaExpensePerson,
   YahyaExpensesSnapshot,
+  YahyaPlacement,
 } from '@/lib/yahya-expenses'
 
 function DualMoney({ usd, big }: { usd: number; big?: boolean }) {
@@ -24,9 +28,7 @@ function DualMoney({ usd, big }: { usd: number; big?: boolean }) {
         {formatMoney(sar, 'SAR')}
       </span>
       <span
-        className={
-          (big ? 'text-sm ' : 'text-xs ') + 'tabular-nums text-muted-foreground'
-        }
+        className={(big ? 'text-sm ' : 'text-xs ') + 'tabular-nums text-muted-foreground'}
       >
         {formatMoney(usd, 'USD')}
       </span>
@@ -60,16 +62,21 @@ function saveChecked(yearMonth: string, keys: Set<string>) {
 
 function CategoryBlock({
   category,
+  yearMonth,
   checked,
   onToggle,
+  onCheckAll,
 }: {
   category: YahyaExpenseCategory
+  yearMonth: string
   checked: Set<string>
   onToggle: (key: string) => void
+  onCheckAll: (keys: string[], done: boolean) => void
 }) {
   const [open, setOpen] = useState(true)
   const done = category.people.filter((p) => checked.has(p.key)).length
   const total = category.people.length
+  const allDone = total > 0 && done === total
 
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-card">
@@ -85,7 +92,7 @@ function CategoryBlock({
             {total === 0
               ? 'Nobody yet'
               : `${done}/${total} checked · ${category.people.length} ${
-                  category.people.length === 1 ? 'line' : 'lines'
+                  category.people.length === 1 ? 'person' : 'people'
                 }`}
           </p>
         </div>
@@ -95,7 +102,7 @@ function CategoryBlock({
               {formatMoney(usdToSar(category.totalUsd), 'SAR')}
             </p>
             <p className="text-[11px] tabular-nums text-white/70">
-              {formatMoney(category.totalUsd, 'USD')}
+              {formatMoney(category.totalUsd, 'USD')} / month
             </p>
           </div>
           <ChevronDown
@@ -114,63 +121,295 @@ function CategoryBlock({
               : 'Nothing in this category for this month.'}
           </p>
         ) : (
-          <ul className="divide-y divide-border">
-            {category.people.map((person) => (
-              <PersonRow
-                key={person.key}
-                person={person}
-                done={checked.has(person.key)}
-                onToggle={() => onToggle(person.key)}
-              />
-            ))}
-          </ul>
+          <>
+            <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+              <button
+                type="button"
+                onClick={() =>
+                  onCheckAll(
+                    category.people.map((p) => p.key),
+                    !allDone,
+                  )
+                }
+                className="text-xs font-medium text-sky-800 hover:underline dark:text-sky-300"
+              >
+                {allDone ? 'Uncheck all in this list' : 'Check all in this list'}
+              </button>
+            </div>
+            <ul className="divide-y divide-border">
+              {category.people.map((person) => (
+                <PersonRow
+                  key={person.key}
+                  person={person}
+                  yearMonth={yearMonth}
+                  done={checked.has(person.key)}
+                  onToggle={() => onToggle(person.key)}
+                />
+              ))}
+            </ul>
+          </>
         )
       ) : null}
     </section>
   )
 }
 
+function PlacementControls({
+  person,
+}: {
+  person: YahyaExpensePerson
+}) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+  if (!person.also) return null
+  const leaderKey = person.key.startsWith('leader-')
+    ? person.key
+    : person.leaderId != null
+      ? `leader-${person.leaderId}`
+      : null
+  if (!leaderKey) return null
+  const dualKey = leaderKey
+  const placement: YahyaPlacement = person.placement ?? 'leaders'
+
+  function setPlacement(next: YahyaPlacement) {
+    startTransition(async () => {
+      const res = await saveYahyaPlacement({ personKey: dualKey, placement: next })
+      if (!res.ok) alert(res.error)
+      else router.refresh()
+    })
+  }
+
+  const alsoLabel =
+    person.also?.kind === 'reposter'
+      ? 'Also a reposter'
+      : person.also?.kind === 'leader'
+        ? 'Also in management'
+        : null
+
+  return (
+    <div className="mt-1.5 flex flex-col gap-1.5">
+      {alsoLabel ? (
+        <span className="inline-flex w-fit rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
+          {alsoLabel}
+          {person.also?.label ? ` · ${person.also.label}` : ''}
+        </span>
+      ) : null}
+      <div className="flex flex-wrap gap-1">
+        {(
+          [
+            { id: 'leaders' as const, label: 'Management only' },
+            { id: 'reposters' as const, label: 'Reposter only' },
+            { id: 'both' as const, label: 'Both places' },
+          ] as const
+        ).map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            disabled={pending}
+            onClick={() => setPlacement(opt.id)}
+            className={
+              (placement === opt.id
+                ? 'bg-slate-900 text-white dark:bg-primary '
+                : 'border border-border text-muted-foreground hover:bg-muted ') +
+              'rounded-md px-2 py-0.5 text-[10px] font-semibold disabled:opacity-60'
+            }
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function PersonRow({
   person,
+  yearMonth,
   done,
   onToggle,
 }: {
   person: YahyaExpensePerson
+  yearMonth: string
   done: boolean
   onToggle: () => void
 }) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+  const [editing, setEditing] = useState(false)
+  const [amount, setAmount] = useState(String(person.nativeMonthly))
+  const [currency, setCurrency] = useState(person.currency)
+  const [scope, setScope] = useState<'page' | 'site'>('page')
+
+  useEffect(() => {
+    if (!editing) {
+      setAmount(String(person.nativeMonthly))
+      setCurrency(person.currency)
+    }
+  }, [person.nativeMonthly, person.currency, editing])
+
+  function save() {
+    const n = Number(amount)
+    startTransition(async () => {
+      const res = await saveYahyaPersonMonthly({
+        yearMonth,
+        personKey: person.key,
+        amount: n,
+        currency,
+        scope,
+        creatorId: person.creatorId,
+        leaderId: person.leaderId,
+        otherId: person.otherId,
+      })
+      if (!res.ok) {
+        alert(res.error)
+        return
+      }
+      setEditing(false)
+      router.refresh()
+    })
+  }
+
   return (
-    <li className="flex items-center gap-3 px-3 py-2.5">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-pressed={done}
-        title={done ? 'Checked — click to undo' : 'Mark checked'}
-        className={
-          (done
-            ? 'border-emerald-600 bg-emerald-600 text-white '
-            : 'border-border bg-background text-transparent hover:border-emerald-500 ') +
-          'flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors'
-        }
-      >
-        <Check className="h-3.5 w-3.5" />
-      </button>
-      <div className="min-w-0 flex-1">
-        <p className={(done ? 'text-muted-foreground line-through ' : '') + 'truncate font-medium'}>
-          {person.name}
-        </p>
-        <p className="text-[11px] capitalize text-muted-foreground">{person.role}</p>
-      </div>
-      <div className="text-right">
-        <p className="font-semibold tabular-nums">
-          {formatMoney(usdToSar(person.monthlyUsd), 'SAR')}
-        </p>
-        <p className="text-[11px] tabular-nums text-muted-foreground">
-          {formatMoney(person.monthlyUsd, 'USD')}
-          {person.nativeAmount != null && person.currency === 'USD' ? (
-            <span className="ms-1">(paid in USD)</span>
+    <li className="px-3 py-2.5">
+      <div className="flex items-start gap-3">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-pressed={done}
+          title={done ? 'Checked — click to undo' : 'Mark checked'}
+          className={
+            (done
+              ? 'border-emerald-600 bg-emerald-600 text-white '
+              : 'border-border bg-background text-transparent hover:border-emerald-500 ') +
+            'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors'
+          }
+        >
+          <Check className="h-3.5 w-3.5" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className={(done ? 'text-muted-foreground line-through ' : '') + 'truncate font-medium'}>
+            {person.name}
+          </p>
+          <p className="text-[11px] capitalize text-muted-foreground">{person.role}</p>
+          {person.also ? <PlacementControls person={person} /> : null}
+          {person.pageOverride ? (
+            <p className="mt-1 text-[10px] font-medium text-sky-800 dark:text-sky-300">
+              This-page override for {yearMonth}
+              <button
+                type="button"
+                disabled={pending}
+                className="ms-2 underline"
+                onClick={() =>
+                  startTransition(async () => {
+                    const res = await resetYahyaPersonOverride({
+                      yearMonth,
+                      personKey: person.key,
+                    })
+                    if (!res.ok) alert(res.error)
+                    else router.refresh()
+                  })
+                }
+              >
+                Clear
+              </button>
+            </p>
           ) : null}
-        </p>
+        </div>
+        <div className="shrink-0 text-right">
+          {editing ? (
+            <div className="flex w-[220px] flex-col gap-1.5 rounded-lg border border-border bg-background p-2 text-left">
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Monthly amount
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  autoFocus
+                  className="mt-0.5 h-8 w-full rounded-md border border-input bg-background px-2 text-sm tabular-nums text-foreground"
+                />
+              </label>
+              <div className="inline-flex rounded-md border border-border p-0.5">
+                {(['SAR', 'USD'] as const).map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setCurrency(c)}
+                    className={
+                      (currency === c ? 'bg-foreground text-background ' : 'text-muted-foreground ') +
+                      'flex-1 rounded px-2 py-0.5 text-[11px] font-semibold'
+                    }
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-col gap-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Apply to
+                </p>
+                <label className="flex items-start gap-1.5 text-[11px]">
+                  <input
+                    type="radio"
+                    name={`scope-${person.key}`}
+                    checked={scope === 'page'}
+                    onChange={() => setScope('page')}
+                    className="mt-0.5"
+                  />
+                  <span>This page only (this month)</span>
+                </label>
+                <label className="flex items-start gap-1.5 text-[11px]">
+                  <input
+                    type="radio"
+                    name={`scope-${person.key}`}
+                    checked={scope === 'site'}
+                    onChange={() => setScope('site')}
+                    className="mt-0.5"
+                  />
+                  <span>Whole site (real pay)</span>
+                </label>
+              </div>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={save}
+                  className="h-7 flex-1 rounded-md bg-primary text-[11px] font-semibold text-primary-foreground disabled:opacity-60"
+                >
+                  {pending ? '…' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="font-semibold tabular-nums">
+                {formatMoney(usdToSar(person.monthlyUsd), 'SAR')}
+              </p>
+              <p className="text-[11px] tabular-nums text-muted-foreground">
+                {formatMoney(person.monthlyUsd, 'USD')}
+              </p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-800 dark:text-sky-300">
+                Monthly
+              </p>
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="mt-1 inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-medium hover:bg-muted"
+              >
+                <Pencil className="h-3 w-3" />
+                Edit
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </li>
   )
@@ -207,7 +446,7 @@ function OtherExpenseForm({ yearMonth }: { yearMonth: string }) {
       }}
     >
       <label className="flex min-w-[140px] flex-1 flex-col gap-1 text-xs text-muted-foreground">
-        Other expense
+        Other expense (monthly)
         <input
           value={label}
           onChange={(e) => setLabel(e.target.value)}
@@ -273,7 +512,7 @@ function OtherExpenseDeletes({
           <span className="font-medium">{item.label}</span>
           <div className="flex items-center gap-2">
             <span className="tabular-nums text-muted-foreground">
-              {formatMoney(item.amount, item.currency)}
+              {formatMoney(item.amount, item.currency)} / month
             </span>
             <button
               type="button"
@@ -317,6 +556,7 @@ export function YahyaExpensesPanel({
     [snapshot.categories],
   )
   const checkedCount = allKeys.filter((k) => checked.has(k)).length
+  const allDone = allKeys.length > 0 && checkedCount === allKeys.length
 
   function pushMonth(yearMonth: string) {
     const next = new URLSearchParams(params.toString())
@@ -336,6 +576,18 @@ export function YahyaExpensesPanel({
     })
   }
 
+  function checkAll(keys: string[], done: boolean) {
+    setChecked((prev) => {
+      const next = new Set(prev)
+      for (const key of keys) {
+        if (done) next.add(key)
+        else next.delete(key)
+      }
+      saveChecked(snapshot.yearMonth, next)
+      return next
+    })
+  }
+
   const thisMonth = today.slice(0, 7)
   const nextMonth = shiftYearMonth(thisMonth, 1)
 
@@ -348,31 +600,7 @@ export function YahyaExpensesPanel({
         <div className="mt-2">
           <DualMoney usd={snapshot.grandTotalUsd} big />
         </div>
-        <p className="mt-2 text-xs text-white/70">
-          Payroll{' '}
-          <span className="font-medium text-white">
-            {formatMoney(usdToSar(snapshot.payrollUsd), 'SAR')}
-          </span>
-          <span className="mx-1">·</span>
-          Commission this month{' '}
-          <span className="font-medium text-white">
-            {formatMoney(usdToSar(snapshot.commissionUsd), 'SAR')}
-          </span>
-        </p>
-        {snapshot.commissionGoingUsd > 0 ? (
-          <p className="mt-1 text-[11px] text-white/60">
-            Active-deal commission pot (not monthly):{' '}
-            {formatMoney(usdToSar(snapshot.commissionGoingUsd), 'SAR')} ·{' '}
-            {formatMoney(snapshot.commissionGoingUsd, 'USD')}
-          </p>
-        ) : null}
-        {snapshot.commissionPayNowUsd > 0 ? (
-          <p className="mt-1 text-[11px] text-amber-200">
-            Commission still to send:{' '}
-            {formatMoney(usdToSar(snapshot.commissionPayNowUsd), 'SAR')} ·{' '}
-            {formatMoney(snapshot.commissionPayNowUsd, 'USD')}
-          </p>
-        ) : null}
+        <p className="mt-2 text-xs text-white/70">Monthly total · salaries Ahmed can go over</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -430,7 +658,7 @@ export function YahyaExpensesPanel({
         </div>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {snapshot.categories.map((c) => (
           <div key={c.id} className="rounded-xl border border-border px-3 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -440,7 +668,7 @@ export function YahyaExpensesPanel({
               {formatMoney(usdToSar(c.totalUsd), 'SAR')}
             </p>
             <p className="text-xs tabular-nums text-muted-foreground">
-              {formatMoney(c.totalUsd, 'USD')}
+              {formatMoney(c.totalUsd, 'USD')} / month
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">
               {c.people.length} {c.people.length === 1 ? 'person' : 'people'}
@@ -449,18 +677,28 @@ export function YahyaExpensesPanel({
         ))}
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        Check each person as you verify them ({checkedCount}/{allKeys.length} done). Creator /
-        reposter / leader amounts are month-to-month rates. Commission in the total is what was
-        earned this month; the deal pot above is planning only.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          Every amount below is <span className="font-semibold text-foreground">monthly</span>. Check
+          people as you verify ({checkedCount}/{allKeys.length} done).
+        </p>
+        <button
+          type="button"
+          onClick={() => checkAll(allKeys, !allDone)}
+          className="text-xs font-medium text-sky-800 hover:underline dark:text-sky-300"
+        >
+          {allDone ? 'Uncheck everyone' : 'Check everyone'}
+        </button>
+      </div>
 
       {snapshot.categories.map((category) => (
         <CategoryBlock
           key={category.id}
           category={category}
+          yearMonth={snapshot.yearMonth}
           checked={checked}
           onToggle={toggle}
+          onCheckAll={checkAll}
         />
       ))}
 
