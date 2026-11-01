@@ -142,6 +142,7 @@ export function AnalyticsPanel({
   urlKeys = { from: 'aFrom', to: 'aTo', role: 'aRole' },
   allowSheet = true,
   showRoleFilter = true,
+  panelId = 'analytics',
 }: {
   daily: DailyAnalyticsRow[]
   byCreatorDaily: CreatorDailyViewsRow[]
@@ -161,6 +162,8 @@ export function AnalyticsPanel({
   /** The daily sheet is admin-only. */
   allowSheet?: boolean
   showRoleFilter?: boolean
+  /** Panel the month switch should reopen. Admin uses analytics; the reposter board uses its own ids. */
+  panelId?: string
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -233,7 +236,7 @@ export function AnalyticsPanel({
 
   function push(patch: NavPatch) {
     const params = new URLSearchParams(window.location.search)
-    params.set('panel', 'analytics')
+    params.set('panel', panelId)
     params.set(urlKeys.from, patch.from ?? from)
     params.set(urlKeys.to, patch.to ?? to)
     params.delete('aCreator')

@@ -98,18 +98,20 @@ export function ReposterDailyCheck({
                 {person.goalTiktok}
               </span>
             </div>
-            <ActivityToggles
-              creatorId={person.id}
-              day={day}
-              marked={marks[person.id] ?? []}
-              actorUsername={actorUsername}
-              kinds={REPOSTER_ACTIVITY_KINDS}
-              labels={{
-                comments: labels.comment,
-                like: labels.like,
-                save: labels.save,
-              }}
-            />
+            {person.checked ? (
+              <ActivityToggles
+                creatorId={person.id}
+                day={day}
+                marked={marks[person.id] ?? []}
+                actorUsername={actorUsername}
+                kinds={REPOSTER_ACTIVITY_KINDS}
+                labels={{
+                  comments: labels.comment,
+                  like: labels.like,
+                  save: labels.save,
+                }}
+              />
+            ) : null}
           </li>
         ))}
       </ul>

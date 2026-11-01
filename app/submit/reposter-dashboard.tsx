@@ -39,7 +39,8 @@ import { getTeamMembers } from '@/lib/leader-portal'
 import { getActivityForDay } from '@/lib/activity'
 import { getTaskCalendar, getTaskChecksForDay, listLeaderTasks } from '@/lib/tasks'
 import { REPOSTER_TABS, resolveReposterTab } from '@/lib/reposter-tabs'
-import { addDays, monthRange } from '@/lib/campaign'
+import { addDays } from '@/lib/campaign'
+import { shiftYearMonth } from '@/lib/biweekly'
 import { getLeagueBoard } from '@/lib/ranking'
 import { CONTEST, isContestLive } from '@/lib/contest'
 import { findMiyqatProject } from '@/lib/project-scope'
@@ -54,6 +55,18 @@ import { timed } from '@/lib/ensure-once'
 import { videoPaging } from '@/lib/video-page'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function pickedAnalyticsRange(
+  from: string | undefined,
+  to: string | undefined,
+  fallbackFrom: string,
+  fallbackTo: string,
+): { from: string; to: string } {
+  if (from && to && DATE_RE.test(from) && DATE_RE.test(to) && from <= to) {
+    return { from, to: to > fallbackTo ? fallbackTo : to }
+  }
+  return { from: fallbackFrom, to: fallbackTo }
+}
 
 function namedByHandle<T extends { creator_id: number; creator_name: string }>(
   rows: T[],
@@ -80,7 +93,19 @@ export async function ReposterDashboard({
   locale: Locale
   outreachWelcome?: string | null
   outreachHref?: string | null
-  searchParams: { date?: string; tab?: string; panel?: string; taskDay?: string; u?: string; vPage?: string; vSize?: string }
+  searchParams: {
+    date?: string
+    tab?: string
+    panel?: string
+    taskDay?: string
+    u?: string
+    vPage?: string
+    vSize?: string
+    cFrom?: string
+    cTo?: string
+    rFrom?: string
+    rTo?: string
+  }
 }) {
   const t = createT(locale)
   const started = Date.now()
@@ -92,7 +117,8 @@ export async function ReposterDashboard({
   const date = DATE_RE.test(searchParams.date ?? '') ? searchParams.date! : today
   const checkDay = addDays(today, -1)
   const taskDay = DATE_RE.test(searchParams.taskDay ?? '') ? searchParams.taskDay! : today
-  const { start: monthStart, end: monthEnd } = monthRange(today)
+  const analyticsFrom = `${shiftYearMonth(today.slice(0, 7), -1)}-01`
+  const analyticsTo = today
   const teamIds = link?.teamIds ?? []
   const videoIds = teamIds.length > 0 ? teamIds : [creator.id]
   const squadName = link ? squadLabel(squadKeyFromName(link.leaderName)) : null
@@ -280,11 +306,21 @@ export async function ReposterDashboard({
     const creatorIds = [...handles.entries()].filter(([, row]) => row.role === 'creator').map(([id]) => id)
     const reposterIds = [...handles.entries()].filter(([, row]) => row.role === 'reposter').map(([id]) => id)
     if (!reposterIds.includes(creator.id)) reposterIds.push(creator.id)
-    const creatorRange = { from: monthStart, to: monthEnd, creatorIds }
-    const reposterRange = { from: monthStart, to: monthEnd, creatorIds: reposterIds }
+    const creatorWindow = pickedAnalyticsRange(searchParams.cFrom, searchParams.cTo, analyticsFrom, analyticsTo)
+    const reposterWindow = pickedAnalyticsRange(searchParams.rFrom, searchParams.rTo, analyticsFrom, analyticsTo)
+    const creatorRange = {
+      from: creatorWindow.from,
+      to: creatorWindow.to,
+      creatorIds,
+    }
+    const reposterRange = {
+      from: reposterWindow.from,
+      to: reposterWindow.to,
+      creatorIds: reposterIds,
+    }
     const emptySummary: ViewsSummary = {
-      from: monthStart,
-      to: monthEnd,
+      from: analyticsFrom,
+      to: analyticsTo,
       creatorId: null,
       projectId: null,
       role: null,
@@ -371,10 +407,11 @@ export async function ReposterDashboard({
               projectId={null}
               role="creator"
               today={today}
-              defaultFrom={monthStart}
-              defaultTo={monthEnd}
+              defaultFrom={creatorWindow.from}
+              defaultTo={creatorWindow.to}
               allowSheet={false}
               showRoleFilter={false}
+              panelId="analyticsCreators"
               urlKeys={{ from: 'cFrom', to: 'cTo', role: 'cRole' }}
               labels={chartLabels}
             />
@@ -432,10 +469,11 @@ export async function ReposterDashboard({
               projectId={null}
               role="reposter"
               today={today}
-              defaultFrom={monthStart}
-              defaultTo={monthEnd}
+              defaultFrom={reposterWindow.from}
+              defaultTo={reposterWindow.to}
               allowSheet={false}
               showRoleFilter={false}
+              panelId="analyticsReposters"
               urlKeys={{ from: 'rFrom', to: 'rTo', role: 'rRole' }}
               labels={chartLabels}
             />

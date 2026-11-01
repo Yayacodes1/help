@@ -51,9 +51,22 @@ function isValidDate(value: string | undefined): value is string {
 export default async function SubmitPage({
   searchParams,
 }: {
-  searchParams: Promise<{ u?: string; date?: string; panel?: string; tab?: string; taskDay?: string; vPage?: string; vSize?: string }>
+  searchParams: Promise<{
+    u?: string
+    date?: string
+    panel?: string
+    tab?: string
+    taskDay?: string
+    vPage?: string
+    vSize?: string
+    cFrom?: string
+    cTo?: string
+    rFrom?: string
+    rTo?: string
+  }>
 }) {
-  const { u, date: dateParam, panel, tab, taskDay, vPage, vSize } = await searchParams
+  const { u, date: dateParam, panel, tab, taskDay, vPage, vSize, cFrom, cTo, rFrom, rTo } =
+    await searchParams
   const [locale, leaderSession] = await Promise.all([getLocale(), getLeaderSession()])
   const t = createT(locale)
   const creator = u ? await getCreatorByName(u) : null
@@ -94,7 +107,7 @@ export default async function SubmitPage({
           locale,
           outreachWelcome,
           outreachHref,
-          searchParams: { u, date: dateParam, panel, tab, taskDay, vPage, vSize },
+          searchParams: { u, date: dateParam, panel, tab, taskDay, vPage, vSize, cFrom, cTo, rFrom, rTo },
         })
       } catch {
         /* grouped dashboard failed — still let them in on the upload page */
