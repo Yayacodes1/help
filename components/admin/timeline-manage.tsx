@@ -9,6 +9,7 @@ import {
   recordDueHalfPayment,
   saveTimelineContract,
   saveTimelineWaveAmounts,
+  setCreatorUrgent,
 } from '@/app/actions/admin'
 import type { CreatorTrackingRow } from '@/lib/queries'
 import { personBelongsOnProjectManage } from '@/lib/project-scope'
@@ -44,6 +45,7 @@ export type TimelineLabels = {
   paused: string
   saving: string
   editPayments: string
+  urgentList: string
 }
 
 function timingLabel(
@@ -81,16 +83,21 @@ export function TimelineManage({
   today,
   currentProjectId,
   labels,
+  urgentIds = [],
+  canSendUrgent = false,
 }: {
   people: CreatorTrackingRow[]
   pausedPeople?: CreatorTrackingRow[]
   today: string
   currentProjectId?: number | string | null
   labels: TimelineLabels
+  urgentIds?: number[]
+  canSendUrgent?: boolean
 }) {
   const router = useRouter()
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingPaysId, setEditingPaysId] = useState<number | null>(null)
+  const urgentSet = useMemo(() => new Set(urgentIds), [urgentIds])
   const [pending, startTransition] = useTransition()
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -124,6 +131,16 @@ export function TimelineManage({
 
   const inputClass =
     'h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+  function toggleUrgent(person: CreatorTrackingRow) {
+    if (!canSendUrgent) return
+    setError(null)
+    const next = !urgentSet.has(person.id)
+    startTransition(async () => {
+      await setCreatorUrgent(person.id, next)
+      router.refresh()
+    })
+  }
 
   function toggleDone(person: CreatorTrackingRow) {
     if (!person.contract_id) return
@@ -457,6 +474,21 @@ export function TimelineManage({
                   className="rounded-md border border-border px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-accent"
                 >
                   {labels.editPayments}
+                </button>
+              ) : null}
+              {canSendUrgent ? (
+                <button
+                  type="button"
+                  disabled={pending}
+                  aria-pressed={urgentSet.has(person.id)}
+                  onClick={() => toggleUrgent(person)}
+                  className={`rounded-md border px-2 py-0.5 text-[11px] font-medium hover:bg-accent disabled:opacity-60 ${
+                    urgentSet.has(person.id)
+                      ? 'border-foreground bg-foreground text-background'
+                      : 'border-border text-foreground'
+                  }`}
+                >
+                  {labels.urgentList}
                 </button>
               ) : null}
             </div>

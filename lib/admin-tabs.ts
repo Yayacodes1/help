@@ -3,7 +3,7 @@ export const ADMIN_TABS = {
   twoday: ['quickBreak', 'breakRequests'],
   analytics: ['analytics', 'ranking', 'projectviews', 'topvideos', 'miqatcontest'],
   money: ['marketing', 'commission', 'calendar', 'paydue', 'payments', 'archive', 'outflow'],
-  people: ['manage', 'timeline', 'structure', 'outreach'],
+  people: ['urgent', 'manage', 'timeline', 'structure', 'outreach'],
 } as const
 
 export type AdminTab = keyof typeof ADMIN_TABS

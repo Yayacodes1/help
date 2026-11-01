@@ -25,6 +25,7 @@ import {
   minimumContractDue,
 } from '@/lib/queries'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
+import { canSendUrgentList } from '@/lib/admin-access'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { normalizeHandle, parseLoginPlatform, parseOptionalHandle, resolveLoginPlatform } from '@/lib/usernames'
@@ -922,6 +923,29 @@ export async function saveTimelineWaveAmounts(formData: FormData) {
   revalidatePath('/admin')
   revalidatePath(`/admin/creators/${creatorId}`)
   revalidatePath('/admin/payments', 'layout')
+  return { ok: true as const }
+}
+
+/** Timeline Manage: Ahmed and Lula put someone on the urgent pay list. */
+export async function setCreatorUrgent(creatorId: number, urgent: boolean) {
+  await requireAdmin()
+  const session = await getAdminSession()
+  if (!session || !canSendUrgentList(session.id)) return { ok: false as const }
+  await ensureCreatorTrackingColumns()
+  const id = Math.floor(Number(creatorId))
+  if (!(id > 0)) return { ok: false as const }
+  const found = (await sql`SELECT id FROM creators WHERE id = ${id} LIMIT 1`) as { id: number }[]
+  if (!found[0]) return { ok: false as const }
+  if (urgent) {
+    await sql`
+      INSERT INTO urgent_payments (creator_id, added_by)
+      VALUES (${id}, ${session.id})
+      ON CONFLICT (creator_id) DO NOTHING
+    `
+  } else {
+    await sql`DELETE FROM urgent_payments WHERE creator_id = ${id}`
+  }
+  revalidatePath('/admin')
   return { ok: true as const }
 }
 

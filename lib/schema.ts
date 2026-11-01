@@ -317,6 +317,14 @@ async function runEnsureCreatorTrackingColumns() {
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS details_done boolean NOT NULL DEFAULT false`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS first_pay_amount numeric(12, 2)`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS second_pay_amount numeric(12, 2)`
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS urgent_payments (
+      creator_id INTEGER PRIMARY KEY REFERENCES creators(id) ON DELETE CASCADE,
+      added_by TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
   await sql`
     UPDATE contracts
     SET base_pay_cadence = 'monthly'

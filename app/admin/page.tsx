@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import nextDynamic from 'next/dynamic'
 import { redirect } from 'next/navigation'
-import { canManageOutreachAccounts, canSeeAhmedWallet } from '@/lib/admin-access'
+import { canManageOutreachAccounts, canSeeAhmedWallet, canSeeUrgentList, canSendUrgentList } from '@/lib/admin-access'
 import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import { ADMIN_TABS, resolveAdminTab } from '@/lib/admin-tabs'
 import { AdminTabs } from '@/components/admin/admin-tabs'
@@ -117,6 +117,8 @@ import { TimelineManage } from '@/components/admin/timeline-manage'
 import { loadPaymentCalendar } from '@/lib/payment-calendar-data'
 import { loadPaymentArchive } from '@/lib/payment-archive'
 import { PaymentArchive } from '@/components/admin/payment-archive'
+import { UrgentList } from '@/components/admin/urgent-list'
+import { loadUrgentList } from '@/lib/urgent-list'
 import { parseCalendarRole } from '@/lib/payment-calendar'
 import { PaymentCalendarBoard } from '@/components/admin/payment-calendar'
 
@@ -289,6 +291,8 @@ export default async function AdminPage({
   const session = await getAdminSession()
   const isOwner = session?.role === 'owner'
   const showWallet = canSeeAhmedWallet(session?.id)
+  const showUrgent = canSeeUrgentList(session?.id)
+  const canSendUrgent = canSendUrgentList(session?.id)
   /** Downloads in the daily sheet: every admin. Wallet stays Yahya + Ahmed. */
   const showDownloads = session != null
   const projects = projectsEarly
@@ -563,6 +567,8 @@ export default async function AdminPage({
     tab === 'today' || tab === 'people'
       ? await attachTracking(withLeaderFields(creatorsBase, leaderLinks.assignments), today)
       : []
+  const urgentList =
+    tab === 'people' && showUrgent ? await loadUrgentList(opToday) : { ids: [] as number[], rows: [] }
 
   // Notek | Miqat side by side: same panels, one column per project.
   const splitProjects = splitRequested ? splitProjectPair(projects) : []
@@ -745,6 +751,7 @@ export default async function AdminPage({
     paused: t('timelinePaused'),
     saving: t('timelineSaving'),
     editPayments: t('timelineEditPayments'),
+    urgentList: t('urgentList'),
   }
   const activeTodayLabel =
     roleFilter === 'reposter'
@@ -1677,6 +1684,29 @@ export default async function AdminPage({
           },
           ] : []),
           ...(tab === 'people' ? [
+          ...(showUrgent
+            ? [
+                {
+                  id: 'urgent',
+                  title: t('urgentList'),
+                  summary: `${urgentList.rows.length}`,
+                  hint: t('urgentListHint'),
+                  children: (
+                    <UrgentList
+                      rows={urgentList.rows}
+                      locale={locale}
+                      canRemove={canSendUrgent}
+                      labels={{
+                        empty: t('urgentListEmpty'),
+                        noDate: t('urgentListNoDate'),
+                        paid: t('urgentListPaid'),
+                        remove: t('urgentListRemove'),
+                      }}
+                    />
+                  ),
+                },
+              ]
+            : []),
           {
             id: 'manage',
             title: t('manage'),
@@ -1774,6 +1804,8 @@ export default async function AdminPage({
                         today={today}
                         currentProjectId={side.project.id}
                         labels={timelineLabels}
+                        urgentIds={urgentList.ids}
+                        canSendUrgent={canSendUrgent}
                       />
                     ),
                   }))}
@@ -1792,6 +1824,8 @@ export default async function AdminPage({
                     pausedPeople={sharedReposters.filter((c) => c.paused_at)}
                     today={today}
                     labels={timelineLabels}
+                    urgentIds={urgentList.ids}
+                    canSendUrgent={canSendUrgent}
                   />
                 </section>
               </div>
@@ -1802,6 +1836,8 @@ export default async function AdminPage({
                 today={today}
                 currentProjectId={projectId}
                 labels={timelineLabels}
+                urgentIds={urgentList.ids}
+                canSendUrgent={canSendUrgent}
               />
             ),
           },
