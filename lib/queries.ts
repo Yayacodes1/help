@@ -867,6 +867,75 @@ export async function getContractVideoCounts(
   return rows[0] ?? { instagram: 0, tiktok: 0, total: 0 }
 }
 
+export type ContractVideoProgress = {
+  instagram: number
+  tiktok: number
+  needInstagram: number
+  needTiktok: number
+}
+
+/** Videos posted on each person's current contract, for a leader's team. */
+export async function getTeamContractVideoProgress(
+  ids: number[],
+  today: string,
+): Promise<Map<number, ContractVideoProgress>> {
+  const out = new Map<number, ContractVideoProgress>()
+  if (ids.length === 0) return out
+  const rows = (await sql`
+    SELECT
+      cr.id AS creator_id,
+      c.target_instagram,
+      c.target_tiktok,
+      c.platforms,
+      COALESCE(v.instagram, 0)::int AS instagram,
+      COALESCE(v.tiktok, 0)::int AS tiktok
+    FROM creators cr
+    JOIN LATERAL (
+      SELECT start_date, end_date, target_instagram, target_tiktok, platforms
+      FROM contracts
+      WHERE creator_id = cr.id
+        AND end_date IS NOT NULL
+      ORDER BY
+        CASE
+          WHEN start_date <= ${today}::date AND end_date >= ${today}::date THEN 0
+          WHEN end_date >= ${today}::date THEN 1
+          ELSE 2
+        END,
+        CASE WHEN end_date >= ${today}::date THEN end_date END ASC,
+        start_date DESC,
+        id DESC
+      LIMIT 1
+    ) c ON true
+    LEFT JOIN LATERAL (
+      SELECT
+        COUNT(*) FILTER (WHERE platform = 'instagram')::int AS instagram,
+        COUNT(*) FILTER (WHERE platform = 'tiktok')::int AS tiktok
+      FROM submissions s
+      WHERE s.creator_id = cr.id
+        AND s.video_date >= (c.start_date - 1)
+        AND s.video_date <= (c.end_date + 1)
+    ) v ON true
+    WHERE cr.id = ANY(${ids}::int[])
+  `) as {
+    creator_id: number
+    target_instagram: number
+    target_tiktok: number
+    platforms: string | null
+    instagram: number
+    tiktok: number
+  }[]
+  for (const row of rows) {
+    const mode = normalizePlatforms(row.platforms)
+    out.set(row.creator_id, {
+      instagram: row.instagram,
+      tiktok: row.tiktok,
+      needInstagram: mode === 'tiktok' ? 0 : Math.max(0, row.target_instagram),
+      needTiktok: mode === 'instagram' ? 0 : Math.max(0, row.target_tiktok),
+    })
+  }
+  return out
+}
+
 /** Videos posted per project in a contract window, keyed by project id. */
 export async function getContractProjectCounts(
   creatorId: number,

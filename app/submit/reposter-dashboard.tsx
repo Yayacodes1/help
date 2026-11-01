@@ -8,6 +8,8 @@ import { ReposterDailyCheck } from '@/components/reposter/daily-check'
 import { TaskBoard } from '@/components/reposter/task-board'
 import { ReposterTeamList } from '@/components/reposter/team-list'
 import { GroupVideos } from '@/components/reposter/group-videos'
+import { VideoDaySwitch } from '@/components/reposter/video-day-switch'
+import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { VideoPager } from '@/components/admin/video-pager'
 import { ContestPodium } from '@/components/contest-podium'
 import { RankingBoard } from '@/components/ranking-board'
@@ -25,7 +27,9 @@ import {
   getServerTimeHm,
   getServerToday,
   getActiveContract,
+  getTeamContractVideoProgress,
   goalsForContract,
+  type ContractVideoProgress,
 } from '@/lib/queries'
 import {
   getDailyAnalytics,
@@ -39,7 +43,7 @@ import { getTeamMembers } from '@/lib/leader-portal'
 import { getActivityForDay } from '@/lib/activity'
 import { getTaskCalendar, getTaskChecksForDay, listLeaderTasks } from '@/lib/tasks'
 import { REPOSTER_TABS, resolveReposterTab } from '@/lib/reposter-tabs'
-import { addDays } from '@/lib/campaign'
+import { addDays, calendarMonthRange } from '@/lib/campaign'
 import { shiftYearMonth } from '@/lib/biweekly'
 import { getLeagueBoard } from '@/lib/ranking'
 import { CONTEST, isContestLive } from '@/lib/contest'
@@ -47,10 +51,10 @@ import { findMiyqatProject } from '@/lib/project-scope'
 import { squadKeyFromName, squadLabel } from '@/lib/squads'
 import { PLATFORMS, type Creator } from '@/lib/db'
 import { goalFor } from '@/lib/platforms'
-import { formatNumber } from '@/lib/format'
+import { formatNumber, formatWeekdayDate } from '@/lib/format'
 import { createT, type Locale } from '@/lib/i18n'
 import { getCreatorStrikeSummary } from '@/lib/strikes'
-import { getReposterChecksForDay } from '@/lib/reposter-checks'
+import { getReposterCheckDayCounts, getReposterChecksForDay } from '@/lib/reposter-checks'
 import { timed } from '@/lib/ensure-once'
 import { videoPaging } from '@/lib/video-page'
 
@@ -105,6 +109,8 @@ export async function ReposterDashboard({
     cTo?: string
     rFrom?: string
     rTo?: string
+    videoDate?: string
+    checkDate?: string
   }
 }) {
   const t = createT(locale)
@@ -115,7 +121,15 @@ export async function ReposterDashboard({
     getLeaderForCreator(creator.id).catch(() => null),
   ])
   const date = DATE_RE.test(searchParams.date ?? '') ? searchParams.date! : today
-  const checkDay = addDays(today, -1)
+  const yesterday = addDays(today, -1)
+  const checkDay =
+    DATE_RE.test(searchParams.checkDate ?? '') && searchParams.checkDate! <= today
+      ? searchParams.checkDate!
+      : yesterday
+  const videoDate =
+    DATE_RE.test(searchParams.videoDate ?? '') && searchParams.videoDate! <= today
+      ? searchParams.videoDate!
+      : yesterday
   const taskDay = DATE_RE.test(searchParams.taskDay ?? '') ? searchParams.taskDay! : today
   const analyticsFrom = `${shiftYearMonth(today.slice(0, 7), -1)}-01`
   const analyticsTo = today
@@ -169,7 +183,9 @@ export async function ReposterDashboard({
   const { page: vPage, pageSize: vSize, offset: vOffset } = videoPaging(searchParams)
 
   if (tab === 'today') {
-    const [progress, activityMarks, tasks, checked, calendar, handles, myChecks, groupSubs, videoStats] = await Promise.all([
+    const checkMonth = calendarMonthRange(checkDay.slice(0, 7))
+    const checkMonthEnd = checkMonth.end > today ? today : checkMonth.end
+    const [progress, activityMarks, tasks, checked, calendar, handles, myChecks, groupSubs, videoStats, contractVideos, checkCounts] = await Promise.all([
       teamIds.length > 0
         ? timed('reposter-team-progress', () =>
             getCreatorsWithProgressOnDate(checkDay, undefined, 'creator', {
@@ -185,19 +201,23 @@ export async function ReposterDashboard({
       getReposterChecksForDay(creator.id, checkDay).catch(() => new Set<number>()),
       videosOpen
         ? getAdminSubmissions({
-            from: date,
-            to: date,
+            from: videoDate,
+            to: videoDate,
             creatorIds: videoIds,
             role: 'creator',
             limit: vSize,
             offset: vOffset,
           }).catch(() => [])
         : Promise.resolve([]),
-      getAdminSubmissionStats({ from: date, to: date, creatorIds: videoIds, role: 'creator' }).catch(() => ({
+      getAdminSubmissionStats({ from: videoDate, to: videoDate, creatorIds: videoIds, role: 'creator' }).catch(() => ({
         count: 0,
         views: 0,
         creatorViews: 0,
       })),
+      getTeamContractVideoProgress(teamIds, today).catch(
+        () => new Map<number, ContractVideoProgress>(),
+      ),
+      getReposterCheckDayCounts(creator.id, checkMonth.start, checkMonthEnd).catch(() => ({})),
     ])
     const checkPeople = progress
       .filter((p) => p.role === 'creator' && !p.paused_at)
@@ -215,6 +235,13 @@ export async function ReposterDashboard({
           goalInstagram: p.goal_instagram,
           goalTiktok: p.goal_tiktok,
           checked: myChecks.has(p.id),
+          contractInstagram: contractVideos.get(p.id)?.instagram ?? null,
+          contractTiktok: contractVideos.get(p.id)?.tiktok ?? null,
+          contractNeedInstagram: contractVideos.get(p.id)?.needInstagram ?? 0,
+          contractNeedTiktok: contractVideos.get(p.id)?.needTiktok ?? 0,
+          contractVideos: contractVideos.get(p.id)
+            ? (contractVideos.get(p.id)!.instagram + contractVideos.get(p.id)!.tiktok)
+            : p.total_videos,
         }
       })
     const ticked = tasks.filter((task) => checked.has(task.id)).length
@@ -231,13 +258,16 @@ export async function ReposterDashboard({
         id: 'check',
         title: t('leaderDailyCheck'),
         summary: `${checkPeople.filter((p) => p.checked).length}/${checkPeople.length}`,
-        hint: link?.leaderName ?? t('leaderNoPeople'),
+        hint: formatWeekdayDate(checkDay, locale),
         children: (
           <ReposterDailyCheck
             people={checkPeople}
             day={checkDay}
+            today={today}
             marks={activityMarks}
+            checkCounts={checkCounts}
             actorUsername={username}
+            locale={locale}
             labels={{
               hint: t('reposterDailyCheckHint'),
               empty: t('leaderNoPeople'),
@@ -251,6 +281,7 @@ export async function ReposterDashboard({
               comment: t('activityComment'),
               like: t('activityLike'),
               save: t('activitySave'),
+              contract: t('contractVideos'),
             }}
           />
         ),
@@ -281,13 +312,28 @@ export async function ReposterDashboard({
         id: 'videos',
         title: t('videos'),
         summary: `${videoStats.count}`,
-        hint: date,
+        hint: videoDate,
         children: (
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">{t('groupVideosHint')}</p>
-              <DateSelect date={date} />
+              <VideoDaySwitch
+                today={today}
+                yesterday={yesterday}
+                selected={videoDate}
+                todayLabel={t('videoToday')}
+                yesterdayLabel={t('videoYesterday')}
+              />
+              <DateSelect date={videoDate} param="videoDate" max={today} />
             </div>
+            <RefreshViewsButton
+              label={t('refreshViews')}
+              defaultFrom={videoDate}
+              defaultTo={videoDate}
+              endpoint={`/api/reposter/${encodeURIComponent(username)}/refresh-views`}
+              submissionIds={creatorVideos.map((video) => video.id)}
+              showAll={false}
+            />
             <GroupVideos videos={creatorVideos} emptyLabel={t('groupVideosEmpty')} />
             <VideoPager
               page={vPage}

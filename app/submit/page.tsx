@@ -63,9 +63,11 @@ export default async function SubmitPage({
     cTo?: string
     rFrom?: string
     rTo?: string
+    videoDate?: string
+    checkDate?: string
   }>
 }) {
-  const { u, date: dateParam, panel, tab, taskDay, vPage, vSize, cFrom, cTo, rFrom, rTo } =
+  const { u, date: dateParam, panel, tab, taskDay, vPage, vSize, cFrom, cTo, rFrom, rTo, videoDate, checkDate } =
     await searchParams
   const [locale, leaderSession] = await Promise.all([getLocale(), getLeaderSession()])
   const t = createT(locale)
@@ -107,7 +109,21 @@ export default async function SubmitPage({
           locale,
           outreachWelcome,
           outreachHref,
-          searchParams: { u, date: dateParam, panel, tab, taskDay, vPage, vSize, cFrom, cTo, rFrom, rTo },
+          searchParams: {
+            u,
+            date: dateParam,
+            panel,
+            tab,
+            taskDay,
+            vPage,
+            vSize,
+            cFrom,
+            cTo,
+            rFrom,
+            rTo,
+            videoDate,
+            checkDate,
+          },
         })
       } catch {
         /* grouped dashboard failed — still let them in on the upload page */

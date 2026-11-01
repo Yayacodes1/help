@@ -307,6 +307,7 @@ export function RefreshViewsButton({
   endpoint = ADMIN_ENDPOINT,
   defaultRole = 'creator',
   submissionIds,
+  showAll = true,
 }: {
   label: string
   allLabel?: string
@@ -320,6 +321,8 @@ export function RefreshViewsButton({
   defaultRole?: RoleFilter
   /** Exact videos currently displayed. Required for bulk refresh. */
   submissionIds?: number[]
+  /** Hide the button that refreshes every matching video, not just this page. */
+  showAll?: boolean
 }) {
   const searchParams = useSearchParams()
   const jobEndpoint = `${endpoint.replace(/\/$/, '')}/job`
@@ -541,19 +544,23 @@ export function RefreshViewsButton({
         >
           {label}
         </button>
-        <button
-          type="button"
-          disabled={running}
-          onClick={() => void start('all')}
-          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-60"
-        >
-          {allLabel}
-        </button>
+        {showAll ? (
+          <button
+            type="button"
+            disabled={running}
+            onClick={() => void start('all')}
+            className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-60"
+          >
+            {allLabel}
+          </button>
+        ) : null}
       </div>
-      <p className="text-xs text-muted-foreground">
-        {label} refreshes only this page. {allLabel} refreshes every matching video, not just this
-        page.
-      </p>
+      {showAll ? (
+        <p className="text-xs text-muted-foreground">
+          {label} refreshes only this page. {allLabel} refreshes every matching video, not just this
+          page.
+        </p>
+      ) : null}
       <div
         className={`grid max-w-3xl transition-[grid-template-rows,opacity,margin] duration-200 ease-out ${
           showPanel && job ? 'mt-0 grid-rows-[1fr] opacity-100' : 'mt-0 grid-rows-[0fr] opacity-0'

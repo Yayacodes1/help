@@ -23,7 +23,7 @@ const CATALOG_CAP = 8000
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 export type RefreshJobActor = {
-  kind: 'admin' | 'leader' | 'cron'
+  kind: 'admin' | 'leader' | 'cron' | 'reposter'
   actorId?: string | null
   leaderId?: number | null
 }
@@ -716,11 +716,18 @@ export async function tickAnyRunningRefreshJob(): Promise<RefreshJobStatus | nul
     WHERE status = 'running'
     ORDER BY updated_at ASC
     LIMIT 1
-  `) as { id: number; actor_kind: 'admin' | 'leader' | 'cron'; leader_id: number | null }[]
+  `) as { id: number; actor_kind: 'admin' | 'leader' | 'cron' | 'reposter'; leader_id: number | null }[]
   const row = rows[0]
   if (!row) return null
   return tickRefreshJob(row.id, {
-    kind: row.actor_kind === 'leader' ? 'leader' : row.actor_kind === 'cron' ? 'cron' : 'admin',
+    kind:
+      row.actor_kind === 'leader'
+        ? 'leader'
+        : row.actor_kind === 'cron'
+          ? 'cron'
+          : row.actor_kind === 'reposter'
+            ? 'reposter'
+            : 'admin',
     leaderId: row.leader_id,
   })
 }

@@ -20,6 +20,26 @@ async function runEnsureReposterCheckTables() {
   await sql`CREATE INDEX IF NOT EXISTS reposter_checks_reposter_day_idx ON reposter_checks (reposter_id, day)`
 }
 
+/** How many creators this reposter checked on each day in the range. */
+export async function getReposterCheckDayCounts(
+  reposterId: number,
+  from: string,
+  to: string,
+): Promise<Record<string, number>> {
+  await ensureReposterCheckTables()
+  const rows = (await sql`
+    SELECT day::text AS day, COUNT(*)::int AS n
+    FROM reposter_checks
+    WHERE reposter_id = ${reposterId}
+      AND day >= ${from}::date
+      AND day <= ${to}::date
+    GROUP BY day
+  `) as { day: string; n: number }[]
+  const out: Record<string, number> = {}
+  for (const row of rows) out[row.day] = row.n
+  return out
+}
+
 export async function getReposterChecksForDay(reposterId: number, day: string): Promise<Set<number>> {
   await ensureReposterCheckTables()
   const rows = (await sql`

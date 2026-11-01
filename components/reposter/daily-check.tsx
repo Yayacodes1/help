@@ -1,8 +1,27 @@
 import { ActivityToggles } from '@/components/activity-toggles'
 import { CheckForm } from '@/components/leader/check-form'
+import { CheckCalendar } from '@/components/reposter/check-calendar'
 import { saveReposterCheck } from '@/app/actions/reposter-check'
 import { REPOSTER_ACTIVITY_KINDS, type ActivityKind } from '@/lib/activity-kinds'
 import type { AttendanceStatus } from '@/lib/attendance-types'
+
+function quota(posted: number, need: number): string {
+  return need > 0 ? `${posted}/${need}` : `${posted}`
+}
+
+function contractLabel(person: ReposterCheckPerson, label: string): string {
+  if (person.contractInstagram == null) {
+    return person.contractVideos != null ? `${label} ${person.contractVideos}` : ''
+  }
+  const bits: string[] = []
+  if (person.contractNeedInstagram > 0 || person.contractInstagram > 0) {
+    bits.push(`IG ${quota(person.contractInstagram, person.contractNeedInstagram)}`)
+  }
+  if (person.contractNeedTiktok > 0 || (person.contractTiktok ?? 0) > 0) {
+    bits.push(`TT ${quota(person.contractTiktok ?? 0, person.contractNeedTiktok)}`)
+  }
+  return bits.length > 0 ? `${label} ${bits.join(' · ')}` : `${label} ${person.contractVideos ?? 0}`
+}
 
 function statusClass(status: AttendanceStatus): string {
   if (status === 'hit') return 'bg-primary/15 text-primary'
@@ -21,19 +40,30 @@ export type ReposterCheckPerson = {
   goalInstagram: number
   goalTiktok: number
   checked: boolean
+  contractInstagram: number | null
+  contractTiktok: number | null
+  contractNeedInstagram: number
+  contractNeedTiktok: number
+  contractVideos: number | null
 }
 
 export function ReposterDailyCheck({
   people,
   day,
+  today,
   marks,
+  checkCounts,
   actorUsername,
+  locale,
   labels,
 }: {
   people: ReposterCheckPerson[]
   day: string
+  today: string
   marks: Record<number, ActivityKind[]>
+  checkCounts: Record<string, number>
   actorUsername: string
+  locale: string
   labels: {
     hint: string
     empty: string
@@ -47,6 +77,7 @@ export function ReposterDailyCheck({
     comment: string
     like: string
     save: string
+    contract: string
   }
 }) {
   function word(status: AttendanceStatus) {
@@ -68,6 +99,7 @@ export function ReposterDailyCheck({
 
   return (
     <div className="flex flex-col gap-4">
+      <CheckCalendar day={day} today={today} counts={checkCounts} locale={locale} />
       <p className="text-xs text-muted-foreground">{labels.hint}</p>
       <ul className="flex flex-col gap-2">
         {people.map((person) => (
@@ -94,8 +126,10 @@ export function ReposterDailyCheck({
                 {word(person.status)}
               </span>
               <span className="text-xs tabular-nums text-muted-foreground">
-                IG {person.todayInstagram}/{person.goalInstagram} · TT {person.todayTiktok}/
-                {person.goalTiktok}
+                {contractLabel(person, labels.contract)}
+                {person.todayInstagram > 0 || person.todayTiktok > 0
+                  ? ` · IG ${person.todayInstagram}/${person.goalInstagram} · TT ${person.todayTiktok}/${person.goalTiktok}`
+                  : ''}
               </span>
             </div>
             {person.checked ? (

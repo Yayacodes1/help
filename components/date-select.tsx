@@ -7,10 +7,13 @@ export function DateSelect({
   date,
   min,
   max,
+  param = 'date',
 }: {
   date: string
   min?: string
   max?: string
+  /** Query key this picker writes. */
+  param?: string
 }) {
   const router = useRouter()
   const params = useSearchParams()
@@ -18,7 +21,7 @@ export function DateSelect({
   function onChange(value: string) {
     if (!value) return
     const next = new URLSearchParams(params.toString())
-    next.set('date', value)
+    next.set(param, value)
     next.delete('vPage')
     router.push(`?${next.toString()}`)
   }

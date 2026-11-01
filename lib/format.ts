@@ -13,6 +13,21 @@ export function formatYearMonth(
   })
 }
 
+/** Weekday plus calendar date, stable for a YYYY-MM-DD string. */
+export function formatWeekdayDate(value: string, locale: 'en' | 'ar' | string = 'en'): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  const [y, m, day] = value.split('-').map(Number)
+  const d = new Date(Date.UTC(y, m - 1, day))
+  const loc = locale === 'ar' || String(locale).startsWith('ar') ? 'ar' : 'en-US'
+  return d.toLocaleDateString(loc, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
 export function formatDate(value: string | Date): string {
   let d: Date
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
