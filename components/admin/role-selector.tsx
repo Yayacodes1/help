@@ -45,10 +45,8 @@ export function RoleSelector({
     next.delete('aRole')
     next.delete('creator')
     next.delete('aCreator')
-    if (nextValue === 'leaders') {
-      next.set('tab', 'people')
-      next.set('panel', 'manage')
-    }
+    next.set('tab', 'people')
+    next.set('panel', 'manage')
     startTransition(() => router.push(`${pathname}?${next.toString()}`, { scroll: false }))
   }
 

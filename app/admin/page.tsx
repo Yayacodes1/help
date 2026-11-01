@@ -682,6 +682,14 @@ export default async function AdminPage({
   const rosterReposters = peopleRoster.filter((c) => c.role === 'reposter' && !c.paused_at)
   const rosterPausedCreators = peopleRoster.filter((c) => c.role !== 'reposter' && c.paused_at)
   const rosterPausedReposters = peopleRoster.filter((c) => c.role === 'reposter' && c.paused_at)
+  const manageShowsCreators = roleFilter !== 'reposter'
+  const manageShowsReposters = roleFilter !== 'creator'
+  const roleCountSummary = (creatorCount: number, reposterCount: number) =>
+    roleFilter === 'reposter'
+      ? `${reposterCount} ${t('roleFilterReposters').toLowerCase()}`
+      : roleFilter === 'creator'
+        ? `${creatorCount} ${t('roleFilterCreators').toLowerCase()}`
+        : `${creatorCount} ${t('roleFilterCreators').toLowerCase()} · ${reposterCount} ${t('roleFilterReposters').toLowerCase()}`
   const creatorsOnProject = (projectId: number) =>
     rosterCreators.filter((person) => person.project_id == null || person.project_id === projectId)
   const pausedCreatorsOnProject = (projectId: number) =>
@@ -1739,9 +1747,13 @@ export default async function AdminPage({
             title: t('manage'),
             summary: leadersView
               ? `${leadersManage?.directory.leaders.length ?? 0} leaders`
-              : splitData
-                ? `${splitSummary((side) => `${creatorsOnProject(side.project.id).length}`)} · ${t('roleFilterReposters')} ${rosterReposters.length}`
-                : `${creators.length} ${peopleNoun}`,
+              : roleFilter === 'reposter'
+                ? `${rosterReposters.length} ${t('roleFilterReposters').toLowerCase()}`
+                : splitData
+                  ? roleFilter === 'all'
+                    ? `${splitSummary((side) => `${creatorsOnProject(side.project.id).length}`)} · ${t('roleFilterReposters')} ${rosterReposters.length}`
+                    : splitSummary((side) => `${creatorsOnProject(side.project.id).length}`)
+                  : roleCountSummary(rosterCreators.length, rosterReposters.length),
             hint: leadersView ? 'Alpha · Beta · Charlie · Delta' : `${projects.length} ${t('projects')}`,
             children: leadersView && leadersManage ? (
               <div key="manage-leaders" className="flex flex-col gap-6">
@@ -1751,15 +1763,16 @@ export default async function AdminPage({
                 />
                 <LeadersManager directory={leadersManage.directory} />
               </div>
-            ) : splitData ? (
+            ) : splitData && roleFilter !== 'reposter' ? (
               <div key="manage-split" className="flex flex-col gap-4">
                 <SplitColumns
                   sides={splitData.map((side) => ({
                     key: side.project.id,
                     title: side.project.name,
-                    summary: `${creatorsOnProject(side.project.id).length} ${t('roleFilterCreators').toLowerCase()} · ${rosterReposters.length} ${t('roleFilterReposters').toLowerCase()}`,
+                    summary: roleCountSummary(creatorsOnProject(side.project.id).length, rosterReposters.length),
                     children: (
                       <div className="flex flex-col gap-4">
+                        {manageShowsCreators ? (
                         <CreatorsManager
                           creators={creatorsOnProject(side.project.id)}
                           pausedCreators={pausedCreatorsOnProject(side.project.id)}
@@ -1770,6 +1783,8 @@ export default async function AdminPage({
                           isOwner={isOwner}
                           leaders={leaderLinks.leaders}
                         />
+                        ) : null}
+                        {manageShowsReposters ? (
                         <CreatorsManager
                           creators={rosterReposters}
                           pausedCreators={rosterPausedReposters}
@@ -1779,10 +1794,12 @@ export default async function AdminPage({
                           isOwner={isOwner}
                           leaders={leaderLinks.leaders}
                         />
+                        ) : null}
                       </div>
                     ),
                   }))}
                 />
+                {roleFilter === 'all' ? (
                 <section className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-background/40 p-3">
                   <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border pb-2">
                     <h3 className="text-base font-semibold tracking-tight">
@@ -1814,11 +1831,13 @@ export default async function AdminPage({
                     />
                   </div>
                 </section>
+                ) : null}
                 <ProjectsManager projects={projects} />
               </div>
             ) : (
               <div key="manage-grid" className="grid gap-4 lg:grid-cols-2">
                 <div className="flex flex-col gap-4">
+                  {manageShowsCreators ? (
                   <CreatorsManager
                     key="creators-manager"
                     creators={rosterCreators}
@@ -1830,6 +1849,8 @@ export default async function AdminPage({
                     isOwner={isOwner}
                     leaders={leaderLinks.leaders}
                   />
+                  ) : null}
+                  {manageShowsReposters ? (
                   <CreatorsManager
                     creators={rosterReposters}
                     pausedCreators={rosterPausedReposters}
@@ -1839,6 +1860,7 @@ export default async function AdminPage({
                     isOwner={isOwner}
                     leaders={leaderLinks.leaders}
                   />
+                  ) : null}
                 </div>
                 <ProjectsManager key="projects-manager" projects={projects} />
               </div>
@@ -1847,19 +1869,25 @@ export default async function AdminPage({
           {
             id: 'timeline',
             title: t('timelineManage'),
-            summary: splitData
-              ? `${splitSummary((side) => `${creatorsOnProject(side.project.id).length}`)} · ${t('roleFilterReposters')} ${rosterReposters.length}`
-              : `${rosterCreators.length + rosterReposters.length} ${t('people')}`,
+            summary:
+              roleFilter === 'reposter'
+                ? `${rosterReposters.length} ${t('roleFilterReposters').toLowerCase()}`
+                : splitData && roleFilter !== 'reposter'
+                  ? roleFilter === 'all'
+                    ? `${splitSummary((side) => `${creatorsOnProject(side.project.id).length}`)} · ${t('roleFilterReposters')} ${rosterReposters.length}`
+                    : splitSummary((side) => `${creatorsOnProject(side.project.id).length}`)
+                  : roleCountSummary(rosterCreators.length, rosterReposters.length),
             hint: t('timelineManageHint'),
-            children: splitData ? (
+            children: splitData && roleFilter !== 'reposter' ? (
               <div key="timeline-split" className="flex flex-col gap-4">
                 <SplitColumns
                   sides={splitData.map((side) => ({
                     key: `timeline-${side.project.id}`,
                     title: side.project.name,
-                    summary: `${creatorsOnProject(side.project.id).length} ${t('roleFilterCreators').toLowerCase()} · ${rosterReposters.length} ${t('roleFilterReposters').toLowerCase()}`,
+                    summary: roleCountSummary(creatorsOnProject(side.project.id).length, rosterReposters.length),
                     children: (
                       <div className="flex flex-col gap-4">
+                        {manageShowsCreators ? (
                         <TimelineManage
                           people={creatorsOnProject(side.project.id)}
                           pausedPeople={pausedCreatorsOnProject(side.project.id)}
@@ -1869,6 +1897,8 @@ export default async function AdminPage({
                           urgentIds={urgentList.ids}
                           canSendUrgent={canSendUrgent}
                         />
+                        ) : null}
+                        {manageShowsReposters ? (
                         <TimelineManage
                           people={rosterReposters}
                           pausedPeople={rosterPausedReposters}
@@ -1877,10 +1907,12 @@ export default async function AdminPage({
                           urgentIds={urgentList.ids}
                           canSendUrgent={canSendUrgent}
                         />
+                        ) : null}
                       </div>
                     ),
                   }))}
                 />
+                {roleFilter === 'all' ? (
                 <section className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-background/40 p-3">
                   <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border pb-2">
                     <h3 className="text-base font-semibold tracking-tight">
@@ -1910,9 +1942,11 @@ export default async function AdminPage({
                     />
                   </div>
                 </section>
+                ) : null}
               </div>
             ) : (
               <div className="flex flex-col gap-4">
+                {manageShowsCreators ? (
                 <TimelineManage
                   people={rosterCreators}
                   pausedPeople={rosterPausedCreators}
@@ -1922,6 +1956,8 @@ export default async function AdminPage({
                   urgentIds={urgentList.ids}
                   canSendUrgent={canSendUrgent}
                 />
+                ) : null}
+                {manageShowsReposters ? (
                 <TimelineManage
                   people={rosterReposters}
                   pausedPeople={rosterPausedReposters}
@@ -1930,6 +1966,7 @@ export default async function AdminPage({
                   urgentIds={urgentList.ids}
                   canSendUrgent={canSendUrgent}
                 />
+                ) : null}
               </div>
             ),
           },

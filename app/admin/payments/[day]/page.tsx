@@ -14,7 +14,7 @@ import { dayFromModel, parseCalendarRole, type CalendarPayStatus } from '@/lib/p
 import { LanguageToggle } from '@/components/language-toggle'
 import { LogoutButton } from '@/components/admin/logout-button'
 import { StatCard } from '@/components/stat-card'
-import { PaymentDayActions } from '@/components/admin/payment-day-actions'
+import { DayPayToggle } from '@/components/admin/payment-day-actions'
 import { PushContractForward } from '@/components/admin/push-contract-forward'
 import { participantRoleLabel } from '@/lib/participant-role'
 
@@ -169,13 +169,16 @@ export default async function PaymentDayPage({
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <MoneyPair sar={row.remainingSar} />
-                    <PaymentDayActions
+                    <DayPayToggle
+                      paid={false}
                       creatorId={row.creatorId}
                       contractId={row.contractId}
-                      remaining={row.remaining}
+                      installmentIndex={row.installmentIndex}
+                      amount={row.remaining}
                       currency={row.currency}
-                      which={row.installmentIndex === 0 ? 'first' : 'second'}
                       payLabel={t('paymentDayPay')}
+                      unpayLabel={t('paymentDayUnpay')}
+                      showUnpay={row.paidAmount > 0.009}
                     />
                   </div>
                 </li>
@@ -285,6 +288,16 @@ export default async function PaymentDayPage({
                       <div className="text-xs font-semibold uppercase tracking-wide">
                         {t(STATUS_KEY[row.status])}
                       </div>
+                      <DayPayToggle
+                        paid
+                        creatorId={row.creatorId}
+                        contractId={row.contractId}
+                        installmentIndex={row.installmentIndex}
+                        amount={row.paidAmount}
+                        currency={row.currency}
+                        payLabel={t('paymentDayPay')}
+                        unpayLabel={t('paymentDayUnpay')}
+                      />
                       {row.creatorId > 0 && row.awaitingEligibility ? (
                         <PushContractForward
                           creatorId={row.creatorId}

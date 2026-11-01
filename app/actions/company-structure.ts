@@ -6,7 +6,7 @@ import { canSeeStructureTier } from '@/lib/admin-access'
 import { EXECUTIVE_ROLES, type ExecutiveRoleId, type StructurePayTiming } from '@/lib/company-roles'
 import { saveExecutiveName } from '@/lib/company-structure'
 import { ensureStructurePayTable, subjectKeyFromCalendarId, tierFromSubjectKey } from '@/lib/structure-pay'
-import { contractWaveStatus } from '@/lib/contract-halves'
+import { contractWaveStatus, halfIndexFromNote } from '@/lib/contract-halves'
 import { getOperationalToday } from '@/lib/queries'
 
 function isExecutiveRole(value: string): value is ExecutiveRoleId {
@@ -239,6 +239,46 @@ export async function saveStructureInstallment(formData: FormData) {
       WHERE subject_key = ${subjectKey}
     `
   }
+  revalidatePath('/admin')
+  revalidatePath('/admin/payments', 'layout')
+  return { ok: true as const }
+}
+
+/** Record a company salary installment for the amount typed on the calendar day. */
+export async function payStructureAmount(subjectKey: string, installmentIndex: number, amount: number) {
+  if (!(await editableStructure(subjectKey))) {
+    return { ok: false as const, message: 'You cannot edit this pay.' }
+  }
+  const pay = Math.round(Number(amount) * 100) / 100
+  if (!(pay > 0)) return { ok: false as const, message: 'Enter an amount.' }
+  const { sql } = await import('@/lib/db')
+  const today = await getOperationalToday()
+  const note = installmentIndex === 0 ? '1st payment' : '2nd payment'
+  await sql`
+    INSERT INTO structure_payments (subject_key, paid_on, amount, note)
+    VALUES (${subjectKey}, ${today}, ${pay}, ${note})
+  `
+  revalidatePath('/admin')
+  revalidatePath('/admin/payments', 'layout')
+  return { ok: true as const }
+}
+
+/** Remove the company salary payment that settled this installment. */
+export async function unpayStructureInstallment(subjectKey: string, installmentIndex: number) {
+  if (!(await editableStructure(subjectKey))) {
+    return { ok: false as const, message: 'You cannot edit this pay.' }
+  }
+  const { sql } = await import('@/lib/db')
+  const wave = installmentIndex === 0 ? 1 : 2
+  const rows = (await sql`
+    SELECT id, note
+    FROM structure_payments
+    WHERE subject_key = ${subjectKey}
+    ORDER BY paid_on DESC, id DESC
+  `) as { id: number; note: string | null }[]
+  const match = rows.find((row) => halfIndexFromNote(row.note) === wave) ?? rows[0]
+  if (!match) return { ok: true as const }
+  await sql`DELETE FROM structure_payments WHERE id = ${match.id} AND subject_key = ${subjectKey}`
   revalidatePath('/admin')
   revalidatePath('/admin/payments', 'layout')
   return { ok: true as const }

@@ -21,6 +21,7 @@ import {
   getActiveContract,
   getPaidForContract,
   getPaymentsForContract,
+  getOperationalToday,
   getServerToday,
   minimumContractDue,
 } from '@/lib/queries'
@@ -33,6 +34,7 @@ import { HOUSE_COMMISSION, normalizeCountMode } from '@/lib/commission'
 import {
   contractSupportsBiweeklyHalves,
   contractWaveStatus,
+  halfIndexFromNote,
   halfPaymentNote,
   normalizeBasePayCadence,
 } from '@/lib/contract-halves'
@@ -1356,6 +1358,63 @@ export async function recordDueHalfPayment(
   revalidatePath('/admin/payments', 'layout')
   revalidatePath('/submit')
   return { ok: true as const, count: toRecord.length }
+}
+
+/** Record one calendar installment for the amount typed on that day. */
+export async function payCalendarAmount(
+  creatorId: number,
+  contractId: number,
+  installmentIndex: number,
+  amount: number,
+) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const personId = Math.floor(Number(creatorId))
+  const id = Math.floor(Number(contractId))
+  const pay = Math.round(Number(amount) * 100) / 100
+  if (!(personId > 0) || !(id > 0) || !(pay > 0)) {
+    return { ok: false as const, message: 'Enter an amount.' }
+  }
+  const owned = (await sql`
+    SELECT id, name FROM contracts WHERE id = ${id} AND creator_id = ${personId} LIMIT 1
+  `) as { id: number; name: string }[]
+  if (!owned[0]) return { ok: false as const, message: 'Contract not found.' }
+  const today = await getOperationalToday()
+  const source = await paymentSource(null)
+  const note = halfPaymentNote(installmentIndex === 0 ? 1 : 2, owned[0].name)
+  await sql`
+    INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by)
+    VALUES (${personId}, ${id}, ${today}, ${pay}, ${note}, ${source.paidBy}, ${source.recordedBy})
+  `
+  await sql`UPDATE creators SET last_paid_at = ${today} WHERE id = ${personId}`
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${personId}`)
+  revalidatePath('/admin/payments', 'layout')
+  return { ok: true as const }
+}
+
+/** Remove the payment that settled this installment. */
+export async function unpayCalendarInstallment(
+  creatorId: number,
+  contractId: number,
+  installmentIndex: number,
+) {
+  await requireAdmin()
+  const personId = Math.floor(Number(creatorId))
+  const id = Math.floor(Number(contractId))
+  if (!(personId > 0) || !(id > 0)) return { ok: false as const, message: 'Missing payment.' }
+  const wave = installmentIndex === 0 ? 1 : 2
+  const rows = (await sql`
+    SELECT id, note
+    FROM payments
+    WHERE creator_id = ${personId} AND contract_id = ${id}
+    ORDER BY paid_on DESC, id DESC
+  `) as { id: number; note: string | null }[]
+  const match = rows.find((row) => halfIndexFromNote(row.note) === wave) ?? rows[0]
+  if (!match) return { ok: true as const }
+  await deletePayment(match.id, personId)
+  revalidatePath('/admin/payments', 'layout')
+  return { ok: true as const }
 }
 
 // --- Submissions ---
