@@ -36,6 +36,22 @@ export type StructurePaySlot = {
   currency: 'SAR' | 'USD'
   /** True after the pay is saved, so the calendar does not invent a salary from old leader fields. */
   scheduled: boolean
+  detailsDone: boolean
+  hasTwoPays: boolean
+  firstDue: number
+  firstPaid: number
+  firstBalance: number
+  firstSettled: boolean
+  firstDueOn: string | null
+  firstLabel: string
+  secondDue: number
+  secondPaid: number
+  secondBalance: number
+  secondSettled: boolean
+  secondDueOn: string | null
+  secondLabel: string
+  firstOverride: number | null
+  secondOverride: number | null
   tiktok_username?: string | null
   instagram_username?: string | null
   notek_tiktok_username?: string | null

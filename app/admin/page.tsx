@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import nextDynamic from 'next/dynamic'
 import { redirect } from 'next/navigation'
-import { canManageOutreachAccounts, canSeeAhmedWallet, canSeeStructureTier, canSeeUrgentList, canSendUrgentList } from '@/lib/admin-access'
+import { canManageOutreachAccounts, canSeeAhmedWallet, canSeeUrgentList, canSendUrgentList } from '@/lib/admin-access'
 import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import { ADMIN_TABS, resolveAdminTab } from '@/lib/admin-tabs'
 import { AdminTabs } from '@/components/admin/admin-tabs'
@@ -112,7 +112,6 @@ import { QuickBreakPicker } from '@/components/admin/quick-break-picker'
 import { BreakRequestsBoard } from '@/components/admin/break-requests-board'
 import { listBreakRequests } from '@/lib/break-requests'
 import { getCompanyStructure } from '@/lib/company-structure'
-import { CompanyStructureBoard } from '@/components/admin/company-structure'
 import { TimelineManage } from '@/components/admin/timeline-manage'
 import { loadPaymentCalendar } from '@/lib/payment-calendar-data'
 import { loadPaymentArchive } from '@/lib/payment-archive'
@@ -666,17 +665,27 @@ export default async function AdminPage({
 
   const splitData =
     splitProjects.length === 2 ? await Promise.all(splitProjects.map(loadSplitSide)) : null
-  const sharedReposters =
-    tab === 'people' && splitData
+  const peopleRoster =
+    tab === 'people'
       ? await attachTracking(
           withLeaderFields(
-            await getCreatorsWithProgressOnDate(selectedDay, undefined, 'reposter'),
+            await getCreatorsWithProgressOnDate(selectedDay, projectId ?? undefined, null, {
+              includeAllReposters: true,
+              projectMembersOnly: projectId != null,
+            }),
             leaderLinks.assignments,
           ),
           today,
         )
       : []
-  const sharedReposterActive = sharedReposters.filter((c) => !c.paused_at)
+  const rosterCreators = peopleRoster.filter((c) => c.role !== 'reposter' && !c.paused_at)
+  const rosterReposters = peopleRoster.filter((c) => c.role === 'reposter' && !c.paused_at)
+  const rosterPausedCreators = peopleRoster.filter((c) => c.role !== 'reposter' && c.paused_at)
+  const rosterPausedReposters = peopleRoster.filter((c) => c.role === 'reposter' && c.paused_at)
+  const creatorsOnProject = (projectId: number) =>
+    rosterCreators.filter((person) => person.project_id == null || person.project_id === projectId)
+  const pausedCreatorsOnProject = (projectId: number) =>
+    rosterPausedCreators.filter((person) => person.project_id == null || person.project_id === projectId)
   const teamProjects = selectedProject ? [selectedProject] : splitProjects.length === 2 ? splitProjects : projects
   const [teamCounts, teamGoals] =
     tab === 'people'
@@ -1722,7 +1731,7 @@ export default async function AdminPage({
             summary: leadersView
               ? `${leadersManage?.directory.leaders.length ?? 0} leaders`
               : splitData
-                ? `${splitSummary((side) => `${side.creators.length}`)} · ${t('roleFilterReposters')} ${sharedReposterActive.length}`
+                ? `${splitSummary((side) => `${creatorsOnProject(side.project.id).length}`)} · ${t('roleFilterReposters')} ${rosterReposters.length}`
                 : `${creators.length} ${peopleNoun}`,
             hint: leadersView ? 'Alpha · Beta · Charlie · Delta' : `${projects.length} ${t('projects')}`,
             children: leadersView && leadersManage ? (
@@ -1739,18 +1748,29 @@ export default async function AdminPage({
                   sides={splitData.map((side) => ({
                     key: side.project.id,
                     title: side.project.name,
-                    summary: `${side.creators.length} ${t('roleFilterCreators').toLowerCase()}`,
+                    summary: `${creatorsOnProject(side.project.id).length} ${t('roleFilterCreators').toLowerCase()} · ${rosterReposters.length} ${t('roleFilterReposters').toLowerCase()}`,
                     children: (
-                      <CreatorsManager
-                        creators={side.creators}
-                        pausedCreators={side.paused}
-                        projects={projects}
-                        roleFilter="creator"
-                        today={today}
-                        currentProjectId={side.project.id}
-                        isOwner={isOwner}
-                        leaders={leaderLinks.leaders}
-                      />
+                      <div className="flex flex-col gap-4">
+                        <CreatorsManager
+                          creators={creatorsOnProject(side.project.id)}
+                          pausedCreators={pausedCreatorsOnProject(side.project.id)}
+                          projects={projects}
+                          roleFilter="creator"
+                          today={today}
+                          currentProjectId={side.project.id}
+                          isOwner={isOwner}
+                          leaders={leaderLinks.leaders}
+                        />
+                        <CreatorsManager
+                          creators={rosterReposters}
+                          pausedCreators={rosterPausedReposters}
+                          projects={projects}
+                          roleFilter="reposter"
+                          today={today}
+                          isOwner={isOwner}
+                          leaders={leaderLinks.leaders}
+                        />
+                      </div>
                     ),
                   }))}
                 />
@@ -1760,34 +1780,57 @@ export default async function AdminPage({
                       {t('roleFilterReposters')} · {t('bothProjects')}
                     </h3>
                     <span className="text-xs tabular-nums text-muted-foreground">
-                      {sharedReposterActive.length} {t('roleFilterReposters').toLowerCase()}
+                      {rosterReposters.length} {t('roleFilterReposters').toLowerCase()} · {rosterCreators.length}{' '}
+                      {t('roleFilterCreators').toLowerCase()}
                     </span>
                   </header>
+                  <div className="flex flex-col gap-4">
+                    <CreatorsManager
+                      creators={rosterReposters}
+                      pausedCreators={rosterPausedReposters}
+                      projects={projects}
+                      roleFilter="reposter"
+                      today={today}
+                      isOwner={isOwner}
+                      leaders={leaderLinks.leaders}
+                    />
+                    <CreatorsManager
+                      creators={rosterCreators}
+                      pausedCreators={rosterPausedCreators}
+                      projects={projects}
+                      roleFilter="creator"
+                      today={today}
+                      isOwner={isOwner}
+                      leaders={leaderLinks.leaders}
+                    />
+                  </div>
+                </section>
+                <ProjectsManager projects={projects} />
+              </div>
+            ) : (
+              <div key="manage-grid" className="grid gap-4 lg:grid-cols-2">
+                <div className="flex flex-col gap-4">
                   <CreatorsManager
-                    creators={sharedReposterActive}
-                    pausedCreators={sharedReposters.filter((c) => c.paused_at)}
+                    key="creators-manager"
+                    creators={rosterCreators}
+                    pausedCreators={rosterPausedCreators}
+                    projects={projects}
+                    roleFilter="creator"
+                    today={today}
+                    currentProjectId={projectId}
+                    isOwner={isOwner}
+                    leaders={leaderLinks.leaders}
+                  />
+                  <CreatorsManager
+                    creators={rosterReposters}
+                    pausedCreators={rosterPausedReposters}
                     projects={projects}
                     roleFilter="reposter"
                     today={today}
                     isOwner={isOwner}
                     leaders={leaderLinks.leaders}
                   />
-                </section>
-                <ProjectsManager projects={projects} />
-              </div>
-            ) : (
-              <div key="manage-grid" className="grid gap-4 lg:grid-cols-2">
-                <CreatorsManager
-                  key="creators-manager"
-                  creators={creators}
-                  pausedCreators={pausedCreators}
-                  projects={projects}
-                  roleFilter={roleFilter}
-                  today={today}
-                  currentProjectId={projectId}
-                  isOwner={isOwner}
-                  leaders={leaderLinks.leaders}
-                />
+                </div>
                 <ProjectsManager key="projects-manager" projects={projects} />
               </div>
             ),
@@ -1796,8 +1839,8 @@ export default async function AdminPage({
             id: 'timeline',
             title: t('timelineManage'),
             summary: splitData
-              ? `${splitSummary((side) => `${side.creators.length}`)} · ${t('roleFilterReposters')} ${sharedReposterActive.length}`
-              : `${creators.length} ${peopleNoun}`,
+              ? `${splitSummary((side) => `${creatorsOnProject(side.project.id).length}`)} · ${t('roleFilterReposters')} ${rosterReposters.length}`
+              : `${rosterCreators.length + rosterReposters.length} ${t('people')}`,
             hint: t('timelineManageHint'),
             children: splitData ? (
               <div key="timeline-split" className="flex flex-col gap-4">
@@ -1805,17 +1848,27 @@ export default async function AdminPage({
                   sides={splitData.map((side) => ({
                     key: `timeline-${side.project.id}`,
                     title: side.project.name,
-                    summary: `${side.creators.length} ${t('roleFilterCreators').toLowerCase()}`,
+                    summary: `${creatorsOnProject(side.project.id).length} ${t('roleFilterCreators').toLowerCase()} · ${rosterReposters.length} ${t('roleFilterReposters').toLowerCase()}`,
                     children: (
-                      <TimelineManage
-                        people={side.creators}
-                        pausedPeople={side.paused}
-                        today={today}
-                        currentProjectId={side.project.id}
-                        labels={timelineLabels}
-                        urgentIds={urgentList.ids}
-                        canSendUrgent={canSendUrgent}
-                      />
+                      <div className="flex flex-col gap-4">
+                        <TimelineManage
+                          people={creatorsOnProject(side.project.id)}
+                          pausedPeople={pausedCreatorsOnProject(side.project.id)}
+                          today={today}
+                          currentProjectId={side.project.id}
+                          labels={{ ...timelineLabels, title: t('roleFilterCreators'), hint: '' }}
+                          urgentIds={urgentList.ids}
+                          canSendUrgent={canSendUrgent}
+                        />
+                        <TimelineManage
+                          people={rosterReposters}
+                          pausedPeople={rosterPausedReposters}
+                          today={today}
+                          labels={{ ...timelineLabels, title: t('roleFilterReposters'), hint: '' }}
+                          urgentIds={urgentList.ids}
+                          canSendUrgent={canSendUrgent}
+                        />
+                      </div>
                     ),
                   }))}
                 />
@@ -1825,29 +1878,50 @@ export default async function AdminPage({
                       {t('roleFilterReposters')} · {t('bothProjects')}
                     </h3>
                     <span className="text-xs tabular-nums text-muted-foreground">
-                      {sharedReposterActive.length} {t('roleFilterReposters').toLowerCase()}
+                      {rosterReposters.length} {t('roleFilterReposters').toLowerCase()} · {rosterCreators.length}{' '}
+                      {t('roleFilterCreators').toLowerCase()}
                     </span>
                   </header>
-                  <TimelineManage
-                    people={sharedReposterActive}
-                    pausedPeople={sharedReposters.filter((c) => c.paused_at)}
-                    today={today}
-                    labels={timelineLabels}
-                    urgentIds={urgentList.ids}
-                    canSendUrgent={canSendUrgent}
-                  />
+                  <div className="flex flex-col gap-4">
+                    <TimelineManage
+                      people={rosterReposters}
+                      pausedPeople={rosterPausedReposters}
+                      today={today}
+                      labels={{ ...timelineLabels, title: t('roleFilterReposters'), hint: '' }}
+                      urgentIds={urgentList.ids}
+                      canSendUrgent={canSendUrgent}
+                    />
+                    <TimelineManage
+                      people={rosterCreators}
+                      pausedPeople={rosterPausedCreators}
+                      today={today}
+                      labels={{ ...timelineLabels, title: t('roleFilterCreators'), hint: '' }}
+                      urgentIds={urgentList.ids}
+                      canSendUrgent={canSendUrgent}
+                    />
+                  </div>
                 </section>
               </div>
             ) : (
-              <TimelineManage
-                people={creators}
-                pausedPeople={pausedCreators}
-                today={today}
-                currentProjectId={projectId}
-                labels={timelineLabels}
-                urgentIds={urgentList.ids}
-                canSendUrgent={canSendUrgent}
-              />
+              <div className="flex flex-col gap-4">
+                <TimelineManage
+                  people={rosterCreators}
+                  pausedPeople={rosterPausedCreators}
+                  today={today}
+                  currentProjectId={projectId}
+                  labels={{ ...timelineLabels, title: t('roleFilterCreators'), hint: '' }}
+                  urgentIds={urgentList.ids}
+                  canSendUrgent={canSendUrgent}
+                />
+                <TimelineManage
+                  people={rosterReposters}
+                  pausedPeople={rosterPausedReposters}
+                  today={today}
+                  labels={{ ...timelineLabels, title: t('roleFilterReposters'), hint: '' }}
+                  urgentIds={urgentList.ids}
+                  canSendUrgent={canSendUrgent}
+                />
+              </div>
             ),
           },
           ...(companyStructure || companyStructureError
@@ -1862,41 +1936,13 @@ export default async function AdminPage({
                   children: companyStructureError ? (
                     <p className="text-sm text-destructive">{companyStructureError}</p>
                   ) : companyStructure ? (
-                    <div className="flex flex-col gap-4">
-                      <CompanyStructureBoard
-                        data={{
-                          ...companyStructure,
-                          executives: companyStructure.executives
-                            .filter((row) => canSeeStructureTier(session?.id, row.id))
-                            .map((row) => ({
-                              ...row,
-                              label:
-                                row.id === 'ceo'
-                                  ? t('companyCeo')
-                                  : row.id === 'coo'
-                                    ? t('companyCoo')
-                                    : t('companyDeputyCoo'),
-                            })),
-                        }}
-                        canEdit={session != null}
-                        labels={{
-                          notAssigned: t('companyNotAssigned'),
-                          save: t('companySave'),
-                          clear: t('companyClear'),
-                          leaders: t('roleFilterLeaders'),
-                          outreach: t('companyOutreach'),
-                          reposters: t('roleFilterReposters'),
-                          empty: t('companyEmpty'),
-                        }}
-                      />
-                      <StructurePayBoard
-                        slots={structurePay}
-                        today={opToday}
-                        canEdit={
-                          session?.id === 'yahya' || session?.id === 'ahmed' || session?.id === 'lula'
-                        }
-                      />
-                    </div>
+                    <StructurePayBoard
+                      slots={structurePay}
+                      today={opToday}
+                      canEdit={
+                        session?.id === 'yahya' || session?.id === 'ahmed' || session?.id === 'lula'
+                      }
+                    />
                   ) : null,
                 },
               ]

@@ -5,8 +5,11 @@ import { ensureCompanyRoleTable, getCompanyStructure } from '@/lib/company-struc
 import { ensureLeaderTables } from '@/lib/leaders'
 import { ensureOutreachTables } from '@/lib/outreach'
 import type { StructurePaySlot, StructurePayTiming } from '@/lib/company-roles'
-import type { CalendarContractInput } from '@/lib/payment-calendar'
-import { normalizePayTiming, resolvePayTiming } from '@/lib/payment-calendar-math'
+import type { CalendarContractInput, CalendarPaymentInput } from '@/lib/payment-calendar'
+import { contractWaveStatus } from '@/lib/contract-halves'
+import { buildCreatorPaySchedule, normalizePayTiming, resolvePayTiming } from '@/lib/payment-calendar-math'
+
+type PayRow = { amount: number; paid_on: string; note: string | null }
 
 type StoredPay = {
   subject_key: string
@@ -15,6 +18,28 @@ type StoredPay = {
   pay_timing: string | null
   base_amount: number
   pay_currency: string | null
+  first_pay_amount: number | null
+  second_pay_amount: number | null
+  details_done: boolean
+}
+
+const EMPTY_WAVES = {
+  detailsDone: false,
+  hasTwoPays: false,
+  firstDue: 0,
+  firstPaid: 0,
+  firstBalance: 0,
+  firstSettled: true,
+  firstDueOn: null as string | null,
+  firstLabel: 'First payment',
+  secondDue: 0,
+  secondPaid: 0,
+  secondBalance: 0,
+  secondSettled: true,
+  secondDueOn: null as string | null,
+  secondLabel: 'Second payment',
+  firstOverride: null as number | null,
+  secondOverride: null as number | null,
 }
 
 export async function ensureStructurePayTable() {
@@ -30,6 +55,75 @@ export async function ensureStructurePayTable() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
+  await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS first_pay_amount numeric(12, 2)`
+  await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS second_pay_amount numeric(12, 2)`
+  await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS details_done boolean NOT NULL DEFAULT false`
+  await sql`
+    CREATE TABLE IF NOT EXISTS structure_payments (
+      id SERIAL PRIMARY KEY,
+      subject_key TEXT NOT NULL,
+      paid_on DATE NOT NULL,
+      amount numeric(12, 2) NOT NULL,
+      note TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+}
+
+function wavesFor(opts: {
+  start: string | null
+  end: string | null
+  amount: number
+  timing: string | null
+  payments: PayRow[]
+  firstOverride: number | null
+  secondOverride: number | null
+  detailsDone: boolean
+  today: string
+}) {
+  if (!opts.start || opts.amount <= 0.009) {
+    return { ...EMPTY_WAVES, detailsDone: opts.detailsDone }
+  }
+  const timing = resolvePayTiming({
+    stored: opts.timing,
+    startDate: opts.start,
+    endDate: opts.end,
+    paidOn: opts.payments.map((p) => p.paid_on),
+    notes: opts.payments.map((p) => p.note ?? ''),
+  })
+  const waves = contractWaveStatus({
+    start: opts.start,
+    end: opts.end,
+    minDue: opts.amount,
+    payments: opts.payments,
+    timing,
+    firstAmount: opts.firstOverride,
+    secondAmount: opts.secondOverride,
+  })
+  const slices = buildCreatorPaySchedule({
+    startDate: opts.start,
+    endDate: opts.end,
+    timing,
+    through: opts.end ?? opts.today,
+  })
+  return {
+    detailsDone: opts.detailsDone,
+    hasTwoPays: waves.hasTwoHalves,
+    firstDue: waves.firstDue,
+    firstPaid: waves.firstPaid,
+    firstBalance: waves.firstBalance,
+    firstSettled: waves.firstSettled,
+    firstDueOn: slices[0]?.dueOn ?? null,
+    firstLabel: slices[0]?.label ?? 'First payment',
+    secondDue: waves.secondDue,
+    secondPaid: waves.secondPaid,
+    secondBalance: waves.secondBalance,
+    secondSettled: waves.secondSettled,
+    secondDueOn: slices[1]?.dueOn ?? null,
+    secondLabel: slices[1]?.label ?? 'Second payment',
+    firstOverride: opts.firstOverride,
+    secondOverride: opts.secondOverride,
+  }
 }
 
 function timingOf(value: string | null | undefined): StructurePayTiming | null {
@@ -73,17 +167,29 @@ async function storedPays(): Promise<Map<string, StoredPay>> {
   await ensureStructurePayTable()
   const rows = (await sql`
     SELECT subject_key, start_date::text AS start_date, end_date::text AS end_date,
-           pay_timing, base_amount::float AS base_amount, pay_currency
+           pay_timing, base_amount::float AS base_amount, pay_currency,
+           first_pay_amount::float AS first_pay_amount,
+           second_pay_amount::float AS second_pay_amount,
+           details_done
     FROM structure_contracts
   `) as StoredPay[]
   return new Map(rows.map((row) => [row.subject_key, row]))
 }
 
-export async function loadStructurePaySlots(viewerId: string | null | undefined): Promise<StructurePaySlot[]> {
+export async function loadStructurePaySlots(
+  viewerId: string | null | undefined,
+  today?: string,
+): Promise<StructurePaySlot[]> {
+  const day = today && /^\d{4}-\d{2}-\d{2}$/.test(today) ? today : new Date().toISOString().slice(0, 10)
   await Promise.all([ensureLeaderTables(), ensureOutreachTables(), ensureStructurePayTable()])
-  const [structure, pays, leaders, outreachRows, reposters] = await Promise.all([
+  const [structure, pays, payRows, leaders, outreachRows, reposters] = await Promise.all([
     getCompanyStructure(),
     storedPays(),
+    sql`
+      SELECT subject_key, paid_on::text AS paid_on, amount::float AS amount, note
+      FROM structure_payments
+      ORDER BY paid_on ASC, id ASC
+    ` as Promise<Array<PayRow & { subject_key: string }>>,
     sql`
       SELECT id, name, monthly_pay::float AS monthly_pay, pay_currency,
              level_since::text AS level_since
@@ -113,10 +219,14 @@ export async function loadStructurePaySlots(viewerId: string | null | undefined)
              ct.start_date::text AS start_date,
              ct.end_date::text AS end_date,
              ct.base_amount::float AS base_amount,
-             ct.pay_timing
+             ct.pay_timing,
+             ct.first_pay_amount::float AS first_pay_amount,
+             ct.second_pay_amount::float AS second_pay_amount,
+             ct.details_done
       FROM creators c
       LEFT JOIN LATERAL (
-        SELECT id, start_date, end_date, base_amount, pay_timing
+        SELECT id, start_date, end_date, base_amount, pay_timing,
+               first_pay_amount, second_pay_amount, details_done
         FROM contracts
         WHERE creator_id = c.id
         ORDER BY start_date DESC, id DESC
@@ -142,10 +252,38 @@ export async function loadStructurePaySlots(viewerId: string | null | undefined)
         end_date: string | null
         base_amount: number | null
         pay_timing: string | null
+        first_pay_amount: number | null
+        second_pay_amount: number | null
+        details_done: boolean | null
       }>
     >,
   ])
 
+  const contractIds = reposters
+    .map((person) => person.contract_id)
+    .filter((id): id is number => id != null && id > 0)
+  const contractPayRows =
+    contractIds.length === 0
+      ? []
+      : ((await sql`
+          SELECT contract_id, paid_on::text AS paid_on, amount::float AS amount, note
+          FROM payments
+          WHERE contract_id = ANY(${contractIds}::int[])
+          ORDER BY paid_on ASC, id ASC
+        `) as Array<{ contract_id: number; paid_on: string; amount: number; note: string | null }>)
+  const paysByContract = new Map<number, PayRow[]>()
+  for (const row of contractPayRows) {
+    const list = paysByContract.get(row.contract_id) ?? []
+    list.push({ amount: Number(row.amount) || 0, paid_on: row.paid_on, note: row.note })
+    paysByContract.set(row.contract_id, list)
+  }
+
+  const paysByKey = new Map<string, PayRow[]>()
+  for (const row of payRows) {
+    const list = paysByKey.get(row.subject_key) ?? []
+    list.push({ amount: Number(row.amount) || 0, paid_on: row.paid_on, note: row.note })
+    paysByKey.set(row.subject_key, list)
+  }
   const slots: StructurePaySlot[] = []
   const names = new Map(structure.executives.map((row) => [row.id, row.name]))
 
@@ -171,6 +309,17 @@ export async function loadStructurePaySlots(viewerId: string | null | undefined)
       amount: Number(saved?.base_amount) || 0,
       currency: currencyOf(saved?.pay_currency),
       scheduled: Boolean(saved),
+      ...wavesFor({
+        start: saved?.start_date ?? null,
+        end: saved?.end_date ?? null,
+        amount: Number(saved?.base_amount) || 0,
+        timing: saved?.pay_timing ?? null,
+        payments: paysByKey.get(key) ?? [],
+        firstOverride: saved?.first_pay_amount ?? null,
+        secondOverride: saved?.second_pay_amount ?? null,
+        detailsDone: Boolean(saved?.details_done),
+        today: day,
+      }),
     })
   }
 
@@ -192,6 +341,17 @@ export async function loadStructurePaySlots(viewerId: string | null | undefined)
         amount: saved ? Number(saved.base_amount) || 0 : Number(leader.monthly_pay) || 0,
         currency: currencyOf(saved?.pay_currency ?? leader.pay_currency),
         scheduled: Boolean(saved),
+        ...wavesFor({
+          start: saved?.start_date ?? leader.level_since,
+          end: saved?.end_date ?? null,
+          amount: saved ? Number(saved.base_amount) || 0 : Number(leader.monthly_pay) || 0,
+          timing: saved?.pay_timing ?? (leader.monthly_pay ? 'fifteen' : null),
+          payments: paysByKey.get(key) ?? [],
+          firstOverride: saved?.first_pay_amount ?? null,
+          secondOverride: saved?.second_pay_amount ?? null,
+          detailsDone: Boolean(saved?.details_done),
+          today: day,
+        }),
       })
     }
   }
@@ -215,6 +375,17 @@ export async function loadStructurePaySlots(viewerId: string | null | undefined)
         amount: Number(saved?.base_amount) || 0,
         currency: currencyOf(saved?.pay_currency),
         scheduled: Boolean(saved),
+        ...wavesFor({
+          start: saved?.start_date ?? null,
+          end: saved?.end_date ?? null,
+          amount: Number(saved?.base_amount) || 0,
+          timing: saved?.pay_timing ?? null,
+          payments: paysByKey.get(key) ?? [],
+          firstOverride: saved?.first_pay_amount ?? null,
+          secondOverride: saved?.second_pay_amount ?? null,
+          detailsDone: Boolean(saved?.details_done),
+          today: day,
+        }),
       })
     }
   }
@@ -247,6 +418,17 @@ export async function loadStructurePaySlots(viewerId: string | null | undefined)
         amount: Number(person.base_amount) || 0,
         currency: currencyOf(person.pay_currency ?? (person.role === 'reposter' ? 'USD' : 'SAR')),
         scheduled: false,
+        ...wavesFor({
+          start: person.start_date,
+          end: person.end_date,
+          amount: Number(person.base_amount) || 0,
+          timing: person.pay_timing,
+          payments: person.contract_id ? (paysByContract.get(person.contract_id) ?? []) : [],
+          firstOverride: person.first_pay_amount,
+          secondOverride: person.second_pay_amount,
+          detailsDone: Boolean(person.details_done),
+          today: day,
+        }),
         tiktok_username: person.tiktok_username,
         instagram_username: person.instagram_username,
         login_platform: person.login_platform,
@@ -263,8 +445,9 @@ export async function loadStructurePaySlots(viewerId: string | null | undefined)
 
 export async function structureContractsForCalendar(
   viewerId: string | null | undefined,
+  today?: string,
 ): Promise<CalendarContractInput[]> {
-  const slots = await loadStructurePaySlots(viewerId)
+  const slots = await loadStructurePaySlots(viewerId, today)
   const out: CalendarContractInput[] = []
   for (const slot of slots) {
     if (slot.tier === 'reposter' || !slot.scheduled) continue
@@ -279,8 +462,8 @@ export async function structureContractsForCalendar(
       commissionAmount: 0,
       basePayCadence: 'monthly',
       payTiming: slot.timing ?? 'fifteen',
-      firstPayAmount: null,
-      secondPayAmount: null,
+      firstPayAmount: slot.firstOverride,
+      secondPayAmount: slot.secondOverride,
       targetInstagram: 0,
       targetTiktok: 0,
       platforms: 'both',
@@ -292,6 +475,43 @@ export async function structureContractsForCalendar(
       pausedAt: null,
       projectId: null,
       projectName: slot.title,
+    })
+  }
+  return out
+}
+
+/** Recorded company salaries, using negative ids so they never match a creator payment. */
+export async function structurePaymentsForCalendar(
+  viewerId: string | null | undefined,
+  today?: string,
+): Promise<CalendarPaymentInput[]> {
+  const slots = await loadStructurePaySlots(viewerId, today)
+  const visible = new Map(
+    slots.filter((slot) => slot.tier !== 'reposter' && slot.scheduled).map((slot) => [slot.subjectKey, slot]),
+  )
+  if (visible.size === 0) return []
+  await ensureStructurePayTable()
+  const rows = (await sql`
+    SELECT id, subject_key, paid_on::text AS paid_on, amount::float AS amount, note
+    FROM structure_payments
+    ORDER BY paid_on ASC, id ASC
+  `) as Array<{ id: number; subject_key: string; paid_on: string; amount: number; note: string | null }>
+  const out: CalendarPaymentInput[] = []
+  for (const row of rows) {
+    const slot = visible.get(row.subject_key)
+    if (!slot) continue
+    const ids = structureCalendarIds(row.subject_key)
+    out.push({
+      id: -row.id,
+      creatorId: ids.creatorId,
+      contractId: ids.contractId,
+      paidOn: row.paid_on,
+      amount: Number(row.amount) || 0,
+      note: row.note,
+      creatorName: slot.name,
+      role: 'creator',
+      payCurrency: slot.currency,
+      contractName: slot.title,
     })
   }
   return out
