@@ -58,13 +58,17 @@ import { TopVideosPanel } from '@/components/admin/top-videos-panel'
 import { WalletBoard } from '@/components/marketing/wallet-board'
 import { getPayablePeople, getWalletEntries, getWalletTotals } from '@/lib/wallet'
 import { OutflowPanel } from '@/components/admin/outflow-panel'
+import { YahyaExpensesPanel } from '@/components/admin/yahya-expenses-panel'
 import { PayCadences } from '@/components/admin/pay-cadence'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { idsOnPage } from '@/lib/refresh-scope'
 import { LanguageToggle } from '@/components/language-toggle'
 import { CreatorJumpSearch } from '@/components/admin/creator-jump-search'
 import { formatDate, formatMoney, formatNumber, formatYearMonth, payCurrency } from '@/lib/format'
+import { usdToSar } from '@/lib/fx'
 import { getOutflowSnapshot, type OutflowView } from '@/lib/outflow'
+import { getYahyaExpensesSnapshot } from '@/lib/yahya-expenses'
+import { shiftYearMonth } from '@/lib/biweekly'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 import type { Platform, Project } from '@/lib/db'
@@ -157,6 +161,7 @@ export default async function AdminPage({
     ofFrom?: string
     ofTo?: string
     ofView?: string
+    yeMonth?: string
     pvFrom?: string
     pvTo?: string
     pvKind?: string
@@ -253,6 +258,10 @@ export default async function AdminPage({
     sp.ofView === 'creators' || sp.ofView === 'reposters' || sp.ofView === 'total'
       ? sp.ofView
       : 'reposters'
+  // Default Yahya's expenses to next calendar month (plan before the month starts).
+  const yeMonth = /^\d{4}-\d{2}$/.test(sp.yeMonth ?? '')
+    ? sp.yeMonth!
+    : shiftYearMonth(today.slice(0, 7), 1)
 
   const pvFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.pvFrom ?? '')
     ? sp.pvFrom!
@@ -428,6 +437,7 @@ export default async function AdminPage({
       outflow,
       commissionBoard,
       commissionEstimate,
+      yahyaExpenses,
     ] = await Promise.all([
       getPaymentsInRange(payFrom, payTo, undefined, roleSql),
       getPaymentsTotalInRange(payFrom, payTo, undefined, roleSql),
@@ -457,6 +467,7 @@ export default async function AdminPage({
         role: roleSql,
         contractId: cmContractId,
       }),
+      getYahyaExpensesSnapshot({ yearMonth: yeMonth, today }),
     ])
     return {
       periodPayments,
@@ -471,6 +482,7 @@ export default async function AdminPage({
       outflow,
       commissionBoard,
       commissionEstimate,
+      yahyaExpenses,
     }
   }
 
@@ -554,6 +566,7 @@ export default async function AdminPage({
     outflow,
     commissionBoard,
     commissionEstimate,
+    yahyaExpenses,
   } = moneyData ?? ({} as Awaited<ReturnType<typeof loadMoney>>)
 
   const pvModeRaw = sp.pvMode
@@ -1476,6 +1489,29 @@ export default async function AdminPage({
           ...(moneyData ? [
           ...(showWallet
             ? [
+          {
+            id: 'yahya',
+            title: "Yahya's expenses",
+            copy: true,
+            summary: yahyaExpenses ? (
+              <div className="flex flex-col gap-0.5">
+                <span className="font-semibold tabular-nums">
+                  {formatMoney(usdToSar(yahyaExpenses.grandTotalUsd))}
+                </span>
+                <span className="text-xs tabular-nums opacity-70">
+                  {formatMoney(yahyaExpenses.grandTotalUsd, 'USD')}
+                </span>
+              </div>
+            ) : (
+              '—'
+            ),
+            hint: yahyaExpenses?.label ?? 'Monthly payroll',
+            children: yahyaExpenses ? (
+              <Suspense fallback={<p className="text-sm text-muted-foreground">…</p>}>
+                <YahyaExpensesPanel snapshot={yahyaExpenses} today={today} />
+              </Suspense>
+            ) : null,
+          },
           {
             id: 'marketing',
             title: "Ahmed's wallet",
