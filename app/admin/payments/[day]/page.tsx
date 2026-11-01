@@ -155,8 +155,10 @@ export default async function PaymentDayPage({
                         {row.creatorName}
                       </Link>
                       <div className="text-xs text-muted-foreground">
-                        {participantRoleLabel(row.role)}
-                        {row.projectName ? ` · ${row.projectName}` : ''}
+                        {row.creatorId < 0 && row.projectName
+                          ? row.projectName
+                          : participantRoleLabel(row.role)}
+                        {row.creatorId > 0 && row.projectName ? ` · ${row.projectName}` : ''}
                       </div>
                     </td>
                     <td className="px-3 py-3">
