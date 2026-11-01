@@ -61,7 +61,7 @@ function PayPeople({
                 <span className="font-medium">{row.creatorName}</span>
                 <span className="text-xs text-muted-foreground">
                   {' · '}
-                  {participantRoleLabel(row.role)}
+                  {row.creatorId < 0 && row.projectName ? row.projectName : participantRoleLabel(row.role)}
                   {' · '}
                   {row.nextDue}
                   {row.count > 1 ? ` · ${row.count}` : ''}
@@ -70,7 +70,7 @@ function PayPeople({
               </Link>
               <MoneyPair sar={row.remainingSar} />
             </div>
-            {row.contractEnd ? (
+            {row.contractEnd && row.creatorId > 0 ? (
               <div className="mt-1">
                 {row.awaitingEligibility ? (
                   <p className="mb-1 text-[10px] text-muted-foreground">{labels.moreTimeHint}</p>
@@ -156,6 +156,7 @@ export function PaymentCalendarBoard({
       creatorId: number
       creatorName: string
       role: (typeof unpaidRows)[number]['role']
+      projectName: string | null
       remainingSar: number
       nextDue: string
       count: number
@@ -173,6 +174,7 @@ export function PaymentCalendarBoard({
         creatorId: row.creatorId,
         creatorName: row.creatorName,
         role: row.role,
+        projectName: row.projectName,
         remainingSar: row.remainingSar,
         nextDue: row.dueDate,
         count: 1,

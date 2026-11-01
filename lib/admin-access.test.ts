@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import {
   canManageOutreachAccounts,
   canSeeAhmedWallet,
+  canSeeStructureTier,
   canSeeUrgentList,
   canSendUrgentList,
 } from './admin-access.ts'
@@ -22,6 +23,18 @@ test('Ahmed, Lula, and Yahya see the urgent list; Ahmed and Lula add to it', () 
   assert.equal(canSendUrgentList('ahmed'), true)
   assert.equal(canSendUrgentList('lula'), true)
   assert.equal(canSendUrgentList('yahya'), false)
+})
+
+test('Lula sees people under her, not the CEO or the COO', () => {
+  assert.equal(canSeeStructureTier('yahya', 'ceo'), true)
+  assert.equal(canSeeStructureTier('ahmed', 'coo'), true)
+  assert.equal(canSeeStructureTier('lula', 'ceo'), false)
+  assert.equal(canSeeStructureTier('lula', 'coo'), false)
+  assert.equal(canSeeStructureTier('lula', 'deputy_coo'), true)
+  assert.equal(canSeeStructureTier('lula', 'leader'), true)
+  assert.equal(canSeeStructureTier('lula', 'outreach'), true)
+  assert.equal(canSeeStructureTier('lula', 'reposter'), true)
+  assert.equal(canSeeStructureTier(null, 'leader'), false)
 })
 
 test('Ahmed and Lula can manage outreach accounts', () => {

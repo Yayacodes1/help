@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import nextDynamic from 'next/dynamic'
 import { redirect } from 'next/navigation'
-import { canManageOutreachAccounts, canSeeAhmedWallet, canSeeUrgentList, canSendUrgentList } from '@/lib/admin-access'
+import { canManageOutreachAccounts, canSeeAhmedWallet, canSeeStructureTier, canSeeUrgentList, canSendUrgentList } from '@/lib/admin-access'
 import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import { ADMIN_TABS, resolveAdminTab } from '@/lib/admin-tabs'
 import { AdminTabs } from '@/components/admin/admin-tabs'
@@ -118,7 +118,9 @@ import { loadPaymentCalendar } from '@/lib/payment-calendar-data'
 import { loadPaymentArchive } from '@/lib/payment-archive'
 import { PaymentArchive } from '@/components/admin/payment-archive'
 import { UrgentList } from '@/components/admin/urgent-list'
+import { StructurePayBoard } from '@/components/admin/structure-pay-board'
 import { loadUrgentList } from '@/lib/urgent-list'
+import { loadStructurePaySlots } from '@/lib/structure-pay'
 import { parseCalendarRole } from '@/lib/payment-calendar'
 import { PaymentCalendarBoard } from '@/components/admin/payment-calendar'
 
@@ -488,7 +490,12 @@ export default async function AdminPage({
   let calendarError: string | null = null
   if (tab === 'money' && sp.panel === 'calendar') {
     try {
-      calendarData = await loadPaymentCalendar({ month: calMonth, today: opToday, role: calRole })
+      calendarData = await loadPaymentCalendar({
+        month: calMonth,
+        today: opToday,
+        role: calRole,
+        viewerId: session?.id,
+      })
     } catch (err) {
       console.error('[admin] payment calendar', err)
       calendarError = t('paymentCalendarError')
@@ -569,6 +576,8 @@ export default async function AdminPage({
       : []
   const urgentList =
     tab === 'people' && showUrgent ? await loadUrgentList(opToday) : { ids: [] as number[], rows: [] }
+  const structurePay =
+    tab === 'people' && session ? await loadStructurePaySlots(session.id) : []
 
   // Notek | Miqat side by side: same panels, one column per project.
   const splitProjects = splitRequested ? splitProjectPair(projects) : []
@@ -1853,30 +1862,41 @@ export default async function AdminPage({
                   children: companyStructureError ? (
                     <p className="text-sm text-destructive">{companyStructureError}</p>
                   ) : companyStructure ? (
-                    <CompanyStructureBoard
-                      data={{
-                        ...companyStructure,
-                        executives: companyStructure.executives.map((row) => ({
-                          ...row,
-                          label:
-                            row.id === 'ceo'
-                              ? t('companyCeo')
-                              : row.id === 'coo'
-                                ? t('companyCoo')
-                                : t('companyDeputyCoo'),
-                        })),
-                      }}
-                      canEdit={session != null}
-                      labels={{
-                        notAssigned: t('companyNotAssigned'),
-                        save: t('companySave'),
-                        clear: t('companyClear'),
-                        leaders: t('roleFilterLeaders'),
-                        outreach: t('companyOutreach'),
-                        reposters: t('roleFilterReposters'),
-                        empty: t('companyEmpty'),
-                      }}
-                    />
+                    <div className="flex flex-col gap-4">
+                      <CompanyStructureBoard
+                        data={{
+                          ...companyStructure,
+                          executives: companyStructure.executives
+                            .filter((row) => canSeeStructureTier(session?.id, row.id))
+                            .map((row) => ({
+                              ...row,
+                              label:
+                                row.id === 'ceo'
+                                  ? t('companyCeo')
+                                  : row.id === 'coo'
+                                    ? t('companyCoo')
+                                    : t('companyDeputyCoo'),
+                            })),
+                        }}
+                        canEdit={session != null}
+                        labels={{
+                          notAssigned: t('companyNotAssigned'),
+                          save: t('companySave'),
+                          clear: t('companyClear'),
+                          leaders: t('roleFilterLeaders'),
+                          outreach: t('companyOutreach'),
+                          reposters: t('roleFilterReposters'),
+                          empty: t('companyEmpty'),
+                        }}
+                      />
+                      <StructurePayBoard
+                        slots={structurePay}
+                        today={opToday}
+                        canEdit={
+                          session?.id === 'yahya' || session?.id === 'ahmed' || session?.id === 'lula'
+                        }
+                      />
+                    </div>
                   ) : null,
                 },
               ]

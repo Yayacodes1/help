@@ -17,3 +17,18 @@ export function canSeeUrgentList(accountId: string | null | undefined): boolean 
 export function canSendUrgentList(accountId: string | null | undefined): boolean {
   return accountId === 'ahmed' || accountId === 'lula'
 }
+
+export type StructureTier = 'ceo' | 'coo' | 'deputy_coo' | 'leader' | 'outreach' | 'reposter'
+
+/**
+ * Yahya (CEO & Founder) and Ahmed (COO) see every company-structure payment.
+ * Lula (Deputy COO) sees herself, leaders, outreach, and reposters — not the CEO or the COO.
+ */
+export function canSeeStructureTier(
+  accountId: string | null | undefined,
+  tier: StructureTier,
+): boolean {
+  if (accountId === 'yahya' || accountId === 'ahmed') return true
+  if (accountId === 'lula') return tier !== 'ceo' && tier !== 'coo'
+  return false
+}

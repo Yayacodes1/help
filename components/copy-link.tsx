@@ -1,3 +1,6 @@
+import { detectPlatformFromUrl } from '@/lib/media-url'
+
+/** A short platform button. The full address stays on the tooltip so it does not run into the views. */
 export function CopyLink({
   url,
 }: {
@@ -5,16 +8,17 @@ export function CopyLink({
   copyLabel?: string
   copiedLabel?: string
 }) {
+  const platform = detectPlatformFromUrl(url)
+  const label = platform === 'instagram' ? 'Instagram' : platform === 'tiktok' ? 'TikTok' : 'Open'
   return (
     <a
       href={url}
       target="_blank"
       rel="noopener noreferrer"
       title={url}
-      className="min-w-0 flex-1 truncate text-left font-medium underline underline-offset-4"
-      dir="ltr"
+      className="inline-flex shrink-0 items-center rounded-md border border-border bg-background px-2 py-1 text-xs font-medium text-foreground hover:bg-accent"
     >
-      {url}
+      {label}
     </a>
   )
 }

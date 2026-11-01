@@ -48,7 +48,9 @@ export function GroupVideos({
               </span>
             ) : null}
             <CopyLink url={video.url} />
-            <span className="text-xs tabular-nums text-muted-foreground">{formatNumber(video.views)}</span>
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+              {formatNumber(video.views)}
+            </span>
           </li>
         )
       })}

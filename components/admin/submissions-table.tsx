@@ -201,7 +201,7 @@ export function SubmissionsTable({
                     </span>
                   ) : null}
                 </td>
-                <td className="max-w-[280px] px-4 py-3">
+                <td className="whitespace-nowrap px-4 py-3">
                   <CopyLink url={s.url} />
                 </td>
                 <td className="px-2 py-2 text-right">

@@ -12,11 +12,13 @@ import {
   type CalendarVideoHit,
   type PaymentCalendarModel,
 } from '@/lib/payment-calendar'
+import { structureContractsForCalendar } from '@/lib/structure-pay'
 
 export async function loadPaymentCalendar(opts: {
   month: string
   today: string
   role?: string | null
+  viewerId?: string | null
 }): Promise<PaymentCalendarModel> {
   const role = parseCalendarRole(opts.role)
   const { start, end } = calendarMonthRange(opts.month)
@@ -160,6 +162,15 @@ export async function loadPaymentCalendar(opts: {
     videoDate: row.video_date,
     platform: row.platform,
   }))
+
+  if (role === 'all') {
+    try {
+      const structure = await structureContractsForCalendar(opts.viewerId)
+      contracts.push(...structure)
+    } catch (err) {
+      console.error('[calendar] structure pay', err)
+    }
+  }
 
   const shared = {
     today: opts.today,

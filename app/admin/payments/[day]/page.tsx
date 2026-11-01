@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { isAdmin } from '@/lib/admin-auth'
+import { getAdminSession } from '@/lib/admin-auth'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import { getLocale } from '@/lib/locale'
 import { createT, type MessageKey } from '@/lib/i18n'
@@ -35,7 +35,8 @@ export default async function PaymentDayPage({
   params: Promise<{ day: string }>
   searchParams: Promise<{ calMonth?: string; calRole?: string }>
 }) {
-  if (!(await isAdmin())) redirect('/login')
+  const session = await getAdminSession()
+  if (!session) redirect('/login')
   await ensureCreatorTrackingColumns()
   const { day } = await params
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) notFound()
@@ -47,7 +48,7 @@ export default async function PaymentDayPage({
   const role = parseCalendarRole(sp.calRole)
   let model
   try {
-    model = await loadPaymentCalendar({ month, today, role })
+    model = await loadPaymentCalendar({ month, today, role, viewerId: session.id })
   } catch (err) {
     console.error('[admin] payment day', err)
     return (
@@ -124,20 +125,27 @@ export default async function PaymentDayPage({
             </thead>
             <tbody>
               {detail.items.map((row) => {
-                const contractHref = `${adminPersonHref(row.creatorId, {
-                  role: row.role,
-                  panel: 'contracts',
-                  from: 'calendar',
-                })}#contract-${row.contractId}`
+                const personHref =
+                  row.creatorId > 0
+                    ? adminPersonHref(row.creatorId, {
+                        role: row.role,
+                        panel: 'payments',
+                        from: 'calendar',
+                      })
+                    : '/admin?tab=people&panel=structure'
+                const contractHref =
+                  row.creatorId > 0
+                    ? `${adminPersonHref(row.creatorId, {
+                        role: row.role,
+                        panel: 'contracts',
+                        from: 'calendar',
+                      })}#contract-${row.contractId}`
+                    : '/admin?tab=people&panel=structure'
                 return (
                   <tr key={row.key} className="border-b border-border last:border-b-0">
                     <td className="px-3 py-3">
                       <Link
-                        href={adminPersonHref(row.creatorId, {
-                          role: row.role,
-                          panel: 'payments',
-                          from: 'calendar',
-                        })}
+                        href={personHref}
                         className="font-medium underline-offset-4 hover:underline"
                       >
                         {row.creatorName}
@@ -196,14 +204,16 @@ export default async function PaymentDayPage({
                       <div className="text-xs font-semibold uppercase tracking-wide">
                         {t(STATUS_KEY[row.status])}
                       </div>
-                      <PaymentDayActions
-                        creatorId={row.creatorId}
-                        contractId={row.contractId}
-                        remainingSar={row.remainingSar}
-                        currency={row.currency}
-                        which={row.installmentIndex === 0 ? 'first' : 'second'}
-                      />
-                      {row.awaitingEligibility || row.remainingSar > 0.009 ? (
+                      {row.creatorId > 0 ? (
+                        <PaymentDayActions
+                          creatorId={row.creatorId}
+                          contractId={row.contractId}
+                          remainingSar={row.remainingSar}
+                          currency={row.currency}
+                          which={row.installmentIndex === 0 ? 'first' : 'second'}
+                        />
+                      ) : null}
+                      {row.creatorId > 0 && (row.awaitingEligibility || row.remainingSar > 0.009) ? (
                         <PushContractForward
                           creatorId={row.creatorId}
                           contractId={row.contractId}
@@ -235,7 +245,11 @@ export default async function PaymentDayPage({
               <li key={row.id} className="flex flex-wrap items-center justify-between gap-2">
                 <span>
                   <Link
-                    href={adminPersonHref(row.creatorId, { role: row.role, panel: 'payments', from: 'calendar' })}
+                    href={
+                      row.creatorId > 0
+                        ? adminPersonHref(row.creatorId, { role: row.role, panel: 'payments', from: 'calendar' })
+                        : '/admin?tab=people&panel=structure'
+                    }
                     className="font-medium underline-offset-4 hover:underline"
                   >
                     {row.creatorName}
