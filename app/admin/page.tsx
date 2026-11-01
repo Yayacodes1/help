@@ -1632,15 +1632,17 @@ export default async function AdminPage({
           {
             id: 'archive',
             title: t('paymentArchive'),
-            summary: formatYearMonth(opToday.slice(0, 7), locale),
+            summary:
+              archiveData && archiveData.months.length > 0
+                ? `${formatYearMonth(archiveData.months[0].month, locale)} – ${formatYearMonth(archiveData.months[archiveData.months.length - 1].month, locale)}`
+                : formatYearMonth(opToday.slice(0, 7), locale),
             hint: t('paymentArchiveHint'),
             children: archiveError ? (
               <p className="text-sm text-destructive">{archiveError}</p>
             ) : archiveData ? (
               <PaymentArchive
-                month={archiveData.month}
+                months={archiveData.months}
                 locale={locale}
-                people={archiveData.people}
                 labels={{
                   card: t('paymentArchiveCard'),
                   empty: t('paymentArchiveEmpty'),

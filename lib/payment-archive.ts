@@ -19,6 +19,27 @@ export type PaymentArchivePerson = {
   targetTotal: number
 }
 
+export type PaymentArchiveMonth = {
+  month: string
+  totalSar: number
+  people: PaymentArchivePerson[]
+}
+
+type PaymentRow = {
+  creator_id: number
+  creator_name: string
+  role: ParticipantRole
+  pay_currency: string | null
+  amount: number
+  paid_on: string
+  contract_id: number | null
+  start_date: string | null
+  end_date: string | null
+  platforms: string | null
+  target_instagram: number | null
+  target_tiktok: number | null
+}
+
 function targetTotal(platforms: string | null, ig: number, tt: number): number {
   const mode = normalizePlatforms(platforms)
   const needIg = mode === 'tiktok' ? 0 : Math.max(0, ig)
@@ -26,40 +47,25 @@ function targetTotal(platforms: string | null, ig: number, tt: number): number {
   return needIg + needTt
 }
 
-export async function loadPaymentArchive(today: string): Promise<{
-  month: string
-  people: PaymentArchivePerson[]
-  totalSar: number
-}> {
-  const month = today.slice(0, 7)
-  const { start, end } = calendarMonthRange(month)
-  const rows = (await sql`
-    SELECT p.creator_id, cr.name AS creator_name, cr.role, cr.pay_currency,
-           p.amount::float AS amount,
-           c.id AS contract_id,
-           c.start_date::text AS start_date,
-           c.end_date::text AS end_date,
-           c.platforms, c.target_instagram, c.target_tiktok
-    FROM payments p
-    JOIN creators cr ON cr.id = p.creator_id
-    LEFT JOIN contracts c ON c.id = p.contract_id
-    WHERE p.paid_on >= ${start}::date
-      AND p.paid_on <= ${end}::date
-    ORDER BY cr.name ASC, p.paid_on ASC, p.id ASC
-  `) as {
-    creator_id: number
-    creator_name: string
-    role: ParticipantRole
-    pay_currency: string | null
-    amount: number
-    contract_id: number | null
-    start_date: string | null
-    end_date: string | null
-    platforms: string | null
-    target_instagram: number | null
-    target_tiktok: number | null
-  }[]
+function shiftMonth(yearMonth: string, delta: number): string {
+  const [year, month] = yearMonth.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1 + delta, 1))
+  const y = date.getUTCFullYear()
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0')
+  return `${y}-${m}`
+}
 
+function eachMonth(start: string, end: string): string[] {
+  const months: string[] = []
+  let cursor = start
+  while (cursor <= end && months.length < 60) {
+    months.push(cursor)
+    cursor = shiftMonth(cursor, 1)
+  }
+  return months
+}
+
+function groupMonth(rows: PaymentRow[], today: string): PaymentArchivePerson[] {
   const grouped = new Map<string, PaymentArchivePerson>()
   for (const row of rows) {
     const key = `${row.creator_id}:${row.contract_id ?? 0}`
@@ -83,10 +89,61 @@ export async function loadPaymentArchive(today: string): Promise<{
       existing.paidSar = roundMoney(existing.paidSar + sar)
     }
   }
+  return [...grouped.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
 
-  const people = [...grouped.values()]
-  const ids = [...new Set(people.map((p) => p.creatorId))]
-  const starts = people.map((p) => p.start).filter((d): d is string => Boolean(d))
+export async function loadPaymentArchive(today: string): Promise<{
+  months: PaymentArchiveMonth[]
+}> {
+  const current = today.slice(0, 7)
+  const bounds = (await sql`
+    SELECT MIN(paid_on)::text AS first_paid, MAX(paid_on)::text AS last_paid
+    FROM payments
+  `) as { first_paid: string | null; last_paid: string | null }[]
+  const earliest = bounds[0]?.first_paid?.slice(0, 7) || current
+  const latest = bounds[0]?.last_paid?.slice(0, 7) || current
+  const startMonth = earliest < shiftMonth(current, -2) ? earliest : shiftMonth(current, -2)
+  const endMonth = latest > shiftMonth(current, 3) ? latest : shiftMonth(current, 3)
+  const months = eachMonth(startMonth, endMonth)
+  const { start } = calendarMonthRange(months[0])
+  const { end } = calendarMonthRange(months[months.length - 1])
+
+  const rows = (await sql`
+    SELECT p.creator_id, cr.name AS creator_name, cr.role, cr.pay_currency,
+           p.amount::float AS amount,
+           p.paid_on::text AS paid_on,
+           c.id AS contract_id,
+           c.start_date::text AS start_date,
+           c.end_date::text AS end_date,
+           c.platforms, c.target_instagram, c.target_tiktok
+    FROM payments p
+    JOIN creators cr ON cr.id = p.creator_id
+    LEFT JOIN contracts c ON c.id = p.contract_id
+    WHERE p.paid_on >= ${start}::date
+      AND p.paid_on <= ${end}::date
+    ORDER BY p.paid_on ASC, cr.name ASC, p.id ASC
+  `) as PaymentRow[]
+
+  const byMonth = new Map<string, PaymentRow[]>()
+  for (const row of rows) {
+    const month = row.paid_on.slice(0, 7)
+    const list = byMonth.get(month) ?? []
+    list.push(row)
+    byMonth.set(month, list)
+  }
+
+  const built = months.map((month) => {
+    const people = groupMonth(byMonth.get(month) ?? [], today)
+    return {
+      month,
+      people,
+      totalSar: roundMoney(people.reduce((sum, person) => sum + person.paidSar, 0)),
+    }
+  })
+
+  const people = built.flatMap((month) => month.people)
+  const ids = [...new Set(people.map((person) => person.creatorId))]
+  const starts = people.map((person) => person.start).filter((date): date is string => Boolean(date))
   const minStart = starts.sort()[0]
   if (ids.length > 0 && minStart) {
     const hits = (await sql`
@@ -109,10 +166,5 @@ export async function loadPaymentArchive(today: string): Promise<{
     }
   }
 
-  people.sort((a, b) => a.name.localeCompare(b.name))
-  return {
-    month,
-    people,
-    totalSar: roundMoney(people.reduce((sum, person) => sum + person.paidSar, 0)),
-  }
+  return { months: built }
 }
