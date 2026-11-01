@@ -8,12 +8,14 @@ import { usdToSar } from '@/lib/fx'
 import { shiftYearMonth } from '@/lib/biweekly'
 import {
   addYahyaExpenseItem,
+  addYahyaPerson,
   removeYahyaExpenseItem,
   resetYahyaPersonOverride,
   saveYahyaHome,
   saveYahyaPersonMonthly,
 } from '@/app/actions/yahya-expenses'
 import type {
+  YahyaAddCandidate,
   YahyaExpenseCategory,
   YahyaExpensePerson,
   YahyaExpensesSnapshot,
@@ -60,6 +62,42 @@ function saveChecked(yearMonth: string, keys: Set<string>) {
   }
 }
 
+type SortMode = 'name-asc' | 'name-desc' | 'pay-high' | 'pay-low'
+
+const SORT_OPTIONS: { id: SortMode; label: string }[] = [
+  { id: 'name-asc', label: 'A → Z' },
+  { id: 'name-desc', label: 'Z → A' },
+  { id: 'pay-high', label: 'Highest pay' },
+  { id: 'pay-low', label: 'Lowest pay' },
+]
+
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
+
+function filterAndSortPeople(
+  people: YahyaExpensePerson[],
+  query: string,
+  letter: string | null,
+  sort: SortMode,
+): YahyaExpensePerson[] {
+  const q = query.trim().toLowerCase()
+  let list = people
+  if (q) list = list.filter((p) => p.name.toLowerCase().includes(q))
+  if (letter) {
+    list = list.filter((p) => {
+      const first = p.name.trim().charAt(0).toUpperCase()
+      return first === letter
+    })
+  }
+  const sorted = [...list]
+  sorted.sort((a, b) => {
+    if (sort === 'pay-high') return b.monthlyUsd - a.monthlyUsd || a.name.localeCompare(b.name)
+    if (sort === 'pay-low') return a.monthlyUsd - b.monthlyUsd || a.name.localeCompare(b.name)
+    if (sort === 'name-desc') return b.name.localeCompare(a.name)
+    return a.name.localeCompare(b.name)
+  })
+  return sorted
+}
+
 function CategoryBlock({
   category,
   yearMonth,
@@ -67,6 +105,9 @@ function CategoryBlock({
   onToggle,
   onCheckAll,
   canMove,
+  query,
+  letter,
+  sort,
 }: {
   category: YahyaExpenseCategory
   yearMonth: string
@@ -74,11 +115,19 @@ function CategoryBlock({
   onToggle: (key: string) => void
   onCheckAll: (keys: string[], done: boolean) => void
   canMove: boolean
+  query: string
+  letter: string | null
+  sort: SortMode
 }) {
   const [open, setOpen] = useState(false)
-  const done = category.people.filter((p) => checked.has(p.key)).length
-  const total = category.people.length
+  const people = useMemo(
+    () => filterAndSortPeople(category.people, query, letter, sort),
+    [category.people, query, letter, sort],
+  )
+  const done = people.filter((p) => checked.has(p.key)).length
+  const total = people.length
   const allDone = total > 0 && done === total
+  const filtered = query.trim() !== '' || letter != null
 
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-card">
@@ -91,11 +140,13 @@ function CategoryBlock({
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide">{category.label}</p>
           <p className="text-[11px] text-white/70">
-            {total === 0
+            {category.people.length === 0
               ? 'Nobody yet'
-              : `${done}/${total} checked · ${category.people.length} ${
-                  category.people.length === 1 ? 'person' : 'people'
-                }`}
+              : filtered
+                ? `${done}/${total} checked · showing ${total} of ${category.people.length}`
+                : `${done}/${total} checked · ${category.people.length} ${
+                    category.people.length === 1 ? 'person' : 'people'
+                  }`}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -122,6 +173,8 @@ function CategoryBlock({
               ? 'Add subscriptions and other fixed costs below.'
               : 'Nothing in this category for this month.'}
           </p>
+        ) : people.length === 0 ? (
+          <p className="px-3 py-5 text-sm text-muted-foreground">No names match this search.</p>
         ) : (
           <>
             <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
@@ -129,7 +182,7 @@ function CategoryBlock({
                 type="button"
                 onClick={() =>
                   onCheckAll(
-                    category.people.map((p) => p.key),
+                    people.map((p) => p.key),
                     !allDone,
                   )
                 }
@@ -139,7 +192,7 @@ function CategoryBlock({
               </button>
             </div>
             <ul className="divide-y divide-border">
-              {category.people.map((person) => (
+              {people.map((person) => (
                 <PersonRow
                   key={`${category.id}-${person.key}`}
                   person={person}
@@ -415,6 +468,167 @@ function PersonRow({
   )
 }
 
+function AddPersonForm({
+  yearMonth,
+  candidates,
+}: {
+  yearMonth: string
+  candidates: YahyaAddCandidate[]
+}) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+  const [personKey, setPersonKey] = useState('')
+  const [home, setHome] = useState<'creators' | 'reposters' | 'leaders'>('creators')
+  const [amount, setAmount] = useState('')
+  const [currency, setCurrency] = useState<'SAR' | 'USD'>('SAR')
+  const [scope, setScope] = useState<'page' | 'site'>('page')
+
+  const selected = candidates.find((c) => c.key === personKey) ?? null
+
+  useEffect(() => {
+    if (!selected) return
+    setCurrency(selected.currency)
+    setAmount(selected.suggestedMonthly > 0 ? String(selected.suggestedMonthly) : '')
+    if (selected.kind === 'reposter') setHome('reposters')
+    else if (selected.kind === 'leader') setHome('leaders')
+    else setHome('creators')
+  }, [selected])
+
+  if (candidates.length === 0) {
+    return (
+      <p className="rounded-xl border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
+        Everyone with pay is already on a list. New creators, reposters, and management show up here
+        automatically once they have a monthly amount.
+      </p>
+    )
+  }
+
+  return (
+    <form
+      className="flex flex-col gap-2 rounded-xl border border-border bg-card px-3 py-3"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (!selected) return
+        const n = Number(amount)
+        startTransition(async () => {
+          const res = await addYahyaPerson({
+            yearMonth,
+            personKey: selected.key,
+            home,
+            amount: n,
+            currency,
+            scope,
+            creatorId: selected.creatorId,
+            leaderId: selected.leaderId,
+          })
+          if (!res.ok) {
+            alert(res.error)
+            return
+          }
+          setPersonKey('')
+          setAmount('')
+          router.refresh()
+        })
+      }}
+    >
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Add person to a list
+      </p>
+      <p className="text-[11px] text-muted-foreground">
+        Creators, reposters, and management added elsewhere appear automatically when they have pay.
+        Use this to put someone on a list now (Yahya &amp; Ahmed only).
+      </p>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex min-w-[180px] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+          Person
+          <select
+            required
+            value={personKey}
+            onChange={(e) => setPersonKey(e.target.value)}
+            className="h-9 rounded-lg border border-input bg-background px-2 text-sm text-foreground"
+          >
+            <option value="">Pick someone…</option>
+            {candidates.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.name} · {c.kind}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex w-44 flex-col gap-1 text-xs text-muted-foreground">
+          Put in
+          <select
+            value={home}
+            onChange={(e) => setHome(e.target.value as 'creators' | 'reposters' | 'leaders')}
+            className="h-9 rounded-lg border border-input bg-background px-2 text-sm text-foreground"
+          >
+            <option value="creators">Creators</option>
+            <option value="reposters">Reposters</option>
+            <option value="leaders">Leaders / management</option>
+          </select>
+        </label>
+        <label className="flex w-28 flex-col gap-1 text-xs text-muted-foreground">
+          Monthly
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            required
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="h-9 rounded-lg border border-input bg-background px-2 text-sm tabular-nums text-foreground"
+          />
+        </label>
+        <div className="inline-flex h-9 rounded-lg border border-border p-0.5">
+          {(['SAR', 'USD'] as const).map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setCurrency(c)}
+              className={
+                (currency === c ? 'bg-foreground text-background ' : 'text-muted-foreground ') +
+                'rounded-md px-2.5 text-xs font-semibold'
+              }
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+        <div className="inline-flex h-9 rounded-lg border border-border p-0.5">
+          <button
+            type="button"
+            onClick={() => setScope('page')}
+            className={
+              (scope === 'page' ? 'bg-foreground text-background ' : 'text-muted-foreground ') +
+              'rounded-md px-2.5 text-xs font-semibold'
+            }
+          >
+            This page
+          </button>
+          <button
+            type="button"
+            onClick={() => setScope('site')}
+            className={
+              (scope === 'site' ? 'bg-foreground text-background ' : 'text-muted-foreground ') +
+              'rounded-md px-2.5 text-xs font-semibold'
+            }
+          >
+            Whole site
+          </button>
+        </div>
+        <button
+          type="submit"
+          disabled={pending || !personKey}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {pending ? '…' : 'Add'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
 function OtherExpenseForm({ yearMonth }: { yearMonth: string }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -548,17 +762,31 @@ export function YahyaExpensesPanel({
   const router = useRouter()
   const params = useSearchParams()
   const [checked, setChecked] = useState<Set<string>>(() => new Set())
+  const [query, setQuery] = useState('')
+  const [letter, setLetter] = useState<string | null>(null)
+  const [sort, setSort] = useState<SortMode>('name-asc')
 
   useEffect(() => {
     setChecked(loadChecked(snapshot.yearMonth))
   }, [snapshot.yearMonth])
 
+  const visiblePeople = useMemo(
+    () =>
+      snapshot.categories.flatMap((c) =>
+        filterAndSortPeople(c.people, query, letter, sort).map((p) => ({
+          ...p,
+          categoryId: c.id,
+        })),
+      ),
+    [snapshot.categories, query, letter, sort],
+  )
   const allKeys = useMemo(
     () => snapshot.categories.flatMap((c) => c.people.map((p) => p.key)),
     [snapshot.categories],
   )
-  const checkedCount = allKeys.filter((k) => checked.has(k)).length
-  const allDone = allKeys.length > 0 && checkedCount === allKeys.length
+  const visibleKeys = useMemo(() => visiblePeople.map((p) => p.key), [visiblePeople])
+  const checkedCount = visibleKeys.filter((k) => checked.has(k)).length
+  const allDone = visibleKeys.length > 0 && checkedCount === visibleKeys.length
 
   function pushMonth(yearMonth: string) {
     const next = new URLSearchParams(params.toString())
@@ -679,17 +907,86 @@ export function YahyaExpensesPanel({
         ))}
       </div>
 
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-card px-3 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex min-w-[200px] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+            Search by name
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Type a name…"
+              className="h-9 rounded-lg border border-input bg-background px-3 text-sm text-foreground"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Sort
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortMode)}
+              className="h-9 rounded-lg border border-input bg-background px-2 text-sm text-foreground"
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {(query || letter) && (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery('')
+                setLetter(null)
+              }}
+              className="mt-5 h-9 rounded-lg border border-border px-3 text-xs font-medium hover:bg-muted"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <button
+            type="button"
+            onClick={() => setLetter(null)}
+            className={
+              (letter == null
+                ? 'bg-slate-900 text-white dark:bg-primary '
+                : 'border border-border text-muted-foreground hover:bg-muted ') +
+              'rounded-md px-2 py-1 text-[11px] font-semibold'
+            }
+          >
+            All
+          </button>
+          {LETTERS.map((L) => (
+            <button
+              key={L}
+              type="button"
+              onClick={() => setLetter((prev) => (prev === L ? null : L))}
+              className={
+                (letter === L
+                  ? 'bg-sky-700 text-white '
+                  : 'border border-border text-muted-foreground hover:bg-muted ') +
+                'rounded-md px-1.5 py-1 text-[11px] font-semibold tabular-nums'
+              }
+            >
+              {L}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           Every amount is <span className="font-semibold text-foreground">monthly</span>. Open a list
-          when you want it. Check people as you verify ({checkedCount}/{allKeys.length} done).
-          {canMove
-            ? ' Yahya and Ahmed can move anyone between lists.'
-            : null}
+          when you want it. Check people as you verify ({checkedCount}/
+          {visibleKeys.length || allKeys.length} done).
+          {canMove ? ' Yahya and Ahmed can move anyone between lists.' : null}
         </p>
         <button
           type="button"
-          onClick={() => checkAll(allKeys, !allDone)}
+          onClick={() => checkAll(visibleKeys.length > 0 ? visibleKeys : allKeys, !allDone)}
           className="text-xs font-medium text-sky-800 hover:underline dark:text-sky-300"
         >
           {allDone ? 'Uncheck everyone' : 'Check everyone'}
@@ -705,10 +1002,16 @@ export function YahyaExpensesPanel({
           onToggle={toggle}
           onCheckAll={checkAll}
           canMove={canMove}
+          query={query}
+          letter={letter}
+          sort={sort}
         />
       ))}
 
       <div className="flex flex-col gap-2">
+        {canMove ? (
+          <AddPersonForm yearMonth={snapshot.yearMonth} candidates={snapshot.addCandidates} />
+        ) : null}
         <OtherExpenseForm yearMonth={snapshot.yearMonth} />
         <OtherExpenseDeletes items={snapshot.other} />
       </div>

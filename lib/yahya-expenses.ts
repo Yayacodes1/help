@@ -75,6 +75,17 @@ export type YahyaOtherExpense = {
   note: string | null
 }
 
+export type YahyaAddCandidate = {
+  key: string
+  name: string
+  kind: 'creator' | 'reposter' | 'leader'
+  creatorId: number | null
+  leaderId: number | null
+  currency: 'USD' | 'SAR'
+  /** Suggested monthly amount already on file (may be 0). */
+  suggestedMonthly: number
+}
+
 export type YahyaExpensesSnapshot = {
   yearMonth: string
   label: string
@@ -84,6 +95,8 @@ export type YahyaExpensesSnapshot = {
   categories: YahyaExpenseCategory[]
   other: YahyaOtherExpense[]
   nearbyMonths: { key: string; label: string }[]
+  /** People Yahya/Ahmed can add into a list (not already showing, or $0). */
+  addCandidates: YahyaAddCandidate[]
 }
 
 const HOMES = new Set<YahyaHome>(['creators', 'reposters', 'leaders', 'both', 'hidden'])
@@ -537,6 +550,92 @@ export async function getYahyaExpensesSnapshot(opts: {
     return { key, label: formatYearMonth(key) }
   })
 
+  const presentKeys = new Set(
+    categories.flatMap((c) => c.people.filter((p) => p.monthlyUsd > 0).map((p) => p.key)),
+  )
+  const presentCreatorIds = new Set(
+    categories.flatMap((c) =>
+      c.people.filter((p) => p.monthlyUsd > 0 && p.creatorId != null).map((p) => p.creatorId!),
+    ),
+  )
+  const presentLeaderIds = new Set(
+    categories.flatMap((c) =>
+      c.people.filter((p) => p.monthlyUsd > 0 && p.leaderId != null).map((p) => p.leaderId!),
+    ),
+  )
+
+  const addCandidates: YahyaAddCandidate[] = []
+  for (const p of outflow.peopleTotals) {
+    const isReposter = p.role === 'reposter'
+    const key = isReposter ? `reposter-${p.creator_id}` : `creator-${p.creator_id}`
+    if (presentKeys.has(key) || presentCreatorIds.has(p.creator_id)) continue
+    const currency = p.currency
+    const suggested =
+      currency === 'USD' ? round2(p.monthly) : round2(p.monthly * SAR_PER_USD)
+    addCandidates.push({
+      key,
+      name: p.creator_name,
+      kind: isReposter ? 'reposter' : 'creator',
+      creatorId: p.creator_id,
+      leaderId: null,
+      currency,
+      suggestedMonthly: suggested,
+    })
+  }
+  // Creators/reposters with no contract pay yet still show up as addable.
+  const paidCreatorIds = new Set(outflow.peopleTotals.map((p) => p.creator_id))
+  const zeroPayPeople = (await sql`
+    SELECT id, name, role, pay_currency, biweekly_amount::float AS biweekly_amount
+    FROM creators
+    WHERE paused_at IS NULL
+      AND role IN ('creator', 'reposter')
+    ORDER BY name ASC
+  `) as {
+    id: number
+    name: string
+    role: string
+    pay_currency: string | null
+    biweekly_amount: number | null
+  }[]
+  for (const row of zeroPayPeople) {
+    if (paidCreatorIds.has(row.id) || presentCreatorIds.has(row.id)) continue
+    const isReposter = row.role === 'reposter'
+    const key = isReposter ? `reposter-${row.id}` : `creator-${row.id}`
+    if (presentKeys.has(key)) continue
+    const currency: 'USD' | 'SAR' =
+      row.pay_currency === 'USD' || row.pay_currency === 'SAR'
+        ? row.pay_currency
+        : isReposter
+          ? 'USD'
+          : 'SAR'
+    const biweekly = Number(row.biweekly_amount) || 0
+    const monthly = round2(biweekly * 2)
+    addCandidates.push({
+      key,
+      name: row.name,
+      kind: isReposter ? 'reposter' : 'creator',
+      creatorId: row.id,
+      leaderId: null,
+      currency,
+      suggestedMonthly: monthly,
+    })
+  }
+  for (const l of leadersDir.leaders) {
+    if (presentLeaderIds.has(l.id) || presentKeys.has(`leader-${l.id}`)) continue
+    const currency = l.payCurrency
+    const native = Number(l.monthlyPay) || 0
+    addCandidates.push({
+      key: `leader-${l.id}`,
+      name: l.name,
+      kind: 'leader',
+      creatorId: l.reposterId,
+      leaderId: l.id,
+      currency,
+      suggestedMonthly: round2(native),
+    })
+  }
+  addCandidates.sort((a, b) => a.name.localeCompare(b.name))
+
   return {
     yearMonth,
     label: formatYearMonth(yearMonth),
@@ -546,7 +645,32 @@ export async function getYahyaExpensesSnapshot(opts: {
     categories,
     other,
     nearbyMonths,
+    addCandidates,
   }
+}
+
+/** Put an existing person onto a Yahya expense list with a monthly amount. */
+export async function addYahyaPersonToList(input: {
+  yearMonth: string
+  personKey: string
+  home: 'creators' | 'reposters' | 'leaders'
+  amount: number
+  currency: 'USD' | 'SAR'
+  scope: 'site' | 'page'
+  creatorId?: number | null
+  leaderId?: number | null
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const homeRes = await setYahyaHome({ personKey: input.personKey, home: input.home })
+  if (!homeRes.ok) return homeRes
+  return setYahyaPersonMonthly({
+    yearMonth: input.yearMonth,
+    personKey: input.personKey,
+    amount: input.amount,
+    currency: input.currency,
+    scope: input.scope,
+    creatorId: input.creatorId,
+    leaderId: input.leaderId,
+  })
 }
 
 export async function addYahyaOtherExpense(input: {
