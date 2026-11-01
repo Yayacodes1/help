@@ -94,19 +94,20 @@ function groupMonth(rows: PaymentRow[], today: string): PaymentArchivePerson[] {
 
 export async function loadPaymentArchive(today: string): Promise<{
   months: PaymentArchiveMonth[]
+  summaryFrom: string
+  summaryTo: string
 }> {
   const current = today.slice(0, 7)
+  const recentStart = shiftMonth(current, -2)
+  const recentEnd = shiftMonth(current, 3)
   const bounds = (await sql`
     SELECT MIN(paid_on)::text AS first_paid, MAX(paid_on)::text AS last_paid
     FROM payments
   `) as { first_paid: string | null; last_paid: string | null }[]
-  const earliest = bounds[0]?.first_paid?.slice(0, 7) || current
-  const latest = bounds[0]?.last_paid?.slice(0, 7) || current
-  const startMonth = earliest < shiftMonth(current, -2) ? earliest : shiftMonth(current, -2)
-  const endMonth = latest > shiftMonth(current, 3) ? latest : shiftMonth(current, 3)
-  const months = eachMonth(startMonth, endMonth)
-  const { start } = calendarMonthRange(months[0])
-  const { end } = calendarMonthRange(months[months.length - 1])
+  const earliest = bounds[0]?.first_paid?.slice(0, 7) || recentStart
+  const latest = bounds[0]?.last_paid?.slice(0, 7) || recentEnd
+  const { start } = calendarMonthRange(earliest < recentStart ? earliest : recentStart)
+  const { end } = calendarMonthRange(latest > recentEnd ? latest : recentEnd)
 
   const rows = (await sql`
     SELECT p.creator_id, cr.name AS creator_name, cr.role, cr.pay_currency,
@@ -132,6 +133,8 @@ export async function loadPaymentArchive(today: string): Promise<{
     byMonth.set(month, list)
   }
 
+  const monthSet = new Set<string>([...byMonth.keys(), ...eachMonth(recentStart, recentEnd)])
+  const months = [...monthSet].sort()
   const built = months.map((month) => {
     const people = groupMonth(byMonth.get(month) ?? [], today)
     return {
@@ -166,5 +169,13 @@ export async function loadPaymentArchive(today: string): Promise<{
     }
   }
 
-  return { months: built }
+  let summaryFrom = months[0] ?? current
+  for (let i = 1; i < months.length; i++) {
+    if (months[i] !== shiftMonth(months[i - 1], 1)) summaryFrom = months[i]
+  }
+  return {
+    months: built,
+    summaryFrom,
+    summaryTo: months[months.length - 1] ?? current,
+  }
 }
