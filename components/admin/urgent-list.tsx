@@ -3,7 +3,7 @@
 import { useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { setCreatorUrgent } from '@/app/actions/admin'
+import { markUrgentPaid, setCreatorUrgent } from '@/app/actions/admin'
 import { adminPersonHref } from '@/lib/admin-href'
 import { MoneyPair } from '@/components/admin/money-pair'
 import { SplitColumns } from '@/components/admin/split-columns'
@@ -17,6 +17,7 @@ type UrgentPayRow = {
   amountSar: number
   daysLate: number
   settled: boolean
+  markedPaid: boolean
 }
 
 function dueLabel(dueOn: string, locale: string): string {
@@ -49,6 +50,7 @@ export function UrgentList({
     empty: string
     noDate: string
     paid: string
+    wePaid: string
     remove: string
     creators: string
     reposters: string
@@ -78,10 +80,26 @@ export function UrgentList({
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {row.dueOn ? dueLabel(row.dueOn, locale) : labels.noDate}
-            {row.settled ? ` · ${labels.paid}` : ''}
           </p>
-          {row.daysLate > 0 ? (
+          {row.markedPaid || row.settled ? (
+            <p className="mt-1 text-sm font-medium">{labels.wePaid}</p>
+          ) : row.daysLate > 0 ? (
             <p className="mt-1 text-sm font-medium text-destructive">{lateLabel(row.daysLate, locale)}</p>
+          ) : null}
+          {canRemove && !row.markedPaid && !row.settled ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                startTransition(async () => {
+                  await markUrgentPaid(row.id)
+                  router.refresh()
+                })
+              }}
+              className="mt-2 mr-2 rounded-md bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground disabled:opacity-60"
+            >
+              {labels.wePaid}
+            </button>
           ) : null}
           {canRemove ? (
             <button

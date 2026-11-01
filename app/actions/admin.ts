@@ -1020,6 +1020,19 @@ export async function setCreatorUrgent(creatorId: number, urgent: boolean) {
   return { ok: true as const }
 }
 
+/** Urgent list: note that this person was paid. Does not record a calendar payment. */
+export async function markUrgentPaid(creatorId: number) {
+  await requireAdmin()
+  const session = await getAdminSession()
+  if (!session || !canSendUrgentList(session.id)) return { ok: false as const }
+  await ensureCreatorTrackingColumns()
+  const id = Math.floor(Number(creatorId))
+  if (!(id > 0)) return { ok: false as const }
+  await sql`UPDATE urgent_payments SET marked_paid = true WHERE creator_id = ${id}`
+  revalidatePath('/admin')
+  return { ok: true as const }
+}
+
 /** Timeline Manage: the contract details are filled in. Does not end the contract or record a payment. */
 export async function markContractDetailsDone(creatorId: number, contractId: number, done: boolean) {
   await requireAdmin()

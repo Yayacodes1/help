@@ -328,6 +328,7 @@ async function runEnsureCreatorTrackingColumns() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
+  await sql`ALTER TABLE urgent_payments ADD COLUMN IF NOT EXISTS marked_paid boolean NOT NULL DEFAULT false`
   await sql`
     UPDATE contracts
     SET base_pay_cadence = 'monthly'

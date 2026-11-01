@@ -11,13 +11,16 @@ export type UrgentPayRow = {
   amountSar: number
   daysLate: number
   settled: boolean
+  markedPaid: boolean
 }
 
-export async function listUrgentCreatorIds(): Promise<number[]> {
+export async function listUrgentMarks(): Promise<{ id: number; markedPaid: boolean }[]> {
   const rows = (await sql`
-    SELECT creator_id FROM urgent_payments ORDER BY created_at ASC, creator_id ASC
-  `) as { creator_id: number }[]
-  return rows.map((row) => row.creator_id)
+    SELECT creator_id, COALESCE(marked_paid, false) AS marked_paid
+    FROM urgent_payments
+    ORDER BY created_at ASC, creator_id ASC
+  `) as { creator_id: number; marked_paid: boolean }[]
+  return rows.map((row) => ({ id: row.creator_id, markedPaid: row.marked_paid }))
 }
 
 function nextUnpaid(person: CreatorTrackingRow): {
@@ -49,7 +52,11 @@ function nextUnpaid(person: CreatorTrackingRow): {
   }
 }
 
-export function urgentPayFromTracking(person: CreatorTrackingRow, today: string): UrgentPayRow {
+export function urgentPayFromTracking(
+  person: CreatorTrackingRow,
+  today: string,
+  markedPaid = false,
+): UrgentPayRow {
   const next = nextUnpaid(person)
   const daysLate =
     next.settled || !next.dueOn || next.dueOn >= today ? 0 : Math.max(0, daysAhead(next.dueOn, today))
@@ -59,18 +66,21 @@ export function urgentPayFromTracking(person: CreatorTrackingRow, today: string)
     role: person.role,
     dueOn: next.dueOn,
     amountSar: amountToSar(next.amount, person.pay_display_currency),
-    daysLate,
+    daysLate: markedPaid ? 0 : daysLate,
     settled: next.settled,
+    markedPaid,
   }
 }
 
 export async function loadUrgentList(today: string): Promise<{ ids: number[]; rows: UrgentPayRow[] }> {
-  const ids = await listUrgentCreatorIds()
+  const marks = await listUrgentMarks()
+  const ids = marks.map((mark) => mark.id)
+  const marked = new Map(marks.map((mark) => [mark.id, mark.markedPaid]))
   if (ids.length === 0) return { ids, rows: [] }
   const people = await getCreatorsWithProgressOnDate(today, undefined, null, { creatorIds: ids })
   const tracked = await attachTracking(people, today)
   const rows = tracked
-    .map((person) => urgentPayFromTracking(person, today))
+    .map((person) => urgentPayFromTracking(person, today, marked.get(person.id) === true))
     .sort((a, b) => b.daysLate - a.daysLate || (a.dueOn ?? '9999').localeCompare(b.dueOn ?? '9999') || a.name.localeCompare(b.name))
   return { ids, rows }
 }
