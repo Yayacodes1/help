@@ -135,6 +135,10 @@ export type Contract = {
   pay_timing?: 'fifteen' | 'upfront' | 'end' | null
   /** Admin marked the contract details as finished. */
   details_done?: boolean
+  /** Manual first-wave amount. Null keeps the automatic split. */
+  first_pay_amount?: number | null
+  /** Manual second-wave amount. Null keeps the automatic split. */
+  second_pay_amount?: number | null
   /** Commission (nullable until set later) */
   commission_amount: number | null
   /** Null = use house default */

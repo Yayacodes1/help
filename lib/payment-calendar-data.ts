@@ -33,6 +33,8 @@ export async function loadPaymentCalendar(opts: {
              c.commission_amount::float AS commission_amount,
              COALESCE(NULLIF(c.base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
              c.pay_timing,
+             c.first_pay_amount::float AS first_pay_amount,
+             c.second_pay_amount::float AS second_pay_amount,
              c.target_instagram, c.target_tiktok, c.platforms,
              COALESCE(cr.pay_every_days, 14)::int AS pay_every_days,
              cr.id AS creator_id, cr.name AS creator_name, cr.role,
@@ -87,6 +89,8 @@ export async function loadPaymentCalendar(opts: {
       commission_amount: number | null
       base_pay_cadence: string
       pay_timing: string | null
+      first_pay_amount: number | null
+      second_pay_amount: number | null
       target_instagram: number
       target_tiktok: number
       platforms: string | null
@@ -108,6 +112,8 @@ export async function loadPaymentCalendar(opts: {
     commissionAmount: row.commission_amount == null ? null : Number(row.commission_amount),
     basePayCadence: row.base_pay_cadence,
     payTiming: row.pay_timing,
+    firstPayAmount: row.first_pay_amount == null ? null : Number(row.first_pay_amount),
+    secondPayAmount: row.second_pay_amount == null ? null : Number(row.second_pay_amount),
     targetInstagram: row.target_instagram,
     targetTiktok: row.target_tiktok,
     platforms: row.platforms,

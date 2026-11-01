@@ -21,6 +21,7 @@ import {
   contractHalfWindows,
   contractSupportsBiweeklyHalves,
   contractWaveStatus,
+  explicitPayAmount,
   normalizeBasePayCadence,
   periodBaseTotal,
   type ContractHalfStatus,
@@ -571,6 +572,8 @@ export async function getContractsForCreator(creatorId: number): Promise<Contrac
            base_amount::float AS base_amount,
            COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
            pay_timing,
+           first_pay_amount::float AS first_pay_amount,
+           second_pay_amount::float AS second_pay_amount,
            commission_amount::float AS commission_amount,
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
@@ -599,6 +602,8 @@ export async function getActiveContract(
            base_amount::float AS base_amount,
            COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
            pay_timing,
+           first_pay_amount::float AS first_pay_amount,
+           second_pay_amount::float AS second_pay_amount,
            commission_amount::float AS commission_amount,
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
@@ -626,6 +631,8 @@ export async function getActiveContract(
            base_amount::float AS base_amount,
            COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
            pay_timing,
+           first_pay_amount::float AS first_pay_amount,
+           second_pay_amount::float AS second_pay_amount,
            commission_amount::float AS commission_amount,
            count_mode, views_threshold,
            view_commission_amount::float AS view_commission_amount,
@@ -1152,7 +1159,21 @@ export async function getContractComparisons(
       const displayRate = videoRate != null ? videoRate : consistency.hitRate
       const commissionMissing = contract.commission_amount == null
       const minDue = minimumContractDue(contract)
-      const balance = Math.max(0, Math.round((minDue - paidAmount) * 100) / 100)
+      const wavePreview = contractWaveStatus({
+        start: contract.start_date,
+        end: contract.end_date,
+        minDue,
+        payments,
+        timing: contract.pay_timing,
+        firstAmount: contract.first_pay_amount,
+        secondAmount: contract.second_pay_amount,
+      })
+      const manualWaves =
+        explicitPayAmount(contract.first_pay_amount) != null ||
+        explicitPayAmount(contract.second_pay_amount) != null
+      const balance = manualWaves
+        ? Math.max(0, Math.round((wavePreview.firstBalance + wavePreview.secondBalance) * 100) / 100)
+        : Math.max(0, Math.round((minDue - paidAmount) * 100) / 100)
 
       let halves: ContractHalfStatus[] = []
       if (
@@ -1175,6 +1196,8 @@ export async function getContractComparisons(
           dueTotal: minDue,
           payments,
           everyDays,
+          firstAmount: contract.first_pay_amount,
+          secondAmount: contract.second_pay_amount,
           firstVideos,
           secondVideos,
         })
@@ -1383,6 +1406,8 @@ export async function getPaymentDueList(
         minDue,
         payments,
         timing,
+        firstAmount: contract.first_pay_amount,
+        secondAmount: contract.second_pay_amount,
       })
       const videoRate =
         targets > 0
@@ -1726,6 +1751,8 @@ export async function getConsistencyForCreators(
              base_amount::float AS base_amount,
              COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
              pay_timing,
+             first_pay_amount::float AS first_pay_amount,
+             second_pay_amount::float AS second_pay_amount,
              commission_amount::float AS commission_amount,
              count_mode, views_threshold,
              view_commission_amount::float AS view_commission_amount,
@@ -1961,6 +1988,8 @@ export async function attachTracking(
           minDue: minimumContractDue(active),
           payments: paysByContract.get(active.id) ?? [],
           timing: timing ?? undefined,
+          firstAmount: active.first_pay_amount,
+          secondAmount: active.second_pay_amount,
         })
       : null
     const slices = active

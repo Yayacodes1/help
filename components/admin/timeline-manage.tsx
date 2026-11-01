@@ -4,19 +4,18 @@ import { useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Heart, Pencil, Search, X } from 'lucide-react'
-import { markContractDetailsDone, recordDueHalfPayment, saveTimelineContract } from '@/app/actions/admin'
+import {
+  markContractDetailsDone,
+  recordDueHalfPayment,
+  saveTimelineContract,
+  saveTimelineWaveAmounts,
+} from '@/app/actions/admin'
 import type { CreatorTrackingRow } from '@/lib/queries'
 import { personBelongsOnProjectManage } from '@/lib/project-scope'
 import { participantRoleLabel } from '@/lib/participant-role'
 import { formatMoney } from '@/lib/format'
 import { adminPersonHref } from '@/lib/admin-href'
 import { PersonHandlesLine } from '@/components/person-handles'
-import {
-  displayHandle,
-  instagramProfileUrl,
-  loginHandleFor,
-  tiktokProfileUrl,
-} from '@/lib/usernames'
 
 export type TimelineLabels = {
   title: string
@@ -44,6 +43,7 @@ export type TimelineLabels = {
   empty: string
   paused: string
   saving: string
+  editPayments: string
 }
 
 function timingLabel(
@@ -90,6 +90,7 @@ export function TimelineManage({
 }) {
   const router = useRouter()
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingPaysId, setEditingPaysId] = useState<number | null>(null)
   const [pending, startTransition] = useTransition()
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -186,6 +187,78 @@ export function TimelineManage({
           </button>
         ) : null}
       </div>
+    )
+  }
+
+  function PayEditor({ person }: { person: CreatorTrackingRow }) {
+    return (
+      <form
+        action={(fd) => {
+          setError(null)
+          startTransition(async () => {
+            const result = await saveTimelineWaveAmounts(fd)
+            if (result && !result.ok) {
+              setError(result.message)
+              return
+            }
+            setEditingPaysId(null)
+            router.refresh()
+          })
+        }}
+        className="mt-2 flex flex-col gap-2"
+      >
+        <input type="hidden" name="creator_id" value={person.id} />
+        <input type="hidden" name="contract_id" value={person.contract_id ?? ''} />
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {labels.firstPayment} · {person.pay_display_currency}
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              name="first_amount"
+              required
+              defaultValue={person.first_due || ''}
+              className={inputClass}
+            />
+          </label>
+          {person.has_two_pays ? (
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              {labels.secondPayment} · {person.pay_display_currency}
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                name="second_amount"
+                required
+                defaultValue={person.second_due || ''}
+                className={inputClass}
+              />
+            </label>
+          ) : null}
+        </div>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="submit"
+            disabled={pending}
+            className="h-9 rounded-lg border border-border px-3 text-sm font-semibold hover:bg-accent disabled:opacity-60"
+          >
+            {pending ? labels.saving : labels.saveOnly}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setEditingPaysId(null)
+              setError(null)
+            }}
+            className="inline-flex h-9 items-center rounded-lg border border-border px-3 text-sm"
+          >
+            <X className="size-4" />
+            <span className="ml-1">{labels.cancel}</span>
+          </button>
+        </div>
+      </form>
     )
   }
 
@@ -326,30 +399,10 @@ export function TimelineManage({
 
   function Row({ person }: { person: CreatorTrackingRow }) {
     if (editingId === person.id) return <Editor person={person} />
-    const login = loginHandleFor(person)
-    const loginHandle =
-      login.platform === 'instagram'
-        ? displayHandle(person.instagram_username)
-        : displayHandle(person.tiktok_username)
-    const loginHref =
-      login.platform === 'instagram'
-        ? instagramProfileUrl(loginHandle)
-        : tiktokProfileUrl(loginHandle)
     return (
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            {loginHandle && loginHref ? (
-              <a
-                href={loginHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
-                dir="ltr"
-              >
-                @{loginHandle}
-              </a>
-            ) : null}
             <Link
               href={adminPersonHref(person.id, {
                 role: person.role,
@@ -376,19 +429,38 @@ export function TimelineManage({
               </>
             ) : null}
           </div>
-          {person.first_due > 0.009 || person.second_due > 0.009 ? (
-            <div className="mt-0.5 text-xs text-muted-foreground">
-              {labels.firstPayment} {formatMoney(person.first_due, person.pay_display_currency)}
-              {person.first_settled ? ` · ${labels.paid}` : ''}
-              {person.has_two_pays ? (
-                <>
-                  {' · '}
-                  {labels.secondPayment} {formatMoney(person.second_due, person.pay_display_currency)}
-                  {person.second_settled ? ` · ${labels.paid}` : ''}
-                </>
+          {editingPaysId === person.id ? (
+            <PayEditor person={person} />
+          ) : (
+            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {person.first_due > 0.009 || person.second_due > 0.009 ? (
+                <span>
+                  {labels.firstPayment} {formatMoney(person.first_due, person.pay_display_currency)}
+                  {person.first_settled ? ` · ${labels.paid}` : ''}
+                  {person.has_two_pays ? (
+                    <>
+                      {' · '}
+                      {labels.secondPayment} {formatMoney(person.second_due, person.pay_display_currency)}
+                      {person.second_settled ? ` · ${labels.paid}` : ''}
+                    </>
+                  ) : null}
+                </span>
+              ) : null}
+              {person.contract_id ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingPaysId(person.id)
+                    setEditingId(null)
+                    setError(null)
+                  }}
+                  className="rounded-md border border-border px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-accent"
+                >
+                  {labels.editPayments}
+                </button>
               ) : null}
             </div>
-          ) : null}
+          )}
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -407,6 +479,7 @@ export function TimelineManage({
             type="button"
             onClick={() => {
               setEditingId(person.id)
+              setEditingPaysId(null)
               setError(null)
             }}
             className="rounded-md border border-border p-1.5 hover:bg-accent"

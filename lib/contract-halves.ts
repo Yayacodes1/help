@@ -8,6 +8,14 @@ function roundMoney(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100
 }
 
+/** A typed wave amount. Null means keep the automatic split. */
+export function explicitPayAmount(value: number | null | undefined): number | null {
+  if (value == null) return null
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 0) return null
+  return roundMoney(n)
+}
+
 export type BasePayCadence = 'monthly' | 'biweekly'
 
 export function normalizeBasePayCadence(
@@ -136,21 +144,26 @@ export function contractWaveStatus(opts: {
   payments: HalfPayment[]
   everyDays?: number
   timing?: string | null
+  firstAmount?: number | null
+  secondAmount?: number | null
 }): ContractWaveStatus {
   const every = opts.everyDays ?? 14
   const minDue = roundMoney(opts.minDue)
   const oneTime = (opts.timing ?? '').toString().trim() === 'end'
   const hasTwoHalves =
     !oneTime && !!opts.end && contractSupportsBiweeklyHalves(opts.start, opts.end, every)
+  const firstOverride = explicitPayAmount(opts.firstAmount)
+  const secondOverride = explicitPayAmount(opts.secondAmount)
   if (!hasTwoHalves) {
+    const due = firstOverride ?? minDue
     const paid = roundMoney(opts.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0))
-    const balance = Math.max(0, roundMoney(minDue - paid))
+    const balance = Math.max(0, roundMoney(due - paid))
     return {
       hasTwoHalves: false,
-      firstDue: minDue,
+      firstDue: due,
       firstPaid: paid,
       firstBalance: balance,
-      firstSettled: minDue <= 0.009 ? paid > 0.009 : balance <= 0.009,
+      firstSettled: due <= 0.009 ? paid > 0.009 : balance <= 0.009,
       secondDue: 0,
       secondPaid: 0,
       secondBalance: 0,
@@ -158,19 +171,21 @@ export function contractWaveStatus(opts: {
     }
   }
   const split = inferBiweeklyInstallments(minDue, [])
-  const assigned = assignPaymentsToHalves(opts.payments, split.first, split.second)
-  const firstBalance = Math.max(0, roundMoney(split.first - assigned.firstPaid))
-  const secondBalance = Math.max(0, roundMoney(split.second - assigned.secondPaid))
+  const firstDue = firstOverride ?? roundMoney(split.first)
+  const secondDue = secondOverride ?? roundMoney(split.second)
+  const assigned = assignPaymentsToHalves(opts.payments, firstDue, secondDue)
+  const firstBalance = Math.max(0, roundMoney(firstDue - assigned.firstPaid))
+  const secondBalance = Math.max(0, roundMoney(secondDue - assigned.secondPaid))
   return {
     hasTwoHalves: true,
-    firstDue: roundMoney(split.first),
+    firstDue,
     firstPaid: assigned.firstPaid,
     firstBalance,
-    firstSettled: split.first <= 0.009 ? assigned.firstPaid > 0.009 : firstBalance <= 0.009,
-    secondDue: roundMoney(split.second),
+    firstSettled: firstDue <= 0.009 ? assigned.firstPaid > 0.009 : firstBalance <= 0.009,
+    secondDue,
     secondPaid: assigned.secondPaid,
     secondBalance,
-    secondSettled: split.second <= 0.009 ? assigned.secondPaid > 0.009 : secondBalance <= 0.009,
+    secondSettled: secondDue <= 0.009 ? assigned.secondPaid > 0.009 : secondBalance <= 0.009,
   }
 }
 
@@ -264,12 +279,16 @@ export function buildContractHalves(opts: {
   dueTotal: number
   payments: HalfPayment[]
   everyDays?: number
+  firstAmount?: number | null
+  secondAmount?: number | null
   firstVideos: { total: number; instagram: number; tiktok: number }
   secondVideos: { total: number; instagram: number; tiktok: number }
 }): ContractHalfStatus[] {
   const [w1, w2] = contractHalfWindows(opts.start, opts.end, opts.everyDays)
   const split = inferBiweeklyInstallments(opts.dueTotal, [])
-  const assigned = assignPaymentsToHalves(opts.payments, split.first, split.second)
+  const firstDue = explicitPayAmount(opts.firstAmount) ?? split.first
+  const secondDue = explicitPayAmount(opts.secondAmount) ?? split.second
+  const assigned = assignPaymentsToHalves(opts.payments, firstDue, secondDue)
 
   const mk = (
     window: ContractHalfWindow,
@@ -295,7 +314,7 @@ export function buildContractHalves(opts: {
   }
 
   return [
-    mk(w1, split.first, assigned.firstPaid, assigned.firstLastPaidOn, opts.firstVideos),
-    mk(w2, split.second, assigned.secondPaid, assigned.secondLastPaidOn, opts.secondVideos),
+    mk(w1, firstDue, assigned.firstPaid, assigned.firstLastPaidOn, opts.firstVideos),
+    mk(w2, secondDue, assigned.secondPaid, assigned.secondLastPaidOn, opts.secondVideos),
   ]
 }

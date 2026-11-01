@@ -744,6 +744,7 @@ export default async function AdminPage({
     empty: t('timelineEmpty'),
     paused: t('timelinePaused'),
     saving: t('timelineSaving'),
+    editPayments: t('timelineEditPayments'),
   }
   const activeTodayLabel =
     roleFilter === 'reposter'

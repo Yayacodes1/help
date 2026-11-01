@@ -30,6 +30,7 @@ import { redirect } from 'next/navigation'
 import { normalizeHandle, parseLoginPlatform, parseOptionalHandle, resolveLoginPlatform } from '@/lib/usernames'
 import { HOUSE_COMMISSION, normalizeCountMode } from '@/lib/commission'
 import {
+  contractSupportsBiweeklyHalves,
   contractWaveStatus,
   halfPaymentNote,
   normalizeBasePayCadence,
@@ -811,12 +812,33 @@ export async function saveTimelineContract(formData: FormData) {
 
   const baseAmount = parseAmount(formData.get('base_amount'))
   if (contractId) {
-    await sql`
-      UPDATE contracts
-      SET start_date = ${start}, end_date = ${end}, pay_timing = ${payTiming},
-          base_amount = ${baseAmount}
+    const previous = (await sql`
+      SELECT base_amount::float AS base_amount, pay_timing
+      FROM contracts
       WHERE id = ${contractId} AND creator_id = ${creatorId}
-    `
+      LIMIT 1
+    `) as { base_amount: number; pay_timing: string | null }[]
+    const prior = previous[0]
+    const resetWaves =
+      !prior ||
+      Math.round((Number(prior.base_amount) || 0) * 100) !== Math.round(baseAmount * 100) ||
+      (prior.pay_timing ?? 'fifteen') !== payTiming
+    if (resetWaves) {
+      await sql`
+        UPDATE contracts
+        SET start_date = ${start}, end_date = ${end}, pay_timing = ${payTiming},
+            base_amount = ${baseAmount},
+            first_pay_amount = NULL, second_pay_amount = NULL
+        WHERE id = ${contractId} AND creator_id = ${creatorId}
+      `
+    } else {
+      await sql`
+        UPDATE contracts
+        SET start_date = ${start}, end_date = ${end}, pay_timing = ${payTiming},
+            base_amount = ${baseAmount}
+        WHERE id = ${contractId} AND creator_id = ${creatorId}
+      `
+    }
   } else {
     const person = (await sql`
       SELECT name, platforms, goal_instagram, goal_tiktok,
@@ -865,6 +887,41 @@ export async function saveTimelineContract(formData: FormData) {
     const calMonth = (payTiming === 'end' && end ? end : today).slice(0, 7)
     redirect(`/admin?tab=money&panel=calendar&calMonth=${calMonth}`)
   }
+  return { ok: true as const }
+}
+
+/** Timeline Manage: set the first and second payment amounts by hand. */
+export async function saveTimelineWaveAmounts(formData: FormData) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const creatorId = Math.floor(Number(formData.get('creator_id')))
+  const contractId = Math.floor(Number(formData.get('contract_id')))
+  if (!(creatorId > 0) || !(contractId > 0)) {
+    return { ok: false as const, message: 'Missing contract.' }
+  }
+  const rows = (await sql`
+    SELECT id, start_date::text AS start_date, end_date::text AS end_date, pay_timing
+    FROM contracts
+    WHERE id = ${contractId} AND creator_id = ${creatorId}
+    LIMIT 1
+  `) as { id: number; start_date: string; end_date: string | null; pay_timing: string | null }[]
+  const contract = rows[0]
+  if (!contract) return { ok: false as const, message: 'Contract not found.' }
+  const oneTime =
+    contract.pay_timing === 'end' ||
+    !contract.end_date ||
+    !contractSupportsBiweeklyHalves(contract.start_date, contract.end_date, 14)
+  const first = parseAmount(formData.get('first_amount'))
+  const second = oneTime ? null : parseAmount(formData.get('second_amount'))
+  await sql`
+    UPDATE contracts
+    SET first_pay_amount = ${first},
+        second_pay_amount = ${second}
+    WHERE id = ${contract.id} AND creator_id = ${creatorId}
+  `
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  revalidatePath('/admin/payments', 'layout')
   return { ok: true as const }
 }
 
@@ -1140,6 +1197,8 @@ export async function recordDueHalfPayment(
   const rows = (await sql`
     SELECT id, name, start_date::text AS start_date, end_date::text AS end_date,
            base_amount::float AS base_amount, base_pay_cadence, pay_timing,
+           first_pay_amount::float AS first_pay_amount,
+           second_pay_amount::float AS second_pay_amount,
            commission_amount::float AS commission_amount
     FROM contracts
     WHERE id = ${contractId} AND creator_id = ${creatorId}
@@ -1152,6 +1211,8 @@ export async function recordDueHalfPayment(
     base_amount: number
     base_pay_cadence: string | null
     pay_timing: string | null
+    first_pay_amount: number | null
+    second_pay_amount: number | null
     commission_amount: number | null
   }[]
   const contract = rows[0]
@@ -1171,6 +1232,8 @@ export async function recordDueHalfPayment(
     minDue,
     payments,
     timing: contract.pay_timing,
+    firstAmount: contract.first_pay_amount,
+    secondAmount: contract.second_pay_amount,
   })
   const source = await paymentSource(null)
   const toRecord: Array<{ amount: number; note: string }> = []

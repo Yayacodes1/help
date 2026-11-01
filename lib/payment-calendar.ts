@@ -1,6 +1,6 @@
 import { addDays, calendarMonthRange } from '@/lib/campaign'
 import { type BiweeklyInstallment } from '@/lib/biweekly'
-import { normalizeBasePayCadence } from '@/lib/contract-halves'
+import { explicitPayAmount, normalizeBasePayCadence } from '@/lib/contract-halves'
 import { payCurrency } from '@/lib/format'
 import { normalizePlatforms, videoCompletionRate } from '@/lib/platforms-mode'
 import type { ParticipantRole } from '@/lib/participant-role'
@@ -40,6 +40,8 @@ export type CalendarContractInput = {
   commissionAmount: number | null
   basePayCadence: string | null
   payTiming: string | null
+  firstPayAmount?: number | null
+  secondPayAmount?: number | null
   targetInstagram: number
   targetTiktok: number
   platforms: string | null
@@ -211,7 +213,11 @@ export function obligationsFromContract(
   const commission = contract.commissionAmount == null ? 0 : Number(contract.commissionAmount)
   const currency = payCurrency(contract.role, contract.payCurrency)
   const commissionInDue = Boolean(contract.endDate)
-  if (contract.baseAmount <= 0 && commission <= 0) return []
+  const firstManual = explicitPayAmount(contract.firstPayAmount)
+  const secondManual = explicitPayAmount(contract.secondPayAmount)
+  if (contract.baseAmount <= 0 && commission <= 0 && firstManual == null && secondManual == null) {
+    return []
+  }
 
   const timing: PayTiming = resolvePayTiming({
     stored: contract.payTiming,
@@ -227,7 +233,7 @@ export function obligationsFromContract(
     timing,
     through: scheduleThrough,
   })
-  const sliceAmounts =
+  const sliceAmounts = (
     timing === 'end'
       ? slices.map(() => roundMoney(contract.baseAmount + commission))
       : amountsForPaySlices({
@@ -236,6 +242,11 @@ export function obligationsFromContract(
           commission,
           sliceCount: slices.length,
         })
+  ).map((amount, index) => {
+    if (index === 0 && firstManual != null) return firstManual
+    if (index === 1 && timing !== 'end' && secondManual != null) return secondManual
+    return amount
+  })
   const schedule: BiweeklyInstallment[] = slices.map((slice, i) => ({
     dueOn: slice.dueOn,
     amount: sliceAmounts[i] ?? 0,
