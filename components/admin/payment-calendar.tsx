@@ -110,7 +110,8 @@ export function PaymentCalendarBoard({
     today: string
     creators: string
     reposters: string
-    both: string
+    company: string
+    all: string
     spent: string
     remaining: string
     commission: string
@@ -216,7 +217,8 @@ export function PaymentCalendarBoard({
           today: labels.today,
           creators: labels.creators,
           reposters: labels.reposters,
-          both: labels.both,
+          company: labels.company,
+          all: labels.all,
         }}
       />
       <h3 className="text-lg font-semibold tracking-tight">{monthLabel}</h3>

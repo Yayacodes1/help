@@ -19,7 +19,8 @@ export function PaymentCalendarNav({
     today: string
     creators: string
     reposters: string
-    both: string
+    company: string
+    all: string
   }
 }) {
   const router = useRouter()
@@ -67,8 +68,11 @@ export function PaymentCalendarNav({
         <button type="button" onClick={() => push({ calRole: 'reposter' })} className={toggleClass(role === 'reposter')}>
           {labels.reposters}
         </button>
+        <button type="button" onClick={() => push({ calRole: 'company' })} className={toggleClass(role === 'company')}>
+          {labels.company}
+        </button>
         <button type="button" onClick={() => push({ calRole: 'all' })} className={toggleClass(role === 'all')}>
-          {labels.both}
+          {labels.all}
         </button>
       </div>
     </div>

@@ -44,7 +44,7 @@ export async function saveStructureContract(formData: FormData) {
   if (!session) throw new Error('Unauthorized')
   const subjectKey = (formData.get('subject_key') ?? '').toString().trim()
   const tier = tierFromSubjectKey(subjectKey)
-  if (!tier || tier === 'reposter' || !canSeeStructureTier(session.id, tier)) {
+  if (!tier || tier === 'reposter' || tier === 'ceo' || !canSeeStructureTier(session.id, tier)) {
     return { ok: false as const, message: 'You cannot edit this pay.' }
   }
   const start = parseDate(formData.get('start_date'))
@@ -92,7 +92,7 @@ async function editableStructure(subjectKey: string) {
   const session = await getAdminSession()
   if (!session) throw new Error('Unauthorized')
   const tier = tierFromSubjectKey(subjectKey)
-  if (!tier || tier === 'reposter' || !canSeeStructureTier(session.id, tier)) return null
+  if (!tier || tier === 'reposter' || tier === 'ceo' || !canSeeStructureTier(session.id, tier)) return null
   await ensureStructurePayTable()
   return { session, tier }
 }

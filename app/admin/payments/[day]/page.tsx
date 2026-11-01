@@ -61,7 +61,11 @@ export default async function PaymentDayPage({
   const backQs = new URLSearchParams({ tab: 'money', panel: 'calendar', calMonth: month })
   if (role !== 'all') backQs.set('calRole', role)
   const roleLabel =
-    role === 'all' ? `${t('roleFilterCreators')} / ${t('roleFilterReposters')}` : participantRoleLabel(role)
+    role === 'all'
+      ? t('paymentCalendarAll')
+      : role === 'company'
+        ? t('paymentCalendarCompany')
+        : participantRoleLabel(role)
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 py-8">
@@ -107,7 +111,7 @@ export default async function PaymentDayPage({
       </p>
       <p className="mt-1 text-xs text-muted-foreground">{t('paymentDayCommissionHint')}</p>
 
-      <section className="mt-6 overflow-x-auto rounded-xl border border-border">
+      <section className="mt-6 overflow-x-auto rounded-lg border border-border bg-card p-4">
         {detail.items.length === 0 ? (
           <p className="p-6 text-sm text-muted-foreground">{t('paymentDayNoScheduled')}</p>
         ) : (

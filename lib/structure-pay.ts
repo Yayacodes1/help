@@ -295,6 +295,25 @@ export async function loadStructurePaySlots(
     if (!canSeeStructureTier(viewerId, role.tier)) continue
     const key = `executive:${role.tier}`
     const saved = pays.get(key)
+    if (role.tier === 'ceo') {
+      slots.push({
+        subjectKey: key,
+        tier: role.tier,
+        title: role.title,
+        name: names.get(role.tier) || role.title,
+        href: null,
+        creatorId: null,
+        contractId: null,
+        start: null,
+        end: null,
+        timing: null,
+        amount: 0,
+        currency: 'SAR',
+        scheduled: false,
+        ...EMPTY_WAVES,
+      })
+      continue
+    }
     slots.push({
       subjectKey: key,
       tier: role.tier,
@@ -450,7 +469,7 @@ export async function structureContractsForCalendar(
   const slots = await loadStructurePaySlots(viewerId, today)
   const out: CalendarContractInput[] = []
   for (const slot of slots) {
-    if (slot.tier === 'reposter' || !slot.scheduled) continue
+    if (slot.tier === 'reposter' || slot.tier === 'ceo' || !slot.scheduled) continue
     if (!slot.start || slot.amount <= 0.009) continue
     const ids = structureCalendarIds(slot.subjectKey)
     out.push({
@@ -487,7 +506,9 @@ export async function structurePaymentsForCalendar(
 ): Promise<CalendarPaymentInput[]> {
   const slots = await loadStructurePaySlots(viewerId, today)
   const visible = new Map(
-    slots.filter((slot) => slot.tier !== 'reposter' && slot.scheduled).map((slot) => [slot.subjectKey, slot]),
+    slots
+      .filter((slot) => slot.tier !== 'reposter' && slot.tier !== 'ceo' && slot.scheduled)
+      .map((slot) => [slot.subjectKey, slot]),
   )
   if (visible.size === 0) return []
   await ensureStructurePayTable()

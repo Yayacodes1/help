@@ -28,7 +28,7 @@ function targetVideoTotal(platforms: string | null, ig: number, tt: number): num
   return needIg + needTt
 }
 
-export type CalendarRoleFilter = 'creator' | 'reposter' | 'all'
+export type CalendarRoleFilter = 'creator' | 'reposter' | 'company' | 'all'
 export type CalendarPayStatus = 'paid' | 'partial' | 'due' | 'overdue' | 'scheduled'
 
 export type CalendarContractInput = {
@@ -174,8 +174,25 @@ export type PaymentCalendarModel = {
 }
 
 export function parseCalendarRole(value: string | null | undefined): CalendarRoleFilter {
-  if (value === 'creator' || value === 'reposter') return value
+  if (value === 'creator' || value === 'reposter' || value === 'company' || value === 'all') return value
   return 'all'
+}
+
+/** Company salaries use negative ids. Creators and reposters stay positive. */
+function isCompanyPay(creatorId: number): boolean {
+  return creatorId < 0
+}
+
+function includeOnCalendar(
+  role: CalendarRoleFilter,
+  creatorId: number,
+  personRole: 'creator' | 'reposter',
+): boolean {
+  const company = isCompanyPay(creatorId)
+  if (role === 'company') return company
+  if (company && role !== 'all') return false
+  if (role === 'all') return true
+  return personRole === role
 }
 
 function contractWindow(start: string, end: string | null, slack: boolean) {
@@ -345,13 +362,13 @@ export function buildPaymentCalendarModel(opts: {
   const through = end
   const obligations: CalendarObligation[] = []
   for (const contract of opts.contracts) {
-    if (opts.role !== 'all' && contract.role !== opts.role) continue
+    if (!includeOnCalendar(opts.role, contract.creatorId, contract.role)) continue
     const contractPays = opts.payments.filter((p) => p.contractId === contract.contractId)
     obligations.push(...obligationsFromContract(contract, opts.videos, through, contractPays))
   }
 
   const txns: CalendarTxn[] = opts.payments
-    .filter((p) => opts.role === 'all' || p.role === opts.role)
+    .filter((p) => includeOnCalendar(opts.role, p.creatorId, p.role))
     .map((p) => {
       const currency = payCurrency(p.role, p.payCurrency)
       return {

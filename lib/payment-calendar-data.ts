@@ -22,7 +22,7 @@ export async function loadPaymentCalendar(opts: {
 }): Promise<PaymentCalendarModel> {
   const role = parseCalendarRole(opts.role)
   const { start, end } = calendarMonthRange(opts.month)
-  const roleSql: ParticipantRole | null = role === 'all' ? null : role
+  const roleSql: ParticipantRole | null = role === 'creator' || role === 'reposter' ? role : null
   const lookback = addDays(start, -90)
   const lookahead = addDays(end, 40)
 
@@ -163,7 +163,7 @@ export async function loadPaymentCalendar(opts: {
     platform: row.platform,
   }))
 
-  if (role === 'all') {
+  if (role === 'all' || role === 'company') {
     try {
       const [structure, structurePays] = await Promise.all([
         structureContractsForCalendar(opts.viewerId, opts.today),
@@ -186,9 +186,9 @@ export async function loadPaymentCalendar(opts: {
   const current = buildPaymentCalendarModel({
     ...shared,
     month: opts.month,
-    commissionEarnedSar: board.totals.commissionEarned,
+    commissionEarnedSar: role === 'company' ? 0 : board.totals.commissionEarned,
     commissionRecordedSar: 0,
-    commissionDueSar: Math.max(0, board.totals.commissionEarned),
+    commissionDueSar: role === 'company' ? 0 : Math.max(0, board.totals.commissionEarned),
   })
   const nextMonth = addDays(end, 1).slice(0, 7)
   const next = buildPaymentCalendarModel({

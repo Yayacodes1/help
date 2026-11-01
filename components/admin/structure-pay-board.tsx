@@ -51,7 +51,12 @@ export function StructurePayBoard({
           <ul className="flex flex-col">
             {people.map((slot) => (
               <li key={slot.subjectKey} className="border-b border-border px-4 py-3 last:border-b-0">
-                {editing === slot.subjectKey && canEdit ? (
+                {slot.tier === 'ceo' ? (
+                  <div>
+                    <div className="font-medium">{slot.name}</div>
+                    <p className="text-xs text-muted-foreground">Owner · no salary</p>
+                  </div>
+                ) : editing === slot.subjectKey && canEdit ? (
                   <PayForm slot={slot} today={today} onClose={() => setEditing(null)} />
                 ) : (
                   <PayRow
