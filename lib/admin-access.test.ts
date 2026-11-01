@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   canManageOutreachAccounts,
+  canMoveYahyaExpenses,
   canSeeAhmedWallet,
   canSeeStructureTier,
   canSeeUrgentList,
@@ -13,6 +14,13 @@ test('only Yahya and Ahmed see Ahmed’s wallet', () => {
   assert.equal(canSeeAhmedWallet('ahmed'), true)
   assert.equal(canSeeAhmedWallet('lula'), false)
   assert.equal(canSeeAhmedWallet(null), false)
+})
+
+test('only Yahya and Ahmed can move Yahya expense people', () => {
+  assert.equal(canMoveYahyaExpenses('yahya'), true)
+  assert.equal(canMoveYahyaExpenses('ahmed'), true)
+  assert.equal(canMoveYahyaExpenses('lula'), false)
+  assert.equal(canMoveYahyaExpenses(null), false)
 })
 
 test('Ahmed, Lula, and Yahya see the urgent list; Ahmed and Lula add to it', () => {

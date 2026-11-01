@@ -17,6 +17,14 @@ function round2(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100
 }
 
+function normName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+/** Where a person counts on Yahya’s expenses page. */
+export type YahyaHome = 'creators' | 'reposters' | 'leaders' | 'both' | 'hidden'
+
+/** @deprecated use YahyaHome — kept for dual-role wording in the UI */
 export type YahyaPlacement = 'leaders' | 'reposters' | 'both'
 
 export type YahyaCategoryId = 'creators' | 'reposters' | 'leaders' | 'other'
@@ -43,14 +51,16 @@ export type YahyaExpensePerson = {
     creatorId: number | null
     leaderId: number | null
   }
-  /** Where dual-role people count on this page. */
-  placement: YahyaPlacement | null
+  /** Effective home on this page. */
+  home: YahyaHome
+  /** Canonical key used to save home (leader key for duals). */
+  homeKey: string
+  isDual: boolean
 }
 
 export type YahyaExpenseCategory = {
   id: YahyaCategoryId
   label: string
-  /** Category total in USD. */
   totalUsd: number
   people: YahyaExpensePerson[]
 }
@@ -70,12 +80,13 @@ export type YahyaExpensesSnapshot = {
   label: string
   from: string
   to: string
-  /** Creators + reposters + leaders + other. */
   grandTotalUsd: number
   categories: YahyaExpenseCategory[]
   other: YahyaOtherExpense[]
   nearbyMonths: { key: string; label: string }[]
 }
+
+const HOMES = new Set<YahyaHome>(['creators', 'reposters', 'leaders', 'both', 'hidden'])
 
 export async function ensureYahyaExpenseTables() {
   return ensureOnce('yahya_expenses', async () => {
@@ -161,16 +172,14 @@ async function listOverrides(yearMonth: string) {
   )
 }
 
-async function listPlacements() {
+async function listHomes() {
   await ensureYahyaExpenseTables()
   const rows = (await sql`
     SELECT person_key, placement FROM yahya_expense_placements
   `) as { person_key: string; placement: string }[]
-  const map = new Map<string, YahyaPlacement>()
+  const map = new Map<string, YahyaHome>()
   for (const r of rows) {
-    if (r.placement === 'leaders' || r.placement === 'reposters' || r.placement === 'both') {
-      map.set(r.person_key, r.placement)
-    }
+    if (HOMES.has(r.placement as YahyaHome)) map.set(r.person_key, r.placement as YahyaHome)
   }
   return map
 }
@@ -190,6 +199,19 @@ function applyOverride(
   }
 }
 
+type RawPerson = {
+  key: string
+  name: string
+  role: string
+  natural: 'creators' | 'reposters' | 'leaders'
+  monthlyUsd: number
+  currency: 'USD' | 'SAR'
+  nativeMonthly: number
+  pageOverride: boolean
+  creatorId: number | null
+  leaderId: number | null
+}
+
 export async function getYahyaExpensesSnapshot(opts: {
   yearMonth: string
   today: string
@@ -200,7 +222,7 @@ export async function getYahyaExpensesSnapshot(opts: {
   const { start: from, end: to } = calendarMonthBounds(yearMonth)
   const today = opts.today
 
-  const [outflow, leadersDir, other, overrides, placements] = await Promise.all([
+  const [outflow, leadersDir, other, overrides, homes] = await Promise.all([
     getOutflowSnapshot({
       from,
       to,
@@ -213,72 +235,15 @@ export async function getYahyaExpensesSnapshot(opts: {
     getLeaderDirectory(),
     listYahyaOtherExpenses(yearMonth),
     listOverrides(yearMonth),
-    listPlacements(),
+    listHomes(),
   ])
 
-  const dualLeaders = leadersDir.leaders.filter(
-    (l) => l.reposterId != null && l.monthlyPay != null && l.monthlyPay > 0,
-  )
-  const dualByReposterId = new Map(
-    dualLeaders.map((l) => [
-      l.reposterId!,
-      {
-        leaderId: l.id,
-        leaderName: l.name,
-        key: `leader-${l.id}`,
-      },
-    ]),
-  )
-  const dualByLeaderId = new Map(
-    dualLeaders.map((l) => [
-      l.id,
-      {
-        reposterId: l.reposterId!,
-        reposterName: l.reposterName ?? 'reposter',
-        key: `leader-${l.id}`,
-      },
-    ]),
-  )
-
-  function placementFor(leaderKey: string): YahyaPlacement {
-    return placements.get(leaderKey) ?? 'leaders'
-  }
-
-  const creators: YahyaExpensePerson[] = outflow.peopleTotals
-    .filter((p) => p.role !== 'reposter' && p.monthly > 0)
-    .map((p) => {
-      const key = `creator-${p.creator_id}`
-      const currency = p.currency
-      const nativeMonthly =
-        currency === 'USD' ? round2(p.monthly) : round2(p.monthly * SAR_PER_USD)
-      const paid = applyOverride(
-        key,
-        { monthlyUsd: round2(p.monthly), currency, nativeMonthly },
-        overrides,
-      )
-      return {
-        key,
-        name: p.creator_name,
-        role: 'creator',
-        categoryId: 'creators' as const,
-        creatorId: p.creator_id,
-        leaderId: null,
-        otherId: null,
-        also: null,
-        placement: null,
-        ...paid,
-      }
-    })
-    .sort((a, b) => a.name.localeCompare(b.name))
-
-  const reposterRows = outflow.peopleTotals.filter((p) => p.role === 'reposter' && p.monthly > 0)
-  const reposters: YahyaExpensePerson[] = []
-  for (const p of reposterRows) {
-    const dual = dualByReposterId.get(p.creator_id)
-    const place = dual ? placementFor(dual.key) : null
-    if (dual && place === 'leaders') continue
-
-    const key = `reposter-${p.creator_id}`
+  const creatorRaws: RawPerson[] = []
+  const reposterRaws: RawPerson[] = []
+  for (const p of outflow.peopleTotals) {
+    if (p.monthly <= 0) continue
+    const isReposter = p.role === 'reposter'
+    const key = isReposter ? `reposter-${p.creator_id}` : `creator-${p.creator_id}`
     const currency = p.currency
     const nativeMonthly =
       currency === 'USD' ? round2(p.monthly) : round2(p.monthly * SAR_PER_USD)
@@ -287,38 +252,26 @@ export async function getYahyaExpensesSnapshot(opts: {
       { monthlyUsd: round2(p.monthly), currency, nativeMonthly },
       overrides,
     )
-    reposters.push({
+    const raw: RawPerson = {
       key,
       name: p.creator_name,
-      role: 'reposter',
-      categoryId: 'reposters',
+      role: isReposter ? 'reposter' : 'creator',
+      natural: isReposter ? 'reposters' : 'creators',
       creatorId: p.creator_id,
-      leaderId: dual?.leaderId ?? null,
-      otherId: null,
-      also: dual
-        ? {
-            kind: 'leader',
-            label: dual.leaderName,
-            creatorId: p.creator_id,
-            leaderId: dual.leaderId,
-          }
-        : null,
-      placement: place,
+      leaderId: null,
       ...paid,
-    })
+    }
+    if (isReposter) reposterRaws.push(raw)
+    else creatorRaws.push(raw)
   }
-  reposters.sort((a, b) => a.name.localeCompare(b.name))
 
-  const leaders: YahyaExpensePerson[] = []
+  const leaderRaws: RawPerson[] = []
   for (const l of leadersDir.leaders) {
-    if (l.monthlyPay == null || l.monthlyPay <= 0) continue
-    const dual = dualByLeaderId.get(l.id)
-    const place = dual ? placementFor(`leader-${l.id}`) : null
-    if (dual && place === 'reposters') continue
-
-    const key = `leader-${l.id}`
     const currency = l.payCurrency
     const native = Number(l.monthlyPay) || 0
+    // Keep unpaid leaders if they are linked to a reposter (dual) — amount may be 0.
+    if (native <= 0 && l.reposterId == null) continue
+    const key = `leader-${l.id}`
     const paid = applyOverride(
       key,
       {
@@ -328,26 +281,205 @@ export async function getYahyaExpensesSnapshot(opts: {
       },
       overrides,
     )
-    leaders.push({
+    // Skip leaders with no pay and no override unless dual-linked below.
+    if (paid.monthlyUsd <= 0 && l.reposterId == null && !paid.pageOverride) continue
+    leaderRaws.push({
       key,
       name: l.name,
       role: l.level || 'leader',
-      categoryId: 'leaders',
+      natural: 'leaders',
       creatorId: l.reposterId,
       leaderId: l.id,
-      otherId: null,
-      also: dual
-        ? {
-            kind: 'reposter',
-            label: dual.reposterName,
-            creatorId: dual.reposterId,
-            leaderId: l.id,
-          }
-        : null,
-      placement: place,
       ...paid,
     })
   }
+
+  // Dual links: explicit reposter_id, else same normalized name.
+  type DualLink = {
+    homeKey: string
+    leader: RawPerson
+    reposter: RawPerson
+    leaderName: string
+    reposterName: string
+  }
+  const duals: DualLink[] = []
+  const usedReposterKeys = new Set<string>()
+  const usedLeaderKeys = new Set<string>()
+
+  const reposterById = new Map(reposterRaws.map((r) => [r.creatorId, r]))
+  const reposterByName = new Map(reposterRaws.map((r) => [normName(r.name), r]))
+
+  for (const leader of leadersDir.leaders) {
+    const leaderRaw = leaderRaws.find((r) => r.leaderId === leader.id)
+    if (!leaderRaw) {
+      // Leader with no pay yet — still dual if linked to a paid reposter.
+      if (leader.reposterId == null && !reposterByName.has(normName(leader.name))) continue
+    }
+
+    let reposter =
+      leader.reposterId != null ? (reposterById.get(leader.reposterId) ?? null) : null
+    if (!reposter) {
+      const byName = reposterByName.get(normName(leader.name))
+      if (byName) reposter = byName
+      else if (leader.reposterName) {
+        reposter = reposterByName.get(normName(leader.reposterName)) ?? null
+      }
+    }
+    if (!reposter) continue
+
+    const lr =
+      leaderRaw ??
+      ({
+        key: `leader-${leader.id}`,
+        name: leader.name,
+        role: leader.level || 'leader',
+        natural: 'leaders' as const,
+        monthlyUsd: 0,
+        currency: leader.payCurrency,
+        nativeMonthly: 0,
+        pageOverride: false,
+        creatorId: leader.reposterId,
+        leaderId: leader.id,
+      } satisfies RawPerson)
+
+    if (usedReposterKeys.has(reposter.key) || usedLeaderKeys.has(lr.key)) continue
+    usedReposterKeys.add(reposter.key)
+    usedLeaderKeys.add(lr.key)
+    duals.push({
+      homeKey: lr.key,
+      leader: lr,
+      reposter,
+      leaderName: lr.name,
+      reposterName: reposter.name,
+    })
+  }
+
+  const dualReposterKeys = new Set(duals.map((d) => d.reposter.key))
+  const dualLeaderKeys = new Set(duals.map((d) => d.leader.key))
+
+  function homeFor(key: string, natural: YahyaHome): YahyaHome {
+    return homes.get(key) ?? natural
+  }
+
+  const creators: YahyaExpensePerson[] = []
+  const reposters: YahyaExpensePerson[] = []
+  const leaders: YahyaExpensePerson[] = []
+
+  function pushPerson(
+    bucket: 'creators' | 'reposters' | 'leaders',
+    raw: RawPerson,
+    opts: {
+      home: YahyaHome
+      homeKey: string
+      isDual: boolean
+      also: YahyaExpensePerson['also']
+    },
+  ) {
+    // Keep dual management rows even at 0 so Yahya can place them; skip other empty rows.
+    if (raw.monthlyUsd <= 0 && !raw.pageOverride) {
+      if (!(opts.isDual && bucket === 'leaders')) return
+    }
+    const row: YahyaExpensePerson = {
+      key: raw.key,
+      name: raw.name,
+      role: raw.role,
+      categoryId: bucket,
+      monthlyUsd: raw.monthlyUsd,
+      currency: raw.currency,
+      nativeMonthly: raw.nativeMonthly,
+      creatorId: raw.creatorId,
+      leaderId: raw.leaderId,
+      otherId: null,
+      pageOverride: raw.pageOverride,
+      also: opts.also,
+      home: opts.home,
+      homeKey: opts.homeKey,
+      isDual: opts.isDual,
+    }
+    if (bucket === 'creators') creators.push(row)
+    else if (bucket === 'reposters') reposters.push(row)
+    else leaders.push(row)
+  }
+
+  // Dual people first.
+  for (const dual of duals) {
+    const home = homeFor(dual.homeKey, 'leaders')
+    const alsoOnLeader: YahyaExpensePerson['also'] = {
+      kind: 'reposter',
+      label: dual.reposterName,
+      creatorId: dual.reposter.creatorId,
+      leaderId: dual.leader.leaderId,
+    }
+    const alsoOnReposter: YahyaExpensePerson['also'] = {
+      kind: 'leader',
+      label: dual.leaderName,
+      creatorId: dual.reposter.creatorId,
+      leaderId: dual.leader.leaderId,
+    }
+    if (home === 'hidden') continue
+    if (home === 'leaders' || home === 'both' || home === 'creators') {
+      // creators home for a dual still shows under management (they are a leader).
+      pushPerson(home === 'creators' ? 'creators' : 'leaders', dual.leader, {
+        home,
+        homeKey: dual.homeKey,
+        isDual: true,
+        also: alsoOnLeader,
+      })
+    }
+    if (home === 'reposters' || home === 'both') {
+      pushPerson('reposters', dual.reposter, {
+        home,
+        homeKey: dual.homeKey,
+        isDual: true,
+        also: alsoOnReposter,
+      })
+    }
+    // If home is creators only, also keep them out of reposters (already).
+  }
+
+  // Solo creators / reposters / leaders.
+  for (const raw of creatorRaws) {
+    if (dualReposterKeys.has(raw.key) || dualLeaderKeys.has(raw.key)) continue
+    const home = homeFor(raw.key, 'creators')
+    if (home === 'hidden') continue
+    if (home === 'both') {
+      pushPerson('creators', raw, { home, homeKey: raw.key, isDual: false, also: null })
+      pushPerson('reposters', raw, { home, homeKey: raw.key, isDual: false, also: null })
+      continue
+    }
+    const bucket = home === 'leaders' || home === 'reposters' || home === 'creators' ? home : 'creators'
+    pushPerson(bucket, raw, { home, homeKey: raw.key, isDual: false, also: null })
+  }
+
+  for (const raw of reposterRaws) {
+    if (dualReposterKeys.has(raw.key)) continue
+    const home = homeFor(raw.key, 'reposters')
+    if (home === 'hidden') continue
+    if (home === 'both') {
+      pushPerson('reposters', raw, { home, homeKey: raw.key, isDual: false, also: null })
+      pushPerson('leaders', raw, { home, homeKey: raw.key, isDual: false, also: null })
+      continue
+    }
+    const bucket = home === 'creators' || home === 'leaders' || home === 'reposters' ? home : 'reposters'
+    pushPerson(bucket, raw, { home, homeKey: raw.key, isDual: false, also: null })
+  }
+
+  for (const raw of leaderRaws) {
+    if (dualLeaderKeys.has(raw.key)) continue
+    if (raw.monthlyUsd <= 0 && !raw.pageOverride) continue
+    const home = homeFor(raw.key, 'leaders')
+    if (home === 'hidden') continue
+    if (home === 'both') {
+      pushPerson('leaders', raw, { home, homeKey: raw.key, isDual: false, also: null })
+      pushPerson('reposters', raw, { home, homeKey: raw.key, isDual: false, also: null })
+      continue
+    }
+    const bucket = home === 'creators' || home === 'reposters' || home === 'leaders' ? home : 'leaders'
+    pushPerson(bucket, raw, { home, homeKey: raw.key, isDual: false, also: null })
+  }
+
+  creators.sort((a, b) => a.name.localeCompare(b.name))
+  reposters.sort((a, b) => a.name.localeCompare(b.name))
   leaders.sort((a, b) => a.name.localeCompare(b.name))
 
   const otherPeople: YahyaExpensePerson[] = other.map((o) => ({
@@ -363,7 +495,9 @@ export async function getYahyaExpensesSnapshot(opts: {
     otherId: o.id,
     pageOverride: false,
     also: null,
-    placement: null,
+    home: 'creators',
+    homeKey: `other-${o.id}`,
+    isDual: false,
   }))
 
   const sumPeople = (people: YahyaExpensePerson[]) =>
@@ -446,28 +580,29 @@ export async function deleteYahyaOtherExpense(
   return { ok: true }
 }
 
-export async function setYahyaPlacement(input: {
+/** Move someone between expense lists (or dual placement). */
+export async function setYahyaHome(input: {
   personKey: string
-  placement: YahyaPlacement
+  home: YahyaHome
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   await ensureYahyaExpenseTables()
-  if (!/^leader-\d+$/.test(input.personKey)) {
-    return { ok: false, error: 'Only dual-role people can change placement.' }
-  }
-  if (
-    input.placement !== 'leaders' &&
-    input.placement !== 'reposters' &&
-    input.placement !== 'both'
-  ) {
-    return { ok: false, error: 'Bad placement' }
-  }
+  if (!input.personKey.trim()) return { ok: false, error: 'Missing person' }
+  if (!HOMES.has(input.home)) return { ok: false, error: 'Bad destination' }
   await sql`
     INSERT INTO yahya_expense_placements (person_key, placement, updated_at)
-    VALUES (${input.personKey}, ${input.placement}, NOW())
+    VALUES (${input.personKey}, ${input.home}, NOW())
     ON CONFLICT (person_key) DO UPDATE
       SET placement = EXCLUDED.placement, updated_at = NOW()
   `
   return { ok: true }
+}
+
+/** @deprecated use setYahyaHome */
+export async function setYahyaPlacement(input: {
+  personKey: string
+  placement: YahyaPlacement
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  return setYahyaHome({ personKey: input.personKey, home: input.placement })
 }
 
 /**
@@ -510,7 +645,6 @@ export async function setYahyaPersonMonthly(input: {
     return { ok: true }
   }
 
-  // site-wide
   if (input.leaderId != null && input.personKey.startsWith('leader-')) {
     await sql`
       UPDATE leaders
@@ -525,7 +659,6 @@ export async function setYahyaPersonMonthly(input: {
   }
 
   if (input.creatorId != null) {
-    // Site pay for creators/reposters is stored as biweekly.
     const biweekly = round2(rounded / 2)
     await sql`
       UPDATE creators

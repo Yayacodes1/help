@@ -3,6 +3,11 @@ export function canSeeAhmedWallet(accountId: string | null | undefined): boolean
   return accountId === 'yahya' || accountId === 'ahmed'
 }
 
+/** Yahya and Ahmed can move people between Yahya’s expense lists. Lula cannot. */
+export function canMoveYahyaExpenses(accountId: string | null | undefined): boolean {
+  return accountId === 'yahya' || accountId === 'ahmed'
+}
+
 /** Ahmed and Lula can add or remove outreach logins. */
 export function canManageOutreachAccounts(accountId: string | null | undefined): boolean {
   return accountId === 'ahmed' || accountId === 'lula'

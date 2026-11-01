@@ -10,14 +10,14 @@ import {
   addYahyaExpenseItem,
   removeYahyaExpenseItem,
   resetYahyaPersonOverride,
+  saveYahyaHome,
   saveYahyaPersonMonthly,
-  saveYahyaPlacement,
 } from '@/app/actions/yahya-expenses'
 import type {
   YahyaExpenseCategory,
   YahyaExpensePerson,
   YahyaExpensesSnapshot,
-  YahyaPlacement,
+  YahyaHome,
 } from '@/lib/yahya-expenses'
 
 function DualMoney({ usd, big }: { usd: number; big?: boolean }) {
@@ -66,14 +66,16 @@ function CategoryBlock({
   checked,
   onToggle,
   onCheckAll,
+  canMove,
 }: {
   category: YahyaExpenseCategory
   yearMonth: string
   checked: Set<string>
   onToggle: (key: string) => void
   onCheckAll: (keys: string[], done: boolean) => void
+  canMove: boolean
 }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const done = category.people.filter((p) => checked.has(p.key)).length
   const total = category.people.length
   const allDone = total > 0 && done === total
@@ -139,11 +141,12 @@ function CategoryBlock({
             <ul className="divide-y divide-border">
               {category.people.map((person) => (
                 <PersonRow
-                  key={person.key}
+                  key={`${category.id}-${person.key}`}
                   person={person}
                   yearMonth={yearMonth}
                   done={checked.has(person.key)}
                   onToggle={() => onToggle(person.key)}
+                  canMove={canMove}
                 />
               ))}
             </ul>
@@ -154,69 +157,64 @@ function CategoryBlock({
   )
 }
 
-function PlacementControls({
+function MoveControls({
   person,
+  canMove,
 }: {
   person: YahyaExpensePerson
+  canMove: boolean
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
-  if (!person.also) return null
-  const leaderKey = person.key.startsWith('leader-')
-    ? person.key
-    : person.leaderId != null
-      ? `leader-${person.leaderId}`
-      : null
-  if (!leaderKey) return null
-  const dualKey = leaderKey
-  const placement: YahyaPlacement = person.placement ?? 'leaders'
+  if (!canMove || person.categoryId === 'other') return null
 
-  function setPlacement(next: YahyaPlacement) {
+  const dualOptions: { id: YahyaHome; label: string }[] = [
+    { id: 'leaders', label: 'Management only' },
+    { id: 'reposters', label: 'Reposter only' },
+    { id: 'both', label: 'Both places' },
+  ]
+  const soloOptions: { id: YahyaHome; label: string }[] = [
+    { id: 'creators', label: 'Creators' },
+    { id: 'reposters', label: 'Reposters' },
+    { id: 'leaders', label: 'Leaders / management' },
+    { id: 'both', label: 'Reposters + management' },
+    { id: 'hidden', label: 'Hide from this page' },
+  ]
+  const options = person.isDual ? dualOptions : soloOptions
+
+  function move(home: YahyaHome) {
     startTransition(async () => {
-      const res = await saveYahyaPlacement({ personKey: dualKey, placement: next })
+      const res = await saveYahyaHome({ personKey: person.homeKey, home })
       if (!res.ok) alert(res.error)
       else router.refresh()
     })
   }
 
-  const alsoLabel =
-    person.also?.kind === 'reposter'
-      ? 'Also a reposter'
-      : person.also?.kind === 'leader'
-        ? 'Also in management'
-        : null
-
   return (
     <div className="mt-1.5 flex flex-col gap-1.5">
-      {alsoLabel ? (
+      {person.isDual && person.also ? (
         <span className="inline-flex w-fit rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
-          {alsoLabel}
-          {person.also?.label ? ` · ${person.also.label}` : ''}
+          {person.also.kind === 'reposter' ? 'Also a reposter' : 'Also in management'}
+          {person.also.label ? ` · ${person.also.label}` : ''}
         </span>
       ) : null}
-      <div className="flex flex-wrap gap-1">
-        {(
-          [
-            { id: 'leaders' as const, label: 'Management only' },
-            { id: 'reposters' as const, label: 'Reposter only' },
-            { id: 'both' as const, label: 'Both places' },
-          ] as const
-        ).map((opt) => (
-          <button
-            key={opt.id}
-            type="button"
-            disabled={pending}
-            onClick={() => setPlacement(opt.id)}
-            className={
-              (placement === opt.id
-                ? 'bg-slate-900 text-white dark:bg-primary '
-                : 'border border-border text-muted-foreground hover:bg-muted ') +
-              'rounded-md px-2 py-0.5 text-[10px] font-semibold disabled:opacity-60'
-            }
-          >
-            {opt.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Move to
+        </span>
+        <select
+          disabled={pending}
+          value={person.home}
+          onChange={(e) => move(e.target.value as YahyaHome)}
+          className="h-7 max-w-[220px] rounded-md border border-border bg-background px-1.5 text-[11px] font-medium disabled:opacity-60"
+        >
+          {options.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        {pending ? <span className="text-[10px] text-muted-foreground">Saving…</span> : null}
       </div>
     </div>
   )
@@ -227,11 +225,13 @@ function PersonRow({
   yearMonth,
   done,
   onToggle,
+  canMove,
 }: {
   person: YahyaExpensePerson
   yearMonth: string
   done: boolean
   onToggle: () => void
+  canMove: boolean
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -291,7 +291,7 @@ function PersonRow({
             {person.name}
           </p>
           <p className="text-[11px] capitalize text-muted-foreground">{person.role}</p>
-          {person.also ? <PlacementControls person={person} /> : null}
+          <MoveControls person={person} canMove={canMove} />
           {person.pageOverride ? (
             <p className="mt-1 text-[10px] font-medium text-sky-800 dark:text-sky-300">
               This-page override for {yearMonth}
@@ -539,9 +539,11 @@ function OtherExpenseDeletes({
 export function YahyaExpensesPanel({
   snapshot,
   today,
+  canMove = false,
 }: {
   snapshot: YahyaExpensesSnapshot
   today: string
+  canMove?: boolean
 }) {
   const router = useRouter()
   const params = useSearchParams()
@@ -679,8 +681,11 @@ export function YahyaExpensesPanel({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          Every amount below is <span className="font-semibold text-foreground">monthly</span>. Check
-          people as you verify ({checkedCount}/{allKeys.length} done).
+          Every amount is <span className="font-semibold text-foreground">monthly</span>. Open a list
+          when you want it. Check people as you verify ({checkedCount}/{allKeys.length} done).
+          {canMove
+            ? ' Yahya and Ahmed can move anyone between lists.'
+            : null}
         </p>
         <button
           type="button"
@@ -699,6 +704,7 @@ export function YahyaExpensesPanel({
           checked={checked}
           onToggle={toggle}
           onCheckAll={checkAll}
+          canMove={canMove}
         />
       ))}
 

@@ -1,18 +1,28 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { isAdmin } from '@/lib/admin-auth'
+import { canMoveYahyaExpenses } from '@/lib/admin-access'
+import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import {
   addYahyaOtherExpense,
   clearYahyaPersonOverride,
   deleteYahyaOtherExpense,
+  setYahyaHome,
   setYahyaPersonMonthly,
-  setYahyaPlacement,
-  type YahyaPlacement,
+  type YahyaHome,
 } from '@/lib/yahya-expenses'
 
 async function requireAdmin() {
   if (!(await isAdmin())) throw new Error('Unauthorized')
+}
+
+async function requireMovers() {
+  await requireAdmin()
+  const session = await getAdminSession()
+  if (!canMoveYahyaExpenses(session?.id)) {
+    return { ok: false as const, error: 'Only Yahya and Ahmed can move people.' }
+  }
+  return { ok: true as const, session }
 }
 
 function refresh() {
@@ -65,12 +75,21 @@ export async function resetYahyaPersonOverride(input: {
   return res
 }
 
-export async function saveYahyaPlacement(input: {
+export async function saveYahyaHome(input: {
   personKey: string
-  placement: YahyaPlacement
+  home: YahyaHome
 }) {
-  await requireAdmin()
-  const res = await setYahyaPlacement(input)
+  const gate = await requireMovers()
+  if (!gate.ok) return gate
+  const res = await setYahyaHome(input)
   if (res.ok) refresh()
   return res
+}
+
+/** @deprecated use saveYahyaHome */
+export async function saveYahyaPlacement(input: {
+  personKey: string
+  placement: 'leaders' | 'reposters' | 'both'
+}) {
+  return saveYahyaHome({ personKey: input.personKey, home: input.placement })
 }

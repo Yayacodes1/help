@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import nextDynamic from 'next/dynamic'
 import { redirect } from 'next/navigation'
-import { canManageOutreachAccounts, canSeeAhmedWallet, canSeeUrgentList, canSendUrgentList } from '@/lib/admin-access'
+import { canManageOutreachAccounts, canMoveYahyaExpenses, canSeeAhmedWallet, canSeeUrgentList, canSendUrgentList } from '@/lib/admin-access'
 import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import { ADMIN_TABS, resolveAdminTab } from '@/lib/admin-tabs'
 import { AdminTabs } from '@/components/admin/admin-tabs'
@@ -306,6 +306,7 @@ export default async function AdminPage({
   const showWallet = canSeeAhmedWallet(session?.id)
   const showUrgent = canSeeUrgentList(session?.id)
   const canSendUrgent = canSendUrgentList(session?.id)
+  const canMoveYahya = canMoveYahyaExpenses(session?.id)
   /** Downloads in the daily sheet: every admin. Wallet stays Yahya + Ahmed. */
   const showDownloads = session != null
   const projects = projectsEarly
@@ -1508,7 +1509,11 @@ export default async function AdminPage({
             hint: yahyaExpenses?.label ?? 'Monthly payroll',
             children: yahyaExpenses ? (
               <Suspense fallback={<p className="text-sm text-muted-foreground">…</p>}>
-                <YahyaExpensesPanel snapshot={yahyaExpenses} today={today} />
+                <YahyaExpensesPanel
+                  snapshot={yahyaExpenses}
+                  today={today}
+                  canMove={canMoveYahya}
+                />
               </Suspense>
             ) : null,
           },
