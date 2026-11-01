@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Heart, Pencil, Search, X } from 'lucide-react'
 import { markContractDetailsDone, recordDueHalfPayment, saveTimelineContract } from '@/app/actions/admin'
@@ -8,6 +9,14 @@ import type { CreatorTrackingRow } from '@/lib/queries'
 import { personBelongsOnProjectManage } from '@/lib/project-scope'
 import { participantRoleLabel } from '@/lib/participant-role'
 import { formatMoney } from '@/lib/format'
+import { adminPersonHref } from '@/lib/admin-href'
+import { PersonHandlesLine } from '@/components/person-handles'
+import {
+  displayHandle,
+  instagramProfileUrl,
+  loginHandleFor,
+  tiktokProfileUrl,
+} from '@/lib/usernames'
 
 export type TimelineLabels = {
   title: string
@@ -317,13 +326,43 @@ export function TimelineManage({
 
   function Row({ person }: { person: CreatorTrackingRow }) {
     if (editingId === person.id) return <Editor person={person} />
+    const login = loginHandleFor(person)
+    const loginHandle =
+      login.platform === 'instagram'
+        ? displayHandle(person.instagram_username)
+        : displayHandle(person.tiktok_username)
+    const loginHref =
+      login.platform === 'instagram'
+        ? instagramProfileUrl(loginHandle)
+        : tiktokProfileUrl(loginHandle)
     return (
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{person.name}</span>
+            {loginHandle && loginHref ? (
+              <a
+                href={loginHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
+                dir="ltr"
+              >
+                @{loginHandle}
+              </a>
+            ) : null}
+            <Link
+              href={adminPersonHref(person.id, {
+                role: person.role,
+                projectId: currentProjectId,
+                from: 'timeline',
+              })}
+              className="font-medium underline-offset-4 hover:underline"
+            >
+              {person.name}
+            </Link>
             <span className="text-[11px] text-muted-foreground">{participantRoleLabel(person.role)}</span>
           </div>
+          <PersonHandlesLine person={person} />
           <div className="text-xs text-muted-foreground">
             {person.project_name ?? 'Both projects'}
             {' · '}
