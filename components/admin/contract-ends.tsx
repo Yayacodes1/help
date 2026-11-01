@@ -85,8 +85,15 @@ export function ContractEnds({
                     {labels.ends} {dayLabel(person.end, locale)}
                   </p>
                   <p className="mt-1 text-sm tabular-nums">
-                    {labels.videos} {person.videos}
-                    {person.target > 0 ? `/${person.target}` : ''}
+                    {labels.videos}{' '}
+                    {person.needInstagram > 0 || person.needTiktok > 0
+                      ? [
+                          person.needInstagram > 0 ? `IG ${person.instagram}/${person.needInstagram}` : null,
+                          person.needTiktok > 0 ? `TT ${person.tiktok}/${person.needTiktok}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')
+                      : person.videos}
                   </p>
                   {person.warning ? (
                     <p className="mt-1 text-sm font-medium text-destructive">{labels.warning}</p>

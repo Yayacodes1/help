@@ -1752,7 +1752,7 @@ export default async function AdminPage({
             ? [
                 {
                   id: 'ends',
-                  title: t('contractEnds'),
+                  title: t('contractEndSection'),
                   summary: `${contractEnds.thisWeek} ${t('contractEndsThisWeek').toLowerCase()}`,
                   hint: t('contractEndsHint'),
                   children: (

@@ -11,6 +11,10 @@ export type ContractEndPerson = {
   end: string
   videos: number
   target: number
+  instagram: number
+  tiktok: number
+  needInstagram: number
+  needTiktok: number
   /** The end date has passed and the required videos are not finished. */
   warning: boolean
 }
@@ -40,13 +44,6 @@ export function weekOffset(today: string, end: string): number {
   const to = weekStartSunday(end)
   const ms = Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)
   return Math.round(ms / 86_400_000 / 7)
-}
-
-function requiredVideos(platforms: string | null, targetIg: number, targetTt: number): number {
-  const mode = normalizePlatforms(platforms)
-  const ig = mode === 'tiktok' ? 0 : Math.max(0, targetIg)
-  const tt = mode === 'instagram' ? 0 : Math.max(0, targetTt)
-  return ig + tt
 }
 
 export async function loadContractEnds(
@@ -108,7 +105,10 @@ export async function loadContractEnds(
 
   const people: ContractEndPerson[] = []
   for (const row of rows) {
-    const target = requiredVideos(row.platforms, row.target_instagram, row.target_tiktok)
+    const mode = normalizePlatforms(row.platforms)
+    const needInstagram = mode === 'tiktok' ? 0 : Math.max(0, row.target_instagram)
+    const needTiktok = mode === 'instagram' ? 0 : Math.max(0, row.target_tiktok)
+    const target = needInstagram + needTiktok
     const rate = videoCompletionRate({
       postedInstagram: row.instagram,
       postedTiktok: row.tiktok,
@@ -127,6 +127,10 @@ export async function loadContractEnds(
       end: row.end_date,
       videos: row.instagram + row.tiktok,
       target,
+      instagram: row.instagram,
+      tiktok: row.tiktok,
+      needInstagram,
+      needTiktok,
       warning: row.end_date <= today && !videosDone,
     })
   }
