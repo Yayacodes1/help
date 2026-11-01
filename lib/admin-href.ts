@@ -19,6 +19,7 @@ const ADMIN_PANELS = new Set([
   'manage',
   'timeline',
   'urgent',
+  'ends',
   'structure',
   'strikes',
 ])

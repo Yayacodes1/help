@@ -117,6 +117,8 @@ import { loadPaymentCalendar } from '@/lib/payment-calendar-data'
 import { loadPaymentArchive } from '@/lib/payment-archive'
 import { PaymentArchive } from '@/components/admin/payment-archive'
 import { UrgentList } from '@/components/admin/urgent-list'
+import { ContractEnds } from '@/components/admin/contract-ends'
+import { loadContractEnds } from '@/lib/contract-ends'
 import { StructurePayBoard } from '@/components/admin/structure-pay-board'
 import { loadUrgentList } from '@/lib/urgent-list'
 import { loadStructurePaySlots } from '@/lib/structure-pay'
@@ -575,6 +577,10 @@ export default async function AdminPage({
       : []
   const urgentList =
     tab === 'people' && showUrgent ? await loadUrgentList(opToday) : { ids: [] as number[], rows: [] }
+  const contractEnds =
+    tab === 'people'
+      ? await loadContractEnds(opToday, roleFilter === 'creator' || roleFilter === 'reposter' ? roleFilter : null)
+      : null
   const structurePay =
     tab === 'people' && session ? await loadStructurePaySlots(session.id) : []
 
@@ -1736,6 +1742,35 @@ export default async function AdminPage({
                         noDate: t('urgentListNoDate'),
                         paid: t('urgentListPaid'),
                         remove: t('urgentListRemove'),
+                      }}
+                    />
+                  ),
+                },
+              ]
+            : []),
+          ...(contractEnds
+            ? [
+                {
+                  id: 'ends',
+                  title: t('contractEnds'),
+                  summary: `${contractEnds.thisWeek} ${t('contractEndsThisWeek').toLowerCase()}`,
+                  hint: t('contractEndsHint'),
+                  children: (
+                    <ContractEnds
+                      model={contractEnds}
+                      locale={locale}
+                      labels={{
+                        card: t('contractEndsCard'),
+                        open: t('contractEndsOpen'),
+                        thisWeek: t('contractEndsThisWeek'),
+                        nextWeek: t('contractEndsNextWeek'),
+                        later: t('contractEndsLater'),
+                        started: t('contractEndsStarted'),
+                        ends: t('contractEndsEnds'),
+                        videos: t('contractEndsVideos'),
+                        warningTitle: t('contractEndsWarningTitle'),
+                        warning: t('contractEndsWarning'),
+                        empty: t('contractEndsEmpty'),
                       }}
                     />
                   ),
