@@ -1020,15 +1020,15 @@ export async function setCreatorUrgent(creatorId: number, urgent: boolean) {
   return { ok: true as const }
 }
 
-/** Urgent list: note that this person was paid. Does not record a calendar payment. */
-export async function markUrgentPaid(creatorId: number) {
+/** Urgent list: mark this person paid, or clear that mark. Does not record a calendar payment. */
+export async function markUrgentPaid(creatorId: number, paid: boolean) {
   await requireAdmin()
   const session = await getAdminSession()
   if (!session || !canSendUrgentList(session.id)) return { ok: false as const }
   await ensureCreatorTrackingColumns()
   const id = Math.floor(Number(creatorId))
   if (!(id > 0)) return { ok: false as const }
-  await sql`UPDATE urgent_payments SET marked_paid = true WHERE creator_id = ${id}`
+  await sql`UPDATE urgent_payments SET marked_paid = ${Boolean(paid)} WHERE creator_id = ${id}`
   revalidatePath('/admin')
   return { ok: true as const }
 }

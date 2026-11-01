@@ -50,7 +50,7 @@ export function UrgentList({
     empty: string
     noDate: string
     paid: string
-    wePaid: string
+    justPay: string
     remove: string
     creators: string
     reposters: string
@@ -81,25 +81,29 @@ export function UrgentList({
           <p className="mt-1 text-sm text-muted-foreground">
             {row.dueOn ? dueLabel(row.dueOn, locale) : labels.noDate}
           </p>
-          {row.markedPaid || row.settled ? (
-            <p className="mt-1 text-sm font-medium">{labels.wePaid}</p>
-          ) : row.daysLate > 0 ? (
+          {!row.markedPaid && row.daysLate > 0 ? (
             <p className="mt-1 text-sm font-medium text-destructive">{lateLabel(row.daysLate, locale)}</p>
           ) : null}
-          {canRemove && !row.markedPaid && !row.settled ? (
+          {canRemove ? (
             <button
               type="button"
               disabled={pending}
               onClick={() => {
                 startTransition(async () => {
-                  await markUrgentPaid(row.id)
+                  await markUrgentPaid(row.id, !row.markedPaid)
                   router.refresh()
                 })
               }}
-              className="mt-2 mr-2 rounded-md bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground disabled:opacity-60"
+              className={`mt-2 mr-2 rounded-md px-2 py-0.5 text-[11px] font-medium disabled:opacity-60 ${
+                row.markedPaid
+                  ? 'border border-border bg-background hover:bg-accent'
+                  : 'bg-primary text-primary-foreground'
+              }`}
             >
-              {labels.wePaid}
+              {row.markedPaid ? labels.paid : labels.justPay}
             </button>
+          ) : row.markedPaid ? (
+            <p className="mt-1 text-sm font-medium">{labels.paid}</p>
           ) : null}
           {canRemove ? (
             <button

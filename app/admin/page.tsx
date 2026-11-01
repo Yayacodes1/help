@@ -1742,7 +1742,7 @@ export default async function AdminPage({
                         empty: t('urgentListEmpty'),
                         noDate: t('urgentListNoDate'),
                         paid: t('urgentListPaid'),
-                        wePaid: t('urgentListWePaid'),
+                        justPay: t('urgentListJustPay'),
                         remove: t('urgentListRemove'),
                         creators: t('roleFilterCreators'),
                         reposters: t('roleFilterReposters'),
