@@ -42,6 +42,10 @@ export type CalendarContractInput = {
   payTiming: string | null
   firstPayAmount?: number | null
   secondPayAmount?: number | null
+  firstPayOn?: string | null
+  secondPayOn?: string | null
+  /** Installments after the second, keyed by index. */
+  sliceOverrides?: Record<string, { on?: string | null; amount?: number | null }> | null
   targetInstagram: number
   targetTiktok: number
   platforms: string | null
@@ -146,6 +150,13 @@ export type CalendarDayCell = {
   items: SettledObligation[]
 }
 
+export type ReposterCommissionLine = {
+  creatorId: number
+  name: string
+  views: number
+  sar: number
+}
+
 export type PaymentCalendarModel = {
   month: string
   start: string
@@ -166,6 +177,8 @@ export type PaymentCalendarModel = {
   commissionEarnedSar: number
   commissionRecordedSar: number
   commissionDueSar: number
+  /** View commission for the Reposters switch. Empty on the other switches. */
+  reposterCommission: ReposterCommissionLine[]
   days: CalendarDayCell[]
   unscheduled: UnscheduledPayment[]
   undated: SettledObligation[]
@@ -178,7 +191,7 @@ export function parseCalendarRole(value: string | null | undefined): CalendarRol
   return 'all'
 }
 
-/** Company salaries use negative ids. Creators and reposters stay positive. */
+/** Company salaries use negative ids. Creators and reposters stay on their own contracts. */
 function isCompanyPay(creatorId: number): boolean {
   return creatorId < 0
 }
@@ -189,7 +202,9 @@ function includeOnCalendar(
   personRole: 'creator' | 'reposter',
 ): boolean {
   const company = isCompanyPay(creatorId)
-  if (role === 'company') return company
+  // Reposters are company people, but their pay stays on the creator contract.
+  // Companies includes that contract; All still sees it once.
+  if (role === 'company') return company || personRole === 'reposter'
   if (company && role !== 'all') return false
   if (role === 'all') return true
   return personRole === role
@@ -217,6 +232,14 @@ export function videosForContract(
     else tiktok++
   }
   return { instagram, tiktok, total: instagram + tiktok }
+}
+
+function dueOnForSlice(contract: CalendarContractInput, index: number, automatic: string): string {
+  if (index === 0 && contract.firstPayOn) return contract.firstPayOn
+  if (index === 1 && contract.secondPayOn) return contract.secondPayOn
+  const later = index > 1 ? contract.sliceOverrides?.[String(index)]?.on : null
+  if (later && /^\d{4}-\d{2}-\d{2}$/.test(later)) return later
+  return automatic
 }
 
 export function obligationsFromContract(
@@ -262,10 +285,12 @@ export function obligationsFromContract(
   ).map((amount, index) => {
     if (index === 0 && firstManual != null) return firstManual
     if (index === 1 && timing !== 'end' && secondManual != null) return secondManual
+    const later = index > 1 ? contract.sliceOverrides?.[String(index)]?.amount : null
+    if (later != null && Number.isFinite(Number(later))) return roundMoney(Number(later))
     return amount
   })
   const schedule: BiweeklyInstallment[] = slices.map((slice, i) => ({
-    dueOn: slice.dueOn,
+    dueOn: dueOnForSlice(contract, i, slice.dueOn),
     amount: sliceAmounts[i] ?? 0,
     index: slice.index,
     label: slice.label,
@@ -455,6 +480,7 @@ export function buildPaymentCalendarModel(opts: {
     commissionEarnedSar: roundMoney(opts.commissionEarnedSar),
     commissionRecordedSar: roundMoney(opts.commissionRecordedSar),
     commissionDueSar: roundMoney(opts.commissionDueSar),
+    reposterCommission: [],
     days,
     unscheduled,
     undated,

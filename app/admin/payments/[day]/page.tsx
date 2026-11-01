@@ -58,6 +58,8 @@ export default async function PaymentDayPage({
     )
   }
   const detail = dayFromModel(model, day)
+  const unpaidItems = detail.items.filter((row) => row.remainingSar > 0.009)
+  const paidItems = detail.items.filter((row) => row.remainingSar <= 0.009)
   const backQs = new URLSearchParams({ tab: 'money', panel: 'calendar', calMonth: month })
   if (role !== 'all') backQs.set('calRole', role)
   const roleLabel =
@@ -79,7 +81,7 @@ export default async function PaymentDayPage({
           </Link>
           <h1 className="mt-2 text-xl font-semibold tracking-tight">{formatDate(day)}</h1>
           <p className="text-sm text-muted-foreground">
-            {detail.recipientCount} {t('paymentDayRecipients').toLowerCase()} · {roleLabel}
+            {unpaidItems.length} {t('paymentDayUnpaid').toLowerCase()} · {roleLabel}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -111,10 +113,83 @@ export default async function PaymentDayPage({
       </p>
       <p className="mt-1 text-xs text-muted-foreground">{t('paymentDayCommissionHint')}</p>
 
-      <section className="mt-6 overflow-x-auto rounded-lg border border-border bg-card p-4">
-        {detail.items.length === 0 ? (
-          <p className="p-6 text-sm text-muted-foreground">{t('paymentDayNoScheduled')}</p>
+      <section className="mt-6 rounded-lg border border-border bg-card p-4">
+        <h2 className="text-sm font-semibold">
+          {t('paymentDayUnpaid')} · {unpaidItems.length}
+        </h2>
+        {unpaidItems.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">{t('paymentDayUnpaidEmpty')}</p>
         ) : (
+          <ul className="mt-3 flex flex-col gap-2">
+            {unpaidItems.map((row) => {
+              const personHref =
+                row.creatorId > 0
+                  ? adminPersonHref(row.creatorId, {
+                      role: row.role,
+                      panel: 'payments',
+                      from: 'calendar',
+                    })
+                  : '/admin?tab=people&panel=structure'
+              return (
+                <li
+                  key={row.key}
+                  className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-3"
+                >
+                  <div className="min-w-0">
+                    <Link href={personHref} className="font-medium underline-offset-4 hover:underline">
+                      {row.creatorName}
+                    </Link>
+                    <div className="text-xs text-muted-foreground">
+                      {row.creatorId < 0 && row.projectName
+                        ? row.projectName
+                        : participantRoleLabel(row.role)}
+                      {row.creatorId > 0 && row.projectName ? ` · ${row.projectName}` : ''}
+                      {' · '}
+                      {row.installmentLabel}
+                      {' · '}
+                      {row.dueDate}
+                    </div>
+                    {row.creatorId > 0 ? (
+                      <div className="mt-1">
+                        <PushContractForward
+                          creatorId={row.creatorId}
+                          contractId={row.contractId}
+                          contractEnd={row.contractEnd}
+                          compact
+                          labels={{
+                            moreTime: t('paymentPushForward'),
+                            hint: t('paymentPushHint'),
+                            pushing: t('paymentPushing'),
+                            custom: t('paymentPushCustom'),
+                            add: t('paymentPushAdd'),
+                          }}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <MoneyPair sar={row.remainingSar} />
+                    <PaymentDayActions
+                      creatorId={row.creatorId}
+                      contractId={row.contractId}
+                      remaining={row.remaining}
+                      currency={row.currency}
+                      which={row.installmentIndex === 0 ? 'first' : 'second'}
+                      payLabel={t('paymentDayPay')}
+                    />
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+
+      {paidItems.length > 0 ? (
+      <section className="mt-6 overflow-x-auto rounded-lg border border-border bg-card p-4">
+        <h2 className="mb-3 text-sm font-semibold">
+          {t('paymentStatusPaid')} · {paidItems.length}
+        </h2>
           <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -128,7 +203,7 @@ export default async function PaymentDayPage({
               </tr>
             </thead>
             <tbody>
-              {detail.items.map((row) => {
+              {paidItems.map((row) => {
                 const personHref =
                   row.creatorId > 0
                     ? adminPersonHref(row.creatorId, {
@@ -210,16 +285,7 @@ export default async function PaymentDayPage({
                       <div className="text-xs font-semibold uppercase tracking-wide">
                         {t(STATUS_KEY[row.status])}
                       </div>
-                      {row.creatorId > 0 ? (
-                        <PaymentDayActions
-                          creatorId={row.creatorId}
-                          contractId={row.contractId}
-                          remainingSar={row.remainingSar}
-                          currency={row.currency}
-                          which={row.installmentIndex === 0 ? 'first' : 'second'}
-                        />
-                      ) : null}
-                      {row.creatorId > 0 && (row.awaitingEligibility || row.remainingSar > 0.009) ? (
+                      {row.creatorId > 0 && row.awaitingEligibility ? (
                         <PushContractForward
                           creatorId={row.creatorId}
                           contractId={row.contractId}
@@ -239,8 +305,8 @@ export default async function PaymentDayPage({
               })}
             </tbody>
           </table>
-        )}
       </section>
+      ) : null}
 
       {detail.actualPayments.length > 0 ? (
         <section className="mt-6 rounded-xl border border-dashed border-border p-4">

@@ -1,10 +1,11 @@
 import Link from 'next/link'
-import { formatMoney, formatYearMonth } from '@/lib/format'
+import { formatMoney, formatNumber, formatYearMonth } from '@/lib/format'
 import type { PaymentCalendarModel } from '@/lib/payment-calendar'
 import { daysAhead, type PayUrgency } from '@/lib/payment-calendar-math'
 import { MoneyPair } from '@/components/admin/money-pair'
 import { PushContractForward } from '@/components/admin/push-contract-forward'
 import { PaymentCalendarNav } from '@/components/admin/payment-calendar-nav'
+import { CalendarPayEdit } from '@/components/admin/calendar-pay-edit'
 import { StatCard } from '@/components/stat-card'
 import { participantRoleLabel, type ParticipantRole } from '@/lib/participant-role'
 
@@ -36,11 +37,19 @@ function PayPeople({
     count: number
     contractId: number
     contractEnd: string | null
+    installmentIndex: number
+    dueAmount: number
+    currency: string
     awaitingEligibility: boolean
     videoCount: number
     targetTotal: number
   }>
   labels: {
+    editPay: string
+    when: string
+    save: string
+    cancel: string
+    saving: string
     videos: string
     moreTime: string
     moreTimeHint: string
@@ -70,6 +79,21 @@ function PayPeople({
               </Link>
               <MoneyPair sar={row.remainingSar} />
             </div>
+            <CalendarPayEdit
+              creatorId={row.creatorId}
+              contractId={row.contractId}
+              installmentIndex={row.installmentIndex}
+              dueOn={row.nextDue}
+              amount={row.dueAmount}
+              currency={row.currency}
+              labels={{
+                edit: labels.editPay,
+                when: labels.when,
+                save: labels.save,
+                cancel: labels.cancel,
+                saving: labels.saving,
+              }}
+            />
             {row.contractEnd && row.creatorId > 0 ? (
               <div className="mt-1">
                 {row.awaitingEligibility ? (
@@ -116,6 +140,8 @@ export function PaymentCalendarBoard({
     remaining: string
     commission: string
     earned: string
+    reposterCommissionHint: string
+    views: string
     total: string
     totalHint: string
     scheduled: string
@@ -136,6 +162,11 @@ export function PaymentCalendarBoard({
     later: string
     legendPaid: string
     toPay: string
+    editPay: string
+    when: string
+    save: string
+    cancel: string
+    saving: string
     videos: string
     moreTime: string
     moreTimeHint: string
@@ -163,6 +194,9 @@ export function PaymentCalendarBoard({
       count: number
       contractId: number
       contractEnd: string | null
+      installmentIndex: number
+      dueAmount: number
+      currency: string
       awaitingEligibility: boolean
       videoCount: number
       targetTotal: number
@@ -181,6 +215,9 @@ export function PaymentCalendarBoard({
         count: 1,
         contractId: row.contractId,
         contractEnd: row.contractEnd,
+        installmentIndex: row.installmentIndex,
+        dueAmount: row.dueAmount,
+        currency: row.currency,
         awaitingEligibility: row.awaitingEligibility,
         videoCount: row.videoCount,
         targetTotal: row.targetTotal,
@@ -192,6 +229,9 @@ export function PaymentCalendarBoard({
         existing.nextDue = row.dueDate
         existing.contractId = row.contractId
         existing.contractEnd = row.contractEnd
+        existing.installmentIndex = row.installmentIndex
+        existing.dueAmount = row.dueAmount
+        existing.currency = row.currency
         existing.awaitingEligibility = row.awaitingEligibility
         existing.videoCount = row.videoCount
         existing.targetTotal = row.targetTotal
@@ -232,7 +272,11 @@ export function PaymentCalendarBoard({
         <StatCard
           label={labels.commission}
           value={<MoneyPair sar={model.commissionEarnedSar} />}
-          hint={`${labels.earned} · ${monthLabel}`}
+          hint={
+            model.role === 'reposter'
+              ? labels.reposterCommissionHint
+              : `${labels.earned} · ${monthLabel}`
+          }
         />
         <StatCard
           label={labels.nextBooked}
@@ -240,6 +284,21 @@ export function PaymentCalendarBoard({
           hint={model.nextMonth ? formatYearMonth(model.nextMonth, locale) : ''}
         />
       </div>
+      {model.role === 'reposter' && model.reposterCommission.length > 0 ? (
+        <ul className="flex max-h-64 flex-col gap-1 overflow-auto rounded-xl border border-border bg-card p-3">
+          {model.reposterCommission.map((row) => (
+            <li key={row.creatorId} className="flex items-baseline justify-between gap-3 text-sm">
+              <span className="min-w-0 truncate font-medium">{row.name}</span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {formatNumber(row.views)} {labels.views}
+              </span>
+              <span className="shrink-0 text-right">
+                <MoneyPair sar={row.sar} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <div className="flex flex-wrap gap-3 text-xs font-medium">
         <span className="inline-flex items-center gap-1.5">
           <span className="size-3 rounded-sm bg-red-600" />

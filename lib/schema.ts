@@ -317,6 +317,9 @@ async function runEnsureCreatorTrackingColumns() {
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS details_done boolean NOT NULL DEFAULT false`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS first_pay_amount numeric(12, 2)`
   await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS second_pay_amount numeric(12, 2)`
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS first_pay_on date`
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS second_pay_on date`
+  await sql`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS pay_slice_overrides jsonb NOT NULL DEFAULT '{}'::jsonb`
 
   await sql`
     CREATE TABLE IF NOT EXISTS urgent_payments (

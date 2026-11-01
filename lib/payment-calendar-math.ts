@@ -316,6 +316,12 @@ export function buildCreatorPaySchedule(opts: {
   }))
 }
 
+/** 2 SAR for every full 2,000 views after 10,000. 12,000 → 2, 14,000 → 4. */
+export function reposterViewCommissionSar(views: number): number {
+  const over = Math.max(0, Math.floor(views) - 10_000)
+  return Math.floor(over / 2_000) * 2
+}
+
 export function monthGridDates(start: string, end: string): string[] {
   const lead = weekdayIndexMondayFirst(start)
   const dates: string[] = []

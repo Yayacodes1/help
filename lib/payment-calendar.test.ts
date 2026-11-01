@@ -5,6 +5,7 @@ import {
   amountsForPaySlices,
   buildCreatorPaySchedule,
   monthGridDates,
+  reposterViewCommissionSar,
   resolvePayTiming,
   sarToUsd,
   settleObligationsLite,
@@ -256,4 +257,16 @@ test('urgency is red for the next 3 days, orange for the next 2, green after tha
   assert.equal(urgencyFor('2026-11-06', '2026-11-01', 100), 'soon')
   assert.equal(urgencyFor('2026-11-07', '2026-11-01', 100), 'safe')
   assert.equal(urgencyFor('2026-11-01', '2026-11-01', 0), 'none')
+})
+
+test('reposter commission is 2 SAR for every 2,000 views after 10,000', () => {
+  assert.equal(reposterViewCommissionSar(0), 0)
+  assert.equal(reposterViewCommissionSar(10_000), 0)
+  assert.equal(reposterViewCommissionSar(11_999), 0)
+  assert.equal(reposterViewCommissionSar(12_000), 2)
+  assert.equal(reposterViewCommissionSar(14_000), 4)
+  assert.equal(reposterViewCommissionSar(16_000), 6)
+  assert.equal(reposterViewCommissionSar(18_000), 8)
+  assert.equal(reposterViewCommissionSar(20_000), 10)
+  assert.equal(reposterViewCommissionSar(21_999), 10)
 })

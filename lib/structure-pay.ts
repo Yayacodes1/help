@@ -20,6 +20,9 @@ type StoredPay = {
   pay_currency: string | null
   first_pay_amount: number | null
   second_pay_amount: number | null
+  first_pay_on: string | null
+  second_pay_on: string | null
+  pay_slice_overrides: Record<string, { on?: string | null; amount?: number | null }> | null
   details_done: boolean
 }
 
@@ -40,6 +43,9 @@ const EMPTY_WAVES = {
   secondLabel: 'Second payment',
   firstOverride: null as number | null,
   secondOverride: null as number | null,
+  firstPayOn: null as string | null,
+  secondPayOn: null as string | null,
+  sliceOverrides: {} as Record<string, { on?: string | null; amount?: number | null }>,
 }
 
 export async function ensureStructurePayTable() {
@@ -57,6 +63,9 @@ export async function ensureStructurePayTable() {
   `
   await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS first_pay_amount numeric(12, 2)`
   await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS second_pay_amount numeric(12, 2)`
+  await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS first_pay_on date`
+  await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS second_pay_on date`
+  await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS pay_slice_overrides jsonb NOT NULL DEFAULT '{}'::jsonb`
   await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS details_done boolean NOT NULL DEFAULT false`
   await sql`
     CREATE TABLE IF NOT EXISTS structure_payments (
@@ -78,6 +87,9 @@ function wavesFor(opts: {
   payments: PayRow[]
   firstOverride: number | null
   secondOverride: number | null
+  firstOn?: string | null
+  secondOn?: string | null
+  sliceOverrides?: Record<string, { on?: string | null; amount?: number | null }> | null
   detailsDone: boolean
   today: string
 }) {
@@ -113,16 +125,19 @@ function wavesFor(opts: {
     firstPaid: waves.firstPaid,
     firstBalance: waves.firstBalance,
     firstSettled: waves.firstSettled,
-    firstDueOn: slices[0]?.dueOn ?? null,
+    firstDueOn: opts.firstOn || slices[0]?.dueOn || null,
     firstLabel: slices[0]?.label ?? 'First payment',
     secondDue: waves.secondDue,
     secondPaid: waves.secondPaid,
     secondBalance: waves.secondBalance,
     secondSettled: waves.secondSettled,
-    secondDueOn: slices[1]?.dueOn ?? null,
+    secondDueOn: opts.secondOn || slices[1]?.dueOn || null,
     secondLabel: slices[1]?.label ?? 'Second payment',
     firstOverride: opts.firstOverride,
     secondOverride: opts.secondOverride,
+    firstPayOn: opts.firstOn ?? null,
+    secondPayOn: opts.secondOn ?? null,
+    sliceOverrides: opts.sliceOverrides ?? {},
   }
 }
 
@@ -133,6 +148,8 @@ function timingOf(value: string | null | undefined): StructurePayTiming | null {
 function currencyOf(value: string | null | undefined): 'SAR' | 'USD' {
   return value === 'USD' ? 'USD' : 'SAR'
 }
+
+export { subjectKeyFromCalendarId } from '@/lib/company-roles'
 
 /** Stable negative ids so structure pay never settles against a creator payment. */
 export function structureCalendarIds(subjectKey: string): { creatorId: number; contractId: number } {
@@ -170,6 +187,9 @@ async function storedPays(): Promise<Map<string, StoredPay>> {
            pay_timing, base_amount::float AS base_amount, pay_currency,
            first_pay_amount::float AS first_pay_amount,
            second_pay_amount::float AS second_pay_amount,
+           first_pay_on::text AS first_pay_on,
+           second_pay_on::text AS second_pay_on,
+           COALESCE(pay_slice_overrides, '{}'::jsonb) AS pay_slice_overrides,
            details_done
     FROM structure_contracts
   `) as StoredPay[]
@@ -222,11 +242,13 @@ export async function loadStructurePaySlots(
              ct.pay_timing,
              ct.first_pay_amount::float AS first_pay_amount,
              ct.second_pay_amount::float AS second_pay_amount,
+             ct.first_pay_on::text AS first_pay_on,
+             ct.second_pay_on::text AS second_pay_on,
              ct.details_done
       FROM creators c
       LEFT JOIN LATERAL (
         SELECT id, start_date, end_date, base_amount, pay_timing,
-               first_pay_amount, second_pay_amount, details_done
+               first_pay_amount, second_pay_amount, first_pay_on, second_pay_on, details_done
         FROM contracts
         WHERE creator_id = c.id
         ORDER BY start_date DESC, id DESC
@@ -254,6 +276,8 @@ export async function loadStructurePaySlots(
         pay_timing: string | null
         first_pay_amount: number | null
         second_pay_amount: number | null
+        first_pay_on: string | null
+        second_pay_on: string | null
         details_done: boolean | null
       }>
     >,
@@ -336,6 +360,9 @@ export async function loadStructurePaySlots(
         payments: paysByKey.get(key) ?? [],
         firstOverride: saved?.first_pay_amount ?? null,
         secondOverride: saved?.second_pay_amount ?? null,
+        firstOn: saved?.first_pay_on ?? null,
+        secondOn: saved?.second_pay_on ?? null,
+        sliceOverrides: saved?.pay_slice_overrides ?? null,
         detailsDone: Boolean(saved?.details_done),
         today: day,
       }),
@@ -368,6 +395,9 @@ export async function loadStructurePaySlots(
           payments: paysByKey.get(key) ?? [],
           firstOverride: saved?.first_pay_amount ?? null,
           secondOverride: saved?.second_pay_amount ?? null,
+          firstOn: saved?.first_pay_on ?? null,
+          secondOn: saved?.second_pay_on ?? null,
+          sliceOverrides: saved?.pay_slice_overrides ?? null,
           detailsDone: Boolean(saved?.details_done),
           today: day,
         }),
@@ -402,6 +432,9 @@ export async function loadStructurePaySlots(
           payments: paysByKey.get(key) ?? [],
           firstOverride: saved?.first_pay_amount ?? null,
           secondOverride: saved?.second_pay_amount ?? null,
+          firstOn: saved?.first_pay_on ?? null,
+          secondOn: saved?.second_pay_on ?? null,
+          sliceOverrides: saved?.pay_slice_overrides ?? null,
           detailsDone: Boolean(saved?.details_done),
           today: day,
         }),
@@ -445,6 +478,8 @@ export async function loadStructurePaySlots(
           payments: person.contract_id ? (paysByContract.get(person.contract_id) ?? []) : [],
           firstOverride: person.first_pay_amount,
           secondOverride: person.second_pay_amount,
+          firstOn: person.first_pay_on,
+          secondOn: person.second_pay_on,
           detailsDone: Boolean(person.details_done),
           today: day,
         }),
@@ -483,6 +518,9 @@ export async function structureContractsForCalendar(
       payTiming: slot.timing ?? 'fifteen',
       firstPayAmount: slot.firstOverride,
       secondPayAmount: slot.secondOverride,
+      firstPayOn: slot.firstPayOn,
+      secondPayOn: slot.secondPayOn,
+      sliceOverrides: slot.sliceOverrides,
       targetInstagram: 0,
       targetTiktok: 0,
       platforms: 'both',

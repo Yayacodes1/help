@@ -829,7 +829,9 @@ export async function saveTimelineContract(formData: FormData) {
         UPDATE contracts
         SET start_date = ${start}, end_date = ${end}, pay_timing = ${payTiming},
             base_amount = ${baseAmount},
-            first_pay_amount = NULL, second_pay_amount = NULL
+            first_pay_amount = NULL, second_pay_amount = NULL,
+            first_pay_on = NULL, second_pay_on = NULL,
+            pay_slice_overrides = '{}'::jsonb
         WHERE id = ${contractId} AND creator_id = ${creatorId}
       `
     } else {
@@ -914,16 +916,83 @@ export async function saveTimelineWaveAmounts(formData: FormData) {
     !contractSupportsBiweeklyHalves(contract.start_date, contract.end_date, 14)
   const first = parseAmount(formData.get('first_amount'))
   const second = oneTime ? null : parseAmount(formData.get('second_amount'))
+  const firstOn = parseOptionalDate(formData.get('first_on'))
+  const secondOn = oneTime ? null : parseOptionalDate(formData.get('second_on'))
   await sql`
     UPDATE contracts
     SET first_pay_amount = ${first},
-        second_pay_amount = ${second}
+        second_pay_amount = ${second},
+        first_pay_on = ${firstOn},
+        second_pay_on = ${secondOn}
     WHERE id = ${contract.id} AND creator_id = ${creatorId}
   `
   revalidatePath('/admin')
   revalidatePath(`/admin/creators/${creatorId}`)
   revalidatePath('/admin/payments', 'layout')
   return { ok: true as const }
+}
+
+/** Move one calendar installment: date and amount. Index 0 and 1 are the first and second payments. */
+export async function saveTimelineInstallment(formData: FormData) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const creatorId = Math.floor(Number(formData.get('creator_id')))
+  const contractId = Math.floor(Number(formData.get('contract_id')))
+  const index = Math.floor(Number(formData.get('installment_index')))
+  if (!(creatorId > 0) || !(contractId > 0) || !Number.isFinite(index) || index < 0 || index > 36) {
+    return { ok: false as const, message: 'Missing payment.' }
+  }
+  const payOn = parseOptionalDate(formData.get('pay_on'))
+  if (!payOn) return { ok: false as const, message: 'Pick a date.' }
+  const amount = parseAmount(formData.get('amount'))
+  const owned = (await sql`
+    SELECT id, pay_slice_overrides
+    FROM contracts
+    WHERE id = ${contractId} AND creator_id = ${creatorId}
+    LIMIT 1
+  `) as { id: number; pay_slice_overrides: unknown }[]
+  if (!owned[0]) return { ok: false as const, message: 'Contract not found.' }
+  if (index === 0) {
+    await sql`
+      UPDATE contracts
+      SET first_pay_on = ${payOn}, first_pay_amount = ${amount}
+      WHERE id = ${contractId} AND creator_id = ${creatorId}
+    `
+  } else if (index === 1) {
+    await sql`
+      UPDATE contracts
+      SET second_pay_on = ${payOn}, second_pay_amount = ${amount}
+      WHERE id = ${contractId} AND creator_id = ${creatorId}
+    `
+  } else {
+    const overrides = readSliceOverrides(owned[0].pay_slice_overrides)
+    overrides[String(index)] = { on: payOn, amount }
+    await sql`
+      UPDATE contracts
+      SET pay_slice_overrides = ${JSON.stringify(overrides)}::jsonb
+      WHERE id = ${contractId} AND creator_id = ${creatorId}
+    `
+  }
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  revalidatePath('/admin/payments', 'layout')
+  return { ok: true as const }
+}
+
+function readSliceOverrides(value: unknown): Record<string, { on?: string; amount?: number }> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, { on?: string; amount?: number }> = {}
+  for (const [key, row] of Object.entries(value as Record<string, unknown>)) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+    const item = row as { on?: unknown; amount?: unknown }
+    const on = typeof item.on === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.on) ? item.on : undefined
+    const amount = Number(item.amount)
+    out[key] = {
+      on,
+      amount: Number.isFinite(amount) ? Math.round(amount * 100) / 100 : undefined,
+    }
+  }
+  return out
 }
 
 /** Timeline Manage: Ahmed and Lula put someone on the urgent pay list. */

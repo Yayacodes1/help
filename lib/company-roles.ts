@@ -6,6 +6,21 @@ export const EXECUTIVE_ROLES = [
 
 export type ExecutiveRoleId = (typeof EXECUTIVE_ROLES)[number]['id']
 
+/** Reverse of the calendar's negative company ids. Reposters stay on positive creator ids. */
+export function subjectKeyFromCalendarId(id: number): string | null {
+  if (id === -2) return 'executive:coo'
+  if (id === -3) return 'executive:deputy_coo'
+  if (id <= -200_000 && id > -300_000) {
+    const outreachId = -id - 200_000
+    return outreachId >= 0 ? `outreach:${outreachId}` : null
+  }
+  if (id <= -10_000 && id > -200_000) {
+    const leaderId = -id - 10_000
+    return leaderId >= 0 ? `leader:${leaderId}` : null
+  }
+  return null
+}
+
 export type StructurePerson = {
   key: string
   name: string
@@ -52,6 +67,9 @@ export type StructurePaySlot = {
   secondLabel: string
   firstOverride: number | null
   secondOverride: number | null
+  firstPayOn: string | null
+  secondPayOn: string | null
+  sliceOverrides: Record<string, { on?: string | null; amount?: number | null }>
   tiktok_username?: string | null
   instagram_username?: string | null
   notek_tiktok_username?: string | null

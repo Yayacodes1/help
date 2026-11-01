@@ -139,6 +139,12 @@ export type Contract = {
   first_pay_amount?: number | null
   /** Manual second-wave amount. Null keeps the automatic split. */
   second_pay_amount?: number | null
+  /** Manual first-wave date. Null keeps the schedule date. */
+  first_pay_on?: string | null
+  /** Manual second-wave date. Null keeps the schedule date. */
+  second_pay_on?: string | null
+  /** Later installments: { "2": { "on": "2026-12-01", "amount": 100 } }. */
+  pay_slice_overrides?: Record<string, { on?: string | null; amount?: number | null }> | null
   /** Commission (nullable until set later) */
   commission_amount: number | null
   /** Null = use house default */

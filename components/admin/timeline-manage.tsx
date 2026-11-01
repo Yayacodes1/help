@@ -37,6 +37,7 @@ export type TimelineLabels = {
   noAmount: string
   firstPayment: string
   secondPayment: string
+  when: string
   payFirst: string
   paySecond: string
   paid: string
@@ -228,6 +229,15 @@ export function TimelineManage({
         <input type="hidden" name="contract_id" value={person.contract_id ?? ''} />
         <div className="grid gap-2 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {labels.firstPayment} · {labels.when}
+            <input
+              type="date"
+              name="first_on"
+              defaultValue={person.first_due_on ?? ''}
+              className={inputClass}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             {labels.firstPayment} · {person.pay_display_currency}
             <input
               type="number"
@@ -240,18 +250,29 @@ export function TimelineManage({
             />
           </label>
           {person.has_two_pays ? (
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              {labels.secondPayment} · {person.pay_display_currency}
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                name="second_amount"
-                required
-                defaultValue={person.second_due || ''}
-                className={inputClass}
-              />
-            </label>
+            <>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                {labels.secondPayment} · {labels.when}
+                <input
+                  type="date"
+                  name="second_on"
+                  defaultValue={person.second_due_on ?? ''}
+                  className={inputClass}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                {labels.secondPayment} · {person.pay_display_currency}
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  name="second_amount"
+                  required
+                  defaultValue={person.second_due || ''}
+                  className={inputClass}
+                />
+              </label>
+            </>
           ) : null}
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}

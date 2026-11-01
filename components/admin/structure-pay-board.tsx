@@ -310,6 +310,10 @@ function WaveForm({ slot, onClose }: { slot: StructurePaySlot; onClose: () => vo
       {slot.contractId ? <input type="hidden" name="contract_id" value={slot.contractId} /> : null}
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          First payment · when
+          <input type="date" name="first_on" defaultValue={slot.firstDueOn ?? ''} className={inputClass} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           First payment · {slot.currency}
           <input
             type="number"
@@ -322,18 +326,24 @@ function WaveForm({ slot, onClose }: { slot: StructurePaySlot; onClose: () => vo
           />
         </label>
         {slot.hasTwoPays ? (
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Second payment · {slot.currency}
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              name="second_amount"
-              required
-              defaultValue={slot.secondDue || ''}
-              className={inputClass}
-            />
-          </label>
+          <>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              Second payment · when
+              <input type="date" name="second_on" defaultValue={slot.secondDueOn ?? ''} className={inputClass} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              Second payment · {slot.currency}
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                name="second_amount"
+                required
+                defaultValue={slot.secondDue || ''}
+                className={inputClass}
+              />
+            </label>
+          </>
         ) : null}
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}

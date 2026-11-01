@@ -11,7 +11,9 @@ import {
   type CalendarRoleFilter,
   type CalendarVideoHit,
   type PaymentCalendarModel,
+  type ReposterCommissionLine,
 } from '@/lib/payment-calendar'
+import { reposterViewCommissionSar } from '@/lib/payment-calendar-math'
 import { structureContractsForCalendar, structurePaymentsForCalendar } from '@/lib/structure-pay'
 
 export async function loadPaymentCalendar(opts: {
@@ -37,6 +39,9 @@ export async function loadPaymentCalendar(opts: {
              c.pay_timing,
              c.first_pay_amount::float AS first_pay_amount,
              c.second_pay_amount::float AS second_pay_amount,
+             c.first_pay_on::text AS first_pay_on,
+             c.second_pay_on::text AS second_pay_on,
+             COALESCE(c.pay_slice_overrides, '{}'::jsonb) AS pay_slice_overrides,
              c.target_instagram, c.target_tiktok, c.platforms,
              COALESCE(cr.pay_every_days, 14)::int AS pay_every_days,
              cr.id AS creator_id, cr.name AS creator_name, cr.role,
@@ -93,6 +98,9 @@ export async function loadPaymentCalendar(opts: {
       pay_timing: string | null
       first_pay_amount: number | null
       second_pay_amount: number | null
+      first_pay_on: string | null
+      second_pay_on: string | null
+      pay_slice_overrides: Record<string, { on?: string | null; amount?: number | null }> | null
       target_instagram: number
       target_tiktok: number
       platforms: string | null
@@ -116,6 +124,9 @@ export async function loadPaymentCalendar(opts: {
     payTiming: row.pay_timing,
     firstPayAmount: row.first_pay_amount == null ? null : Number(row.first_pay_amount),
     secondPayAmount: row.second_pay_amount == null ? null : Number(row.second_pay_amount),
+    firstPayOn: row.first_pay_on,
+    secondPayOn: row.second_pay_on,
+    sliceOverrides: row.pay_slice_overrides,
     targetInstagram: row.target_instagram,
     targetTiktok: row.target_tiktok,
     platforms: row.platforms,
@@ -183,12 +194,16 @@ export async function loadPaymentCalendar(opts: {
     payments,
     videos,
   }
+  const reposterCommission = role === 'reposter' ? await loadReposterCommission(start, end) : []
+  const reposterCommissionSar = roundCommission(reposterCommission.reduce((sum, row) => sum + row.sar, 0))
   const current = buildPaymentCalendarModel({
     ...shared,
     month: opts.month,
-    commissionEarnedSar: role === 'company' ? 0 : board.totals.commissionEarned,
+    commissionEarnedSar:
+      role === 'company' ? 0 : role === 'reposter' ? reposterCommissionSar : board.totals.commissionEarned,
     commissionRecordedSar: 0,
-    commissionDueSar: role === 'company' ? 0 : Math.max(0, board.totals.commissionEarned),
+    commissionDueSar:
+      role === 'company' ? 0 : role === 'reposter' ? reposterCommissionSar : Math.max(0, board.totals.commissionEarned),
   })
   const nextMonth = addDays(end, 1).slice(0, 7)
   const next = buildPaymentCalendarModel({
@@ -200,8 +215,37 @@ export async function loadPaymentCalendar(opts: {
   })
   return {
     ...current,
+    reposterCommission,
     nextMonth,
     nextScheduledSar: next.scheduledTotalSar,
     nextScheduledUsd: next.scheduledTotalUsd,
   }
+}
+
+function roundCommission(value: number): number {
+  return Math.round(Math.max(0, value) * 100) / 100
+}
+
+/** Views on videos posted in the month. Each reposter is one row, so the pay is not added twice. */
+async function loadReposterCommission(start: string, end: string): Promise<ReposterCommissionLine[]> {
+  const rows = (await sql`
+    SELECT cr.id, cr.name, COALESCE(SUM(s.views), 0)::float AS views
+    FROM creators cr
+    JOIN submissions s ON s.creator_id = cr.id
+      AND s.video_date >= ${start}::date
+      AND s.video_date <= ${end}::date
+    WHERE cr.role = 'reposter'
+    GROUP BY cr.id, cr.name
+    HAVING COALESCE(SUM(s.views), 0) > 0
+    ORDER BY views DESC, cr.name ASC
+  `) as Array<{ id: number; name: string; views: number }>
+  return rows.map((row) => {
+    const views = Math.max(0, Math.floor(Number(row.views) || 0))
+    return {
+      creatorId: row.id,
+      name: row.name,
+      views,
+      sar: reposterViewCommissionSar(views),
+    }
+  })
 }

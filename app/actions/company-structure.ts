@@ -5,7 +5,7 @@ import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import { canSeeStructureTier } from '@/lib/admin-access'
 import { EXECUTIVE_ROLES, type ExecutiveRoleId, type StructurePayTiming } from '@/lib/company-roles'
 import { saveExecutiveName } from '@/lib/company-structure'
-import { ensureStructurePayTable, tierFromSubjectKey } from '@/lib/structure-pay'
+import { ensureStructurePayTable, subjectKeyFromCalendarId, tierFromSubjectKey } from '@/lib/structure-pay'
 import { contractWaveStatus } from '@/lib/contract-halves'
 import { getOperationalToday } from '@/lib/queries'
 
@@ -81,6 +81,9 @@ export async function saveStructureContract(formData: FormData) {
       pay_currency = EXCLUDED.pay_currency,
       first_pay_amount = CASE WHEN ${resetWaves} THEN NULL ELSE structure_contracts.first_pay_amount END,
       second_pay_amount = CASE WHEN ${resetWaves} THEN NULL ELSE structure_contracts.second_pay_amount END,
+      first_pay_on = CASE WHEN ${resetWaves} THEN NULL ELSE structure_contracts.first_pay_on END,
+      second_pay_on = CASE WHEN ${resetWaves} THEN NULL ELSE structure_contracts.second_pay_on END,
+      pay_slice_overrides = CASE WHEN ${resetWaves} THEN '{}'::jsonb ELSE structure_contracts.pay_slice_overrides END,
       updated_at = NOW()
   `
   revalidatePath('/admin')
@@ -114,10 +117,14 @@ export async function saveStructureWaveAmounts(formData: FormData) {
   const oneTime = rows[0].pay_timing === 'end' || !rows[0].end_date
   const first = parseAmount(formData.get('first_amount'))
   const second = oneTime ? null : parseAmount(formData.get('second_amount'))
+  const firstOn = parseDate(formData.get('first_on'))
+  const secondOn = oneTime ? null : parseDate(formData.get('second_on'))
   await sql`
     UPDATE structure_contracts
     SET first_pay_amount = ${first},
         second_pay_amount = ${second},
+        first_pay_on = ${firstOn},
+        second_pay_on = ${secondOn},
         updated_at = NOW()
     WHERE subject_key = ${subjectKey}
   `
@@ -188,4 +195,67 @@ export async function setStructureDetailsDone(subjectKey: string, done: boolean)
   if (!updated[0]) return { ok: false as const }
   revalidatePath('/admin')
   return { ok: true as const }
+}
+
+/** People to pay: move one company salary installment. */
+export async function saveStructureInstallment(formData: FormData) {
+  const creatorId = Math.floor(Number(formData.get('creator_id')))
+  const subjectKey = subjectKeyFromCalendarId(creatorId)
+  if (!subjectKey || !(await editableStructure(subjectKey))) {
+    return { ok: false as const, message: 'You cannot edit this pay.' }
+  }
+  const index = Math.floor(Number(formData.get('installment_index')))
+  const payOn = parseDate(formData.get('pay_on'))
+  if (!payOn || !Number.isFinite(index) || index < 0 || index > 36) {
+    return { ok: false as const, message: 'Pick a date.' }
+  }
+  const amount = parseAmount(formData.get('amount'))
+  const { sql } = await import('@/lib/db')
+  if (index === 0) {
+    await sql`
+      UPDATE structure_contracts
+      SET first_pay_on = ${payOn}, first_pay_amount = ${amount}, updated_at = NOW()
+      WHERE subject_key = ${subjectKey}
+    `
+  } else if (index === 1) {
+    await sql`
+      UPDATE structure_contracts
+      SET second_pay_on = ${payOn}, second_pay_amount = ${amount}, updated_at = NOW()
+      WHERE subject_key = ${subjectKey}
+    `
+  } else {
+    const rows = (await sql`
+      SELECT pay_slice_overrides
+      FROM structure_contracts
+      WHERE subject_key = ${subjectKey}
+      LIMIT 1
+    `) as { pay_slice_overrides: unknown }[]
+    if (!rows[0]) return { ok: false as const, message: 'Save the contract first.' }
+    const overrides = readSliceOverrides(rows[0].pay_slice_overrides)
+    overrides[String(index)] = { on: payOn, amount }
+    await sql`
+      UPDATE structure_contracts
+      SET pay_slice_overrides = ${JSON.stringify(overrides)}::jsonb, updated_at = NOW()
+      WHERE subject_key = ${subjectKey}
+    `
+  }
+  revalidatePath('/admin')
+  revalidatePath('/admin/payments', 'layout')
+  return { ok: true as const }
+}
+
+function readSliceOverrides(value: unknown): Record<string, { on?: string; amount?: number }> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, { on?: string; amount?: number }> = {}
+  for (const [key, row] of Object.entries(value as Record<string, unknown>)) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+    const item = row as { on?: unknown; amount?: unknown }
+    const on = typeof item.on === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.on) ? item.on : undefined
+    const amountNumber = Number(item.amount)
+    out[key] = {
+      on,
+      amount: Number.isFinite(amountNumber) ? Math.round(amountNumber * 100) / 100 : undefined,
+    }
+  }
+  return out
 }
