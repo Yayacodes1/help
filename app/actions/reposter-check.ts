@@ -7,6 +7,7 @@ import { getCreatorById, getCreatorByName } from '@/lib/queries'
 import { REPOSTER_ACTIVITY_KINDS } from '@/lib/activity-kinds'
 import { ensureActivityTable } from '@/lib/activity'
 import { ensureReposterCheckTables } from '@/lib/reposter-checks'
+import { creatorIsPaused } from '@/lib/pause-person'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -17,9 +18,9 @@ export async function saveReposterCheck(formData: FormData) {
   if (!Number.isFinite(creatorId) || creatorId <= 0 || !DATE_RE.test(day)) return
 
   const actor = await getCreatorByName(username)
-  if (!actor || actor.role !== 'reposter') throw new Error('Unauthorized')
+  if (!actor || actor.role !== 'reposter' || (await creatorIsPaused(actor.id))) throw new Error('Unauthorized')
   const target = await getCreatorById(creatorId)
-  if (!target || target.role !== 'creator') return
+  if (!target || target.role !== 'creator' || (await creatorIsPaused(target.id))) return
 
   const [actorLink, targetLink] = await Promise.all([
     getLeaderForCreator(actor.id),

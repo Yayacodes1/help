@@ -6,6 +6,7 @@ import { getLeaderSession } from '@/lib/leader-auth'
 import { getLeaderForCreator } from '@/lib/leaders'
 import { ensureTaskTables } from '@/lib/tasks'
 import { getCreatorByName } from '@/lib/queries'
+import { creatorIsPaused } from '@/lib/pause-person'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -100,7 +101,7 @@ export async function toggleReposterTask(formData: FormData) {
   if (!Number.isFinite(taskId) || taskId <= 0 || !DATE_RE.test(day)) return
 
   const creator = await getCreatorByName(username)
-  if (!creator || creator.role !== 'reposter') throw new Error('Unauthorized')
+  if (!creator || creator.role !== 'reposter' || (await creatorIsPaused(creator.id))) throw new Error('Unauthorized')
   const link = await getLeaderForCreator(creator.id)
   if (!link) throw new Error('Unauthorized')
 

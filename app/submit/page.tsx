@@ -40,6 +40,7 @@ import { getLeaderForCreator } from '@/lib/leaders'
 import { getOutreachMemberByCreator } from '@/lib/outreach'
 import { outreachGreeting } from '@/lib/outreach-status'
 import { ReposterDashboard } from '@/app/submit/reposter-dashboard'
+import { creatorIsPaused } from '@/lib/pause-person'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -75,6 +76,9 @@ export default async function SubmitPage({
 
   if (!creator) {
     return <UsernameGate initialUsername={u ?? ''} locale={locale} />
+  }
+  if (await creatorIsPaused(creator.id)) {
+    return <UsernameGate locale={locale} notice={t('accountPaused')} />
   }
 
   const login = loginHandleFor(creator)

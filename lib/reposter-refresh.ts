@@ -3,6 +3,7 @@ import { sql } from '@/lib/db'
 import { getLeaderForCreator, getLeaderScope } from '@/lib/leaders'
 import { getCreatorByName } from '@/lib/queries'
 import type { RefreshJobActor } from '@/lib/refresh-job'
+import { creatorIsPaused } from '@/lib/pause-person'
 
 export async function reposterRefreshContext(
   username: string,
@@ -14,7 +15,7 @@ export async function reposterRefreshContext(
     name = username
   }
   const creator = await getCreatorByName(name)
-  if (!creator || creator.role !== 'reposter') return null
+  if (!creator || creator.role !== 'reposter' || (await creatorIsPaused(creator.id))) return null
   const link = await getLeaderForCreator(creator.id)
   if (!link) return null
   const scope = await getLeaderScope(link.leaderId)

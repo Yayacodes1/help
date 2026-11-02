@@ -173,6 +173,7 @@ export async function getDailyViewsByCreator(opts: {
       AND (${role}::text IS NULL OR c.role = ${role})
       AND (${ids}::int[] IS NULL OR c.id = ANY(${ids}::int[]))
       AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
+      AND c.paused_at IS NULL
     GROUP BY s.video_date, c.id, c.name
     ORDER BY s.video_date ASC, c.name ASC
   `) as CreatorDailyViewsRow[]
@@ -222,7 +223,7 @@ export async function getViewsLeaderboard(opts: {
         )
       )
     GROUP BY c.id, c.name, c.paused_at
-    HAVING c.paused_at IS NULL OR COUNT(s.id) > 0
+    HAVING c.paused_at IS NULL
     ORDER BY views DESC, videos DESC, c.name ASC
     LIMIT ${limit}
   `) as CreatorViewsRow[]
@@ -277,6 +278,7 @@ export async function getTopVideos(opts: {
       AND (${ids}::int[] IS NULL OR c.id = ANY(${ids}::int[]))
       AND (${platform}::text IS NULL OR s.platform = ${platform})
       AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
+      AND c.paused_at IS NULL
     ORDER BY s.views DESC, s.video_date DESC, s.id DESC
     LIMIT ${limit}
   `) as TopVideoRow[]

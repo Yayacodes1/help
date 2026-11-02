@@ -66,15 +66,7 @@ export async function getLeagueBoard(opts: {
     SELECT id, name, role, tiktok_username, instagram_username, login_platform
     FROM creators
     WHERE (${role}::text IS NULL OR role = ${role})
-      AND (
-        paused_at IS NULL
-        OR EXISTS (
-          SELECT 1 FROM submissions sv
-          WHERE sv.creator_id = creators.id
-            AND sv.video_date >= ${from}::date
-            AND sv.video_date <= ${to}::date
-        )
-      )
+      AND paused_at IS NULL
     ORDER BY name ASC
   `) as {
     id: number

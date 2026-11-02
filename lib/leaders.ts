@@ -168,7 +168,7 @@ async function loadContext(day: string): Promise<{
     sql`
       SELECT id, leader_id
       FROM creators
-      WHERE role IN ('creator', 'reposter') AND leader_id IS NOT NULL
+      WHERE role IN ('creator', 'reposter') AND leader_id IS NOT NULL AND paused_at IS NULL
     `,
     sql`
       SELECT leader_id, creator_id, note
@@ -412,7 +412,7 @@ export async function loadLeaderLinks(): Promise<{
       SELECT c.id AS creator_id, c.leader_id, l.name AS leader_name
       FROM creators c
       JOIN leaders l ON l.id = c.leader_id
-      WHERE c.leader_id IS NOT NULL
+      WHERE c.leader_id IS NOT NULL AND c.paused_at IS NULL
     `,
   ])
   const leaders = leaderRows as { id: number; name: string }[]
@@ -467,7 +467,7 @@ export async function getLeaderDirectory(): Promise<LeaderDirectory> {
     `,
     sql`
       SELECT id, leader_id FROM creators
-      WHERE role IN ('creator', 'reposter') AND leader_id IS NOT NULL
+      WHERE role IN ('creator', 'reposter') AND leader_id IS NOT NULL AND paused_at IS NULL
     `,
   ])
   const leaders = leaderRows as ({
@@ -592,7 +592,7 @@ export async function creatorBelongsToLeader(creatorId: number, leaderId: number
 
 export type LeaderScope = {
   leaderId: number
-  /** Everyone the admin assigned to this leader, paused people included. */
+  /** Active people assigned to this leader. Paused people stay off the team until resumed. */
   teamIds: number[]
   /** The leader's own reposter account, if linked. */
   ownId: number | null
@@ -637,7 +637,7 @@ export const getLeaderForCreator = cache(async function getLeaderForCreator(
 export async function getLeaderScope(leaderId: number): Promise<LeaderScope> {
   await ensureLeaderTables()
   const [teamRows, ownRows] = await Promise.all([
-    sql`SELECT id FROM creators WHERE leader_id = ${leaderId} ORDER BY name ASC`,
+    sql`SELECT id FROM creators WHERE leader_id = ${leaderId} AND paused_at IS NULL ORDER BY name ASC`,
     sql`SELECT reposter_id FROM leaders WHERE id = ${leaderId} LIMIT 1`,
   ])
   const teamIds = (teamRows as { id: number }[]).map((row) => row.id)

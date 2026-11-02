@@ -7,6 +7,8 @@ import { ensureCreatorTrackingColumns } from '@/lib/schema'
 import { getLocale } from '@/lib/locale'
 import { LeaderShell } from '@/components/leader/leader-shell'
 import { getOutreachMemberByLeader } from '@/lib/outreach'
+import { leaderOwnAccountPaused } from '@/lib/pause-person'
+import { createT } from '@/lib/i18n'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +36,15 @@ export default async function LeaderLayout({ children }: { children: ReactNode }
       pay: null,
       people: [],
     }
+
+  if (await leaderOwnAccountPaused(session.id)) {
+    const t = createT(locale)
+    return (
+      <main className="mx-auto flex min-h-dvh w-full max-w-md items-center px-5">
+        <p className="text-sm text-muted-foreground">{t('accountPaused')}</p>
+      </main>
+    )
+  }
 
   let outreachHref: string | null = null
   try {

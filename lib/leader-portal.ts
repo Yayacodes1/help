@@ -177,13 +177,14 @@ export function personReportLines(t: T, m: TeamMember): string[] {
 }
 
 export function teamReport(t: T, leaderName: string, today: string, members: TeamMember[]): string {
-  const creators = members.filter((m) => m.person.role === 'creator').length
-  const reposters = members.length - creators
-  const views = members.reduce((sum, m) => sum + m.monthViews, 0)
+  const active = members.filter((m) => !m.paused)
+  const creators = active.filter((m) => m.person.role === 'creator').length
+  const reposters = active.length - creators
+  const views = active.reduce((sum, m) => sum + m.monthViews, 0)
   const header = [
     `${t('leaderDashboard')} — ${leaderName} — ${today}`,
     `${t('roleFilterCreators')} ${creators} · ${t('roleFilterReposters')} ${reposters} · ${t('leaderMonthViews')} ${formatNumber(views)}`,
   ]
-  const body = members.flatMap((m, i) => ['', `${i + 1}) ${personReportLines(t, m).join('\n')}`])
+  const body = active.flatMap((m, i) => ['', `${i + 1}) ${personReportLines(t, m).join('\n')}`])
   return [...header, ...body].join('\n')
 }

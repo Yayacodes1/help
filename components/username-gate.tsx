@@ -12,9 +12,11 @@ type State = { ok: boolean; message: string } | null
 export function UsernameGate({
   initialUsername = '',
   locale,
+  notice,
 }: {
   initialUsername?: string
   locale: Locale
+  notice?: string
 }) {
   const t = createT(locale)
   const rtl = locale === 'ar'
@@ -46,6 +48,16 @@ export function UsernameGate({
 
         <form action={formAction} className="mt-6 flex flex-col gap-3">
           <CreatorLoginFields locale={locale} defaultUsername={initialUsername} />
+
+          {notice ? (
+            <p
+              className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              role="status"
+            >
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {notice}
+            </p>
+          ) : null}
 
           {state && !state.ok && (
             <p

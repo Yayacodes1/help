@@ -80,7 +80,6 @@ function DateRange({
 
 export function TimelineManage({
   people,
-  pausedPeople = [],
   today,
   currentProjectId,
   labels,
@@ -107,11 +106,6 @@ export function TimelineManage({
     () => people.filter((c) => personBelongsOnProjectManage(c, currentProjectId)),
     [people, currentProjectId],
   )
-  const scopedPaused = useMemo(
-    () => pausedPeople.filter((c) => personBelongsOnProjectManage(c, currentProjectId)),
-    [pausedPeople, currentProjectId],
-  )
-
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase().replace(/^@/, '')
     const list = q
@@ -571,20 +565,6 @@ export function TimelineManage({
           ))
         )}
       </ul>
-      {scopedPaused.length > 0 ? (
-        <details className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 px-3 py-2">
-          <summary className="cursor-pointer text-sm font-medium">
-            {labels.paused} ({scopedPaused.length})
-          </summary>
-          <ul className="mt-2 flex flex-col divide-y divide-border">
-            {scopedPaused.map((person) => (
-              <li key={person.id} className="py-3">
-                <Row person={person} />
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
     </div>
   )
 }

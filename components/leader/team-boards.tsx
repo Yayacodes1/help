@@ -202,10 +202,7 @@ export function CreatorCards({ members, locale }: { members: TeamMember[]; local
 export function ManageList({ members, locale }: { members: TeamMember[]; locale: Locale }) {
   const t = createT(locale)
   if (members.length === 0) return <Empty text={t('leaderNoPeople')} />
-  const groups = [
-    { key: 'active', title: null, rows: members.filter((m) => !m.paused) },
-    { key: 'paused', title: t('leaderPaused'), rows: members.filter((m) => m.paused) },
-  ]
+  const groups = [{ key: 'active', title: null, rows: members.filter((m) => !m.paused) }]
   return (
     <div className="flex flex-col gap-4">
       <p className="text-xs text-muted-foreground">{t('leaderTeamHint')}</p>

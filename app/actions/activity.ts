@@ -8,6 +8,7 @@ import { creatorBelongsToLeader, getLeaderForCreator } from '@/lib/leaders'
 import { ensureActivityTable } from '@/lib/activity'
 import { isActivityKind } from '@/lib/activity-kinds'
 import { getCreatorById, getCreatorByName } from '@/lib/queries'
+import { creatorIsPaused } from '@/lib/pause-person'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -23,9 +24,9 @@ async function markerFor(
   const handle = (actorUsername ?? '').trim()
   if (!handle) return null
   const actor = await getCreatorByName(handle)
-  if (!actor || actor.role !== 'reposter') return null
+  if (!actor || actor.role !== 'reposter' || (await creatorIsPaused(actor.id))) return null
   const target = await getCreatorById(creatorId)
-  if (!target || target.role !== 'creator') return null
+  if (!target || target.role !== 'creator' || (await creatorIsPaused(target.id))) return null
   const [actorLink, targetLink] = await Promise.all([
     getLeaderForCreator(actor.id),
     getLeaderForCreator(creatorId),
@@ -43,6 +44,7 @@ export async function setActivity(input: {
 }) {
   const creatorId = Math.floor(Number(input.creatorId))
   if (!Number.isFinite(creatorId) || creatorId <= 0) return { ok: false as const }
+  if (await creatorIsPaused(creatorId)) return { ok: false as const }
   if (!DATE_RE.test(input.day) || !isActivityKind(input.kind)) return { ok: false as const }
   const markedBy = await markerFor(creatorId, input.actorUsername)
   if (!markedBy) throw new Error('Unauthorized')

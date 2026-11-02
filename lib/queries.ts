@@ -306,6 +306,7 @@ export async function getAdminSubmissionStats(
       AND (${platform}::text IS NULL OR s.platform = ${platform})
       AND (${from}::date IS NULL OR s.video_date >= ${from})
       AND (${to}::date IS NULL OR s.video_date <= ${to})
+      AND (c.paused_at IS NULL OR ${creatorId}::int IS NOT NULL)
   `) as { count: number; views: string | number; creator_views: string | number }[]
   const row = rows[0]
   return {
@@ -351,6 +352,7 @@ export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<A
       AND (${platform}::text IS NULL OR s.platform = ${platform})
       AND (${from}::date IS NULL OR s.video_date >= ${from})
       AND (${to}::date IS NULL OR s.video_date <= ${to})
+      AND (c.paused_at IS NULL OR ${creatorId}::int IS NOT NULL)
     ORDER BY s.video_date DESC, s.created_at DESC, s.id DESC
     LIMIT ${limit} OFFSET ${offset}
   `) as AdminSubmissionRow[]
@@ -1430,6 +1432,7 @@ export async function getPaymentDueList(
       SELECT 1 FROM submissions sx WHERE sx.creator_id = creators.id AND sx.project_id = ${pid}
     ))
       AND (${roleFilter}::text IS NULL OR role = ${roleFilter})
+      AND paused_at IS NULL
     ORDER BY name ASC
   `) as Creator[]
 

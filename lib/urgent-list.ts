@@ -80,6 +80,7 @@ export async function loadUrgentList(today: string): Promise<{ ids: number[]; ro
   const people = await getCreatorsWithProgressOnDate(today, undefined, null, { creatorIds: ids })
   const tracked = await attachTracking(people, today)
   const rows = tracked
+    .filter((person) => !person.paused_at)
     .map((person) => urgentPayFromTracking(person, today, marked.get(person.id) === true))
     .sort((a, b) => b.daysLate - a.daysLate || (a.dueOn ?? '9999').localeCompare(b.dueOn ?? '9999') || a.name.localeCompare(b.name))
   return { ids, rows }

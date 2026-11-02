@@ -14,6 +14,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { normalizeHandle, parseLoginPlatform } from '@/lib/usernames'
 import { OPERATIONAL_TZ, operationalDayFromIso } from '@/lib/operational-day'
+import { creatorIsPaused, PAUSED_ACCOUNT_MESSAGE } from '@/lib/pause-person'
 import { findExistingVideos, resolveVideoKey, videoKeyFromUrl } from '@/lib/video-key'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -43,6 +44,9 @@ export async function startSubmission(_prev: unknown, formData: FormData) {
   if (!creator) {
     return { ok: false, message: 'اسم المستخدم غير مسجّل على هذا الحساب. تواصل مع الإدارة لإضافتك.' }
   }
+  if (await creatorIsPaused(creator.id)) {
+    return { ok: false, message: PAUSED_ACCOUNT_MESSAGE }
+  }
   try {
     await sql`
       UPDATE creators
@@ -58,6 +62,7 @@ export async function startSubmission(_prev: unknown, formData: FormData) {
 export async function submitVideos(username: string, _prev: unknown, formData: FormData) {
   const creator = await getCreatorByName(username)
   if (!creator) return { ok: false, message: 'اسم المستخدم غير مسجّل.' }
+  if (await creatorIsPaused(creator.id)) return { ok: false, message: PAUSED_ACCOUNT_MESSAGE }
 
   const projectRaw = (formData.get('project_id') ?? '').toString()
   const projectId = projectRaw ? Number(projectRaw) : NaN
@@ -203,7 +208,7 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
 
 export async function deleteOwnSubmission(username: string, submissionId: number) {
   const creator = await getCreatorByName(normalizeHandle(username))
-  if (!creator) return
+  if (!creator || (await creatorIsPaused(creator.id))) return
   await sql`
     DELETE FROM submissions
     WHERE id = ${submissionId} AND creator_id = ${creator.id}
@@ -219,7 +224,7 @@ export async function updateOwnSubmissionProject(
   projectId: number,
 ) {
   const creator = await getCreatorByName(normalizeHandle(username))
-  if (!creator) return
+  if (!creator || (await creatorIsPaused(creator.id))) return
   const [calendarToday, serverNow] = await Promise.all([getServerToday(), getServerNowIso()])
   const opToday = operationalDayFromIso(serverNow)
   const earliest = [addDays(calendarToday, -1), addDays(opToday, -1)].sort()[0]

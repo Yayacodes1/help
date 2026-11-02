@@ -542,7 +542,7 @@ export function CreatorsManager({
           <summary className="cursor-pointer text-sm font-medium">
             Paused ({scopedPaused.length})
             <span className="ml-2 text-xs font-normal text-muted-foreground">
-              stopped working with us — hidden from daily lists, still in analytics
+              only here until you resume them. They cannot open the site or the bots.
             </span>
           </summary>
           <ul className="mt-2 flex flex-col divide-y divide-border">

@@ -97,6 +97,8 @@ export async function resolveOutreachActor(creatorHandle?: string): Promise<Outr
 
   const leader = await getLeaderSession()
   if (leader) {
+    const { leaderOwnAccountPaused } = await import('@/lib/pause-person')
+    if (await leaderOwnAccountPaused(leader.id)) return null
     const member = await getOutreachMemberByLeader(leader.id)
     if (member) {
       return {
@@ -114,6 +116,8 @@ export async function resolveOutreachActor(creatorHandle?: string): Promise<Outr
   if (handle) {
     const creator = await getCreatorByName(handle)
     if (!creator) return null
+    const { creatorIsPaused } = await import('@/lib/pause-person')
+    if (await creatorIsPaused(creator.id)) return null
     const member = await getOutreachMemberByCreator(creator.id)
     if (!member) return null
     return {

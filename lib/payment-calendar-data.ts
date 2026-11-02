@@ -52,6 +52,7 @@ export async function loadPaymentCalendar(opts: {
       LEFT JOIN projects p ON p.id = cr.project_id
       WHERE c.start_date <= ${lookahead}::date
         AND (c.end_date IS NULL OR c.end_date >= ${lookback}::date)
+        AND cr.paused_at IS NULL
         AND (${roleSql}::text IS NULL OR cr.role = ${roleSql})
       ORDER BY cr.name ASC, c.start_date ASC, c.id ASC
     `,
@@ -67,6 +68,7 @@ export async function loadPaymentCalendar(opts: {
       LEFT JOIN contracts ct ON ct.id = p.contract_id
       WHERE p.paid_on >= ${lookback}::date
         AND p.paid_on <= ${lookahead}::date
+        AND cr.paused_at IS NULL
         AND (${roleSql}::text IS NULL OR cr.role = ${roleSql})
       ORDER BY p.paid_on ASC, p.id ASC
     `,
@@ -76,6 +78,7 @@ export async function loadPaymentCalendar(opts: {
       JOIN creators cr ON cr.id = s.creator_id
       WHERE s.video_date >= ${lookback}::date
         AND s.video_date <= ${lookahead}::date
+        AND cr.paused_at IS NULL
         AND (${roleSql}::text IS NULL OR cr.role = ${roleSql})
     `,
     getCommissionBoard({
