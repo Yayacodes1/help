@@ -227,7 +227,16 @@ function PersonPayList({
           <tbody className="divide-y divide-border">
             {people.map((p) => (
               <tr key={p.creator_id}>
-                <td className="px-3 py-2 font-medium">{p.creator_name}</td>
+                <td className="px-3 py-2 font-medium">
+                  <div>{p.creator_name}</div>
+                  {p.startedOn || p.endsOn ? (
+                    <div className="text-[11px] font-normal text-muted-foreground">
+                      Started {p.startedOn ? formatDate(p.startedOn) : '—'}
+                      {' · '}
+                      Ends {p.endsOn ? formatDate(p.endsOn) : '—'}
+                    </div>
+                  ) : null}
+                </td>
                 <PaidInCell person={p} />
                 <MoneyCell usd={p.biweekly} />
                 <MoneyCell usd={p.monthly} emphasize />
@@ -376,9 +385,10 @@ function PaidInCell({ person }: { person: OutflowPersonTotal }) {
 }
 
 function PeopleTotals({ people }: { people: OutflowPersonTotal[] }) {
-  const creators = people.filter((p) => p.role !== 'reposter')
+  const creators = people.filter((p) => p.role !== 'reposter' && p.role !== 'company')
+  const company = people.filter((p) => p.role === 'company' && p.monthly > 0)
   const reposters = people.filter((p) => p.role === 'reposter' && p.biweekly > 0)
-  if (creators.length === 0 && reposters.length === 0) {
+  if (creators.length === 0 && reposters.length === 0 && company.length === 0) {
     return <p className="px-3 py-6 text-sm text-muted-foreground">No people in this range.</p>
   }
   const showBoth = creators.length > 0 && reposters.length > 0
@@ -389,6 +399,7 @@ function PeopleTotals({ people }: { people: OutflowPersonTotal[] }) {
     <div className="flex flex-col gap-4 pb-3">
       {creators.length > 0 ? <PersonPayList title="Creators" people={creators} /> : null}
       {reposters.length > 0 ? <PersonPayList title="Reposters" people={reposters} /> : null}
+      {company.length > 0 ? <PersonPayList title="Company" people={company} /> : null}
       {showBoth ? (
         <div className="mx-3 overflow-hidden rounded-lg bg-slate-900 dark:bg-primary px-3 py-3 text-sm text-white">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
@@ -575,6 +586,12 @@ function MarketingMonths({ months, view }: { months: MarketingMonthBucket[]; vie
                   <DualMoney usd={m.plannedReposters} />
                 </p>
               ) : null}
+              {view === 'company' ? (
+                <p className="text-xs text-muted-foreground">
+                  Company <DualMoney usd={m.plannedCompany} /> · Reposters{' '}
+                  <DualMoney usd={m.plannedReposters} />
+                </p>
+              ) : null}
             </div>
             <div className="text-right text-sm">
               <span className="text-xs text-muted-foreground">Month total </span>
@@ -597,15 +614,29 @@ function MarketingMonths({ months, view }: { months: MarketingMonthBucket[]; vie
                   {m.people.map((p) => (
                     <tr key={p.creator_id}>
                       <td className="py-1.5 pr-2">
-                        <span className="font-medium">{p.creator_name}</span>
-                        {p.paymentCount > 0 ? (
-                          <span className="ms-1 text-amber-400" aria-label={`${p.paymentCount} paid`}>
-                            {'★'.repeat(p.paymentCount)}
-                          </span>
+                        <div>
+                          <span className="font-medium">{p.creator_name}</span>
+                          {p.paymentCount > 0 ? (
+                            <span className="ms-1 text-amber-400" aria-label={`${p.paymentCount} paid`}>
+                              {'★'.repeat(p.paymentCount)}
+                            </span>
+                          ) : null}
+                          <span className="ml-1 text-[11px] text-muted-foreground">{p.role}</span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          Started {p.startedOn ? formatDate(p.startedOn) : '—'}
+                          {' · '}
+                          Ends {p.endsOn ? formatDate(p.endsOn) : '—'}
+                        </div>
+                        {p.installments.length > 2 ? (
+                          <div className="text-[11px] text-muted-foreground">
+                            {p.installments.slice(2).map((slice) => (
+                              <span key={slice.dueOn + slice.label} className="me-2">
+                                {formatDate(slice.dueOn)} <DualMoney usd={slice.amount} />
+                              </span>
+                            ))}
+                          </div>
                         ) : null}
-                        <span className="ml-1 text-[11px] capitalize text-muted-foreground">
-                          {p.role}
-                        </span>
                       </td>
                       <td className="py-1.5 pr-2 text-xs">
                         {p.firstPay ? (
@@ -648,6 +679,7 @@ function MarketingMonths({ months, view }: { months: MarketingMonthBucket[]; vie
 const VIEWS: { id: OutflowView; label: string }[] = [
   { id: 'reposters', label: 'Reposters' },
   { id: 'creators', label: 'Creators' },
+  { id: 'company', label: 'Company' },
   { id: 'total', label: 'Total' },
 ]
 
@@ -673,7 +705,10 @@ export function OutflowPanel({
   const to = params.get('ofTo') || defaultTo
   const viewParam = params.get('ofView')
   const view: OutflowView =
-    viewParam === 'creators' || viewParam === 'reposters' || viewParam === 'total'
+    viewParam === 'creators' ||
+    viewParam === 'reposters' ||
+    viewParam === 'company' ||
+    viewParam === 'total'
       ? viewParam
       : snapshot.view || 'total'
   const amountMode: AmountMode = params.get('ofPay') === 'paid' ? 'paid' : 'planned'

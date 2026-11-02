@@ -6,11 +6,12 @@ import {
   inferBiweeklyInstallments,
   monthlyFromBiweekly,
   typicalBiweeklyAmount,
-  yearMonthsInRange,
   type ContractPeriod,
 } from '@/lib/biweekly'
 import { SAR_PER_USD } from '@/lib/fx'
 import { payCurrency } from '@/lib/format'
+import { obligationsFromContract, type CalendarContractInput } from '@/lib/payment-calendar'
+import { structureContractsForCalendar } from '@/lib/structure-pay'
 
 /** Amounts are stored in each person's pay currency; this panel works in USD. */
 function toUsd(amount: number | null | undefined, role: string, saved?: string | null): number {
@@ -18,7 +19,7 @@ function toUsd(amount: number | null | undefined, role: string, saved?: string |
   return payCurrency(role, saved) === 'USD' ? n : n / SAR_PER_USD
 }
 
-export type OutflowView = 'creators' | 'reposters' | 'total'
+export type OutflowView = 'creators' | 'reposters' | 'company' | 'total'
 
 /** How contract spend is counted in the contracts section. */
 export type OutflowCountMode = 'base' | 'all'
@@ -89,6 +90,8 @@ export type MarketingMonthPerson = {
   secondPay: MarketingPaySlice | null
   monthlyUsd: number
   paymentCount: number
+  startedOn: string | null
+  endsOn: string | null
 }
 
 export type MarketingMonthBucket = {
@@ -98,6 +101,7 @@ export type MarketingMonthBucket = {
   paid: number
   plannedCreators: number
   plannedReposters: number
+  plannedCompany: number
   paidCreators: number
   paidReposters: number
   people: MarketingMonthPerson[]
@@ -117,6 +121,8 @@ export type OutflowPersonTotal = {
   biweekly: number
   /** Always 2× biweekly. */
   monthly: number
+  startedOn: string | null
+  endsOn: string | null
   /** Currency this person is paid in (saved, or role default). */
   currency: 'USD' | 'SAR'
   /** Saved actual biweekly pay in `currency`; null = worked out from the contract. */
@@ -198,6 +204,8 @@ export async function getOutflowSnapshot(opts: {
   projectId?: number | null
   /** Calendar day the "we have to pay" list is measured against. */
   today?: string
+  /** Admin viewing company salaries. Lula does not see the COO or CEO. */
+  viewerId?: string | null
   /** Miyqat: include every creator in the people set. */
   includeAllCreators?: boolean
   /** Always include every reposter under a project filter. */
@@ -207,9 +215,15 @@ export async function getOutflowSnapshot(opts: {
   const to = opts.to
   const today = opts.today && /^\d{4}-\d{2}-\d{2}$/.test(opts.today) ? opts.today : to
   const view: OutflowView = opts.view ?? 'total'
+  const companyView = view === 'company'
   const countMode: OutflowCountMode = opts.countMode === 'all' ? 'all' : 'base'
-  const roleFilter: ParticipantRole | null =
-    view === 'creators' ? 'creator' : view === 'reposters' ? 'reposter' : null
+  const roleFilter: ParticipantRole | null = companyView
+    ? 'reposter'
+    : view === 'creators'
+      ? 'creator'
+      : view === 'reposters'
+        ? 'reposter'
+        : null
   const projectId = opts.projectId ?? null
   const includeAllCreators = opts.includeAllCreators ?? false
   const includeAllReposters = opts.includeAllReposters ?? projectId != null
@@ -488,6 +502,8 @@ export async function getOutflowSnapshot(opts: {
       baseContract: 0,
       biweekly: 0,
       monthly: 0,
+      startedOn: null,
+      endsOn: null,
     }
   }
 
@@ -559,6 +575,7 @@ export async function getOutflowSnapshot(opts: {
         paid: 0,
         plannedCreators: 0,
         plannedReposters: 0,
+        plannedCompany: 0,
         paidCreators: 0,
         paidReposters: 0,
         people: [],
@@ -592,28 +609,178 @@ export async function getOutflowSnapshot(opts: {
         secondPay: null,
         monthlyUsd: 0,
         paymentCount: 0,
+        startedOn: null,
+        endsOn: null,
       }
       byId.set(hit.creator_id, person)
     }
     return person
   }
 
-  for (const key of yearMonthsInRange(from, to)) {
-    ensureMonth(key)
-    for (const person of peopleRows) {
-      ensurePerson(key, person)
+  type TimelineContractRow = {
+    creator_id: number
+    creator_name: string
+    role: string
+    pay_currency: string | null
+    paused_at: string | null
+    contract_id: number
+    contract_name: string
+    start_date: string
+    end_date: string | null
+    base_amount: number
+    commission_amount: number | null
+    base_pay_cadence: string | null
+    pay_timing: string | null
+    first_pay_amount: number | null
+    second_pay_amount: number | null
+    first_pay_on: string | null
+    second_pay_on: string | null
+    pay_slice_overrides: Record<string, { on?: string | null; amount?: number | null }> | null
+    target_instagram: number
+    target_tiktok: number
+    platforms: string | null
+    pay_every_days: number
+    project_id: number | null
+    project_name: string | null
+  }
+  const timelineRows = (await sql`
+    SELECT c.id AS creator_id, c.name AS creator_name, c.role, c.pay_currency,
+           c.paused_at::text AS paused_at,
+           ct.id AS contract_id, ct.name AS contract_name,
+           ct.start_date::text AS start_date, ct.end_date::text AS end_date,
+           ct.base_amount::float AS base_amount,
+           ct.commission_amount::float AS commission_amount,
+           ct.base_pay_cadence, ct.pay_timing,
+           ct.first_pay_amount::float AS first_pay_amount,
+           ct.second_pay_amount::float AS second_pay_amount,
+           ct.first_pay_on::text AS first_pay_on,
+           ct.second_pay_on::text AS second_pay_on,
+           ct.pay_slice_overrides,
+           COALESCE(ct.target_instagram, 0)::int AS target_instagram,
+           COALESCE(ct.target_tiktok, 0)::int AS target_tiktok,
+           ct.platforms,
+           COALESCE(c.pay_every_days, 14)::int AS pay_every_days,
+           c.project_id, p.name AS project_name
+    FROM contracts ct
+    JOIN creators c ON c.id = ct.creator_id
+    LEFT JOIN projects p ON p.id = c.project_id
+    WHERE c.paused_at IS NULL
+      AND ct.start_date <= ${to}::date
+      AND (ct.end_date IS NULL OR ct.end_date >= ${from}::date)
+      AND (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
+      AND (
+        ${projectId}::int IS NULL
+        OR (c.role = 'reposter' AND ${includeAllReposters}::boolean)
+        OR (c.role <> 'reposter' AND ${includeAllCreators}::boolean)
+        OR c.project_id = ${projectId}
+        OR (c.role <> 'reposter' AND c.project_id IS NULL)
+        OR EXISTS (
+          SELECT 1 FROM submissions sx
+          WHERE sx.creator_id = c.id AND sx.project_id = ${projectId}
+        )
+      )
+  `) as TimelineContractRow[]
+
+  const timelineContracts: CalendarContractInput[] = timelineRows.map((row) => ({
+    contractId: row.contract_id,
+    contractName: row.contract_name,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    baseAmount: Number(row.base_amount) || 0,
+    commissionAmount: row.commission_amount == null ? null : Number(row.commission_amount),
+    basePayCadence: row.base_pay_cadence,
+    payTiming: row.pay_timing,
+    firstPayAmount: row.first_pay_amount,
+    secondPayAmount: row.second_pay_amount,
+    firstPayOn: row.first_pay_on,
+    secondPayOn: row.second_pay_on,
+    sliceOverrides: row.pay_slice_overrides,
+    targetInstagram: row.target_instagram,
+    targetTiktok: row.target_tiktok,
+    platforms: row.platforms,
+    payEveryDays: row.pay_every_days > 0 ? row.pay_every_days : 14,
+    creatorId: row.creator_id,
+    creatorName: row.creator_name,
+    role: row.role === 'reposter' ? 'reposter' : 'creator',
+    payCurrency: row.pay_currency,
+    pausedAt: row.paused_at,
+    projectId: row.project_id,
+    projectName: row.project_name,
+  }))
+  if (companyView) {
+    const structure = await structureContractsForCalendar(opts.viewerId, today).catch(() => [])
+    for (const contract of structure) {
+      timelineContracts.push({ ...contract, role: 'creator' })
+    }
+  }
+  for (const row of timelineRows) {
+    const person = peopleMap.get(row.creator_id)
+    if (!person) continue
+    if (person.startedOn == null || row.start_date < person.startedOn) person.startedOn = row.start_date
+    if (row.end_date && (person.endsOn == null || row.end_date > person.endsOn)) person.endsOn = row.end_date
+  }
+  if (companyView) {
+    for (const contract of timelineContracts) {
+      if (contract.creatorId >= 0) continue
+      const usdBase = toUsd(contract.baseAmount, 'creator', contract.payCurrency)
+      peopleMap.set(contract.creatorId, {
+        ...emptyPerson({
+          creator_id: contract.creatorId,
+          creator_name: contract.creatorName,
+          role: 'company',
+        }),
+        baseContract: usdBase,
+        biweekly: usdBase / 2,
+        monthly: usdBase,
+        startedOn: contract.startDate,
+        endsOn: contract.endDate,
+      })
     }
   }
 
-  for (const hit of plannedHits) {
-    const key = hit.dueOn.slice(0, 7)
-    const bucket = ensureMonth(key)
-    bucket.planned += hit.amount
-    if (hit.role === 'reposter') bucket.plannedReposters += hit.amount
-    else bucket.plannedCreators += hit.amount
-    const person = ensurePerson(key, hit)
-    person.planned += hit.amount
-    person.installments.push({ dueOn: hit.dueOn, amount: hit.amount, label: hit.label })
+  const paidOnByContract = new Map<number, string[]>()
+  for (const row of historyRows) {
+    if (row.contract_id == null) continue
+    const list = paidOnByContract.get(row.contract_id) ?? []
+    list.push(row.paid_on)
+    paidOnByContract.set(row.contract_id, list)
+  }
+
+  for (const contract of timelineContracts) {
+    const companyPerson = contract.creatorId < 0
+    const recorded = (paidOnByContract.get(contract.contractId) ?? []).map((paidOn, index) => ({
+      id: index,
+      creatorId: contract.creatorId,
+      contractId: contract.contractId,
+      paidOn,
+      amount: 0,
+      note: null,
+      creatorName: contract.creatorName,
+      role: contract.role,
+      payCurrency: contract.payCurrency,
+      contractName: contract.contractName,
+    }))
+    const slices = obligationsFromContract(contract, [], to, recorded)
+    for (const slice of slices) {
+      if (!slice.dueDate || slice.dueDate < from || slice.dueDate > to) continue
+      const key = slice.dueDate.slice(0, 7)
+      const amount = toUsd(slice.dueAmount, contract.role, contract.payCurrency)
+      const bucket = ensureMonth(key)
+      bucket.planned += amount
+      if (companyPerson) bucket.plannedCompany += amount
+      else if (contract.role === 'reposter') bucket.plannedReposters += amount
+      else bucket.plannedCreators += amount
+      const person = ensurePerson(key, {
+        creator_id: contract.creatorId,
+        creator_name: contract.creatorName,
+        role: companyPerson ? (contract.projectName || 'Company') : contract.role,
+      })
+      person.startedOn = contract.startDate
+      person.endsOn = contract.endDate
+      person.planned += amount
+      person.monthlyUsd += amount
+      person.installments.push({ dueOn: slice.dueDate, amount, label: slice.installmentLabel })
+    }
   }
 
   for (const p of payments) {
@@ -623,8 +790,8 @@ export async function getOutflowSnapshot(opts: {
     bucket.paid += amount
     if (p.role === 'reposter') bucket.paidReposters += amount
     else bucket.paidCreators += amount
-    const person = ensurePerson(key, p)
-    person.paid += amount
+    const person = peopleByMonth.get(key)?.get(p.creator_id)
+    if (person) person.paid += amount
   }
 
   const paymentCountRows = (await sql`
@@ -642,7 +809,6 @@ export async function getOutflowSnapshot(opts: {
     GROUP BY p.creator_id
   `) as { creator_id: number; n: number }[]
   const paymentCountById = new Map(paymentCountRows.map((r) => [r.creator_id, r.n]))
-  const monthlyById = new Map(peopleTotals.map((p) => [p.creator_id, p.monthly]))
 
   const marketingMonths = [...marketingMap.values()]
     .sort((a, b) => a.key.localeCompare(b.key))
@@ -655,13 +821,14 @@ export async function getOutflowSnapshot(opts: {
             installments,
             firstPay: installments[0] ?? null,
             secondPay: installments[1] ?? null,
-            monthlyUsd: monthlyById.get(person.creator_id) ?? 0,
+            monthlyUsd: person.monthlyUsd,
             paymentCount: Math.min(2, paymentCountById.get(person.creator_id) ?? 0),
           }
         })
         .sort((a, b) => a.creator_name.localeCompare(b.creator_name))
       return { ...bucket, people }
     })
+    .filter((bucket) => bucket.people.length > 0)
 
   // Schedule: group same-day + same-term payments (compact roster style).
   const scheduleMap = new Map<string, OutflowScheduleGroup>()
@@ -776,7 +943,7 @@ export async function getOutflowSnapshot(opts: {
     timeline,
     months: [...monthsMap.values()],
     marketingMonths,
-    peopleTotals,
+    peopleTotals: [...peopleMap.values()].sort((a, b) => a.creator_name.localeCompare(b.creator_name)),
     payNow,
   }
 }

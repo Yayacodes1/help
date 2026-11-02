@@ -255,7 +255,10 @@ export default async function AdminPage({
   const ofFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.ofFrom ?? '') ? sp.ofFrom! : monthStart
   const ofTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.ofTo ?? '') ? sp.ofTo! : monthEnd
   const ofView: OutflowView =
-    sp.ofView === 'creators' || sp.ofView === 'reposters' || sp.ofView === 'total'
+    sp.ofView === 'creators' ||
+    sp.ofView === 'reposters' ||
+    sp.ofView === 'company' ||
+    sp.ofView === 'total'
       ? sp.ofView
       : 'reposters'
   // Default Yahya's expenses to next calendar month (plan before the month starts).
@@ -460,6 +463,7 @@ export default async function AdminPage({
         includeAllCreators,
         includeAllReposters,
         today,
+        viewerId: session?.id ?? null,
       }),
       getCommissionBoard({ from: cmFrom, to: cmTo, today, projectId: projectId ?? null, role: roleSql }),
       getCommissionEstimate({
