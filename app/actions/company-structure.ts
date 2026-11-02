@@ -140,6 +140,7 @@ export async function recordStructureHalf(subjectKey: string, which: 'first' | '
   const rows = (await sql`
     SELECT start_date::text AS start_date, end_date::text AS end_date,
            pay_timing, base_amount::float AS base_amount,
+           COALESCE(NULLIF(base_pay_cadence, ''), 'monthly') AS base_pay_cadence,
            first_pay_amount::float AS first_pay_amount,
            second_pay_amount::float AS second_pay_amount
     FROM structure_contracts
@@ -150,6 +151,7 @@ export async function recordStructureHalf(subjectKey: string, which: 'first' | '
     end_date: string | null
     pay_timing: string | null
     base_amount: number
+    base_pay_cadence: string | null
     first_pay_amount: number | null
     second_pay_amount: number | null
   }[]
@@ -167,6 +169,7 @@ export async function recordStructureHalf(subjectKey: string, which: 'first' | '
     minDue: Number(contract.base_amount) || 0,
     payments,
     timing: contract.pay_timing,
+    cadence: contract.base_pay_cadence,
     firstAmount: contract.first_pay_amount,
     secondAmount: contract.second_pay_amount,
   })
@@ -265,6 +268,7 @@ export async function setStructurePayCadence(formData: FormData) {
   await sql`
     UPDATE structure_contracts
     SET base_pay_cadence = ${cadence},
+        pay_timing = CASE WHEN ${cadence} = 'monthly' THEN 'end' ELSE pay_timing END,
         first_pay_amount = NULL,
         second_pay_amount = NULL,
         pay_slice_overrides = ${JSON.stringify(dates)}::jsonb,

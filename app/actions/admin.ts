@@ -148,7 +148,10 @@ function parseContractQuotas(
     basePayCadence: normalizeBasePayCadence(
       (formData.get('base_pay_cadence') ?? '').toString(),
     ),
-    payTiming: parsePayTiming(formData.get('pay_timing')),
+    payTiming:
+      normalizeBasePayCadence((formData.get('base_pay_cadence') ?? '').toString()) === 'monthly'
+        ? 'end'
+        : parsePayTiming(formData.get('pay_timing')),
     countMode: parseContractCountMode(formData.get('count_mode')),
     viewsThreshold: parseOptionalPositiveInt(formData.get('views_threshold')),
     viewCommissionAmount: parseOptionalAmount(formData.get('view_commission_amount')),
@@ -981,7 +984,7 @@ export async function saveTimelineInstallment(formData: FormData) {
   return { ok: true as const }
 }
 
-/** Marketing by month: this base is paid every 2 weeks, or it is the full month. Clears hand-typed amounts so the new split shows everywhere. */
+/** Marketing by month: biweekly pays the typed amount twice. Monthly is one payment on the last day. */
 export async function setMarketingPayCadence(formData: FormData) {
   await requireAdmin()
   await ensureCreatorTrackingColumns()
@@ -1002,6 +1005,7 @@ export async function setMarketingPayCadence(formData: FormData) {
   await sql`
     UPDATE contracts
     SET base_pay_cadence = ${cadence},
+        pay_timing = CASE WHEN ${cadence} = 'monthly' THEN 'end' ELSE pay_timing END,
         first_pay_amount = NULL,
         second_pay_amount = NULL,
         pay_slice_overrides = ${JSON.stringify(dates)}::jsonb
@@ -1383,6 +1387,7 @@ export async function recordDueHalfPayment(
     minDue,
     payments,
     timing: contract.pay_timing,
+    cadence: contract.base_pay_cadence,
     firstAmount: contract.first_pay_amount,
     secondAmount: contract.second_pay_amount,
   })

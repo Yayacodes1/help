@@ -310,7 +310,7 @@ export async function getOutflowSnapshot(opts: {
   type ContractQueryRow = Omit<
     OutflowContractRow,
     'upfront' | 'midterm' | 'full' | 'installment_source'
-  > & { pay_every_days: number; pay_currency: string | null }
+  > & { pay_every_days: number; pay_currency: string | null; base_pay_cadence: string | null }
 
   const contractQueryRows = (await sql`
     SELECT c.id AS creator_id, c.name AS creator_name, c.role, c.pay_currency,
@@ -319,7 +319,8 @@ export async function getOutflowSnapshot(opts: {
            ct.start_date::text AS start_date,
            ct.end_date::text AS end_date,
            ct.base_amount::float AS base_amount,
-           ct.commission_amount::float AS commission_amount
+           ct.commission_amount::float AS commission_amount,
+           COALESCE(NULLIF(ct.base_pay_cadence, ''), 'monthly') AS base_pay_cadence
     FROM contracts ct
     JOIN creators c ON c.id = ct.creator_id
     WHERE (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
@@ -411,24 +412,28 @@ export async function getOutflowSnapshot(opts: {
         endDate: r.end_date,
         baseAmount: Number(r.base_amount) || 0,
       }))
-    const biweekly = typicalBiweeklyAmount({
-      baseAmount: Number(source.base_amount) || 0,
+    const base = Number(source.base_amount) || 0
+    const guessed = typicalBiweeklyAmount({
+      baseAmount: base,
       startDate: source.start_date,
       endDate: source.end_date,
       payEveryDays: source.pay_every_days,
       prior,
     })
+    const cadence = normalizeBasePayCadence(source.base_pay_cadence)
+    const biweekly = cadence === 'biweekly' ? base : guessed
+    const monthly = cadence === 'biweekly' ? monthlyFromBiweekly(base) : base
     rateByCreator.set(source.creator_id, {
       creator_id: source.creator_id,
       creator_name: source.creator_name,
       role: source.role,
-      baseContract: Number(source.base_amount) || 0,
+      baseContract: base,
       biweekly,
-      monthly: monthlyFromBiweekly(biweekly),
+      monthly,
     })
   }
   for (const person of peopleRows) {
-    if (person.biweekly_amount == null) continue
+    if (person.biweekly_amount == null || rateByCreator.has(person.creator_id)) continue
     const biweekly = toUsd(person.biweekly_amount, person.role, person.pay_currency)
     const existing = rateByCreator.get(person.creator_id)
     rateByCreator.set(person.creator_id, {

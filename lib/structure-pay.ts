@@ -6,7 +6,7 @@ import { ensureLeaderTables } from '@/lib/leaders'
 import { ensureOutreachTables } from '@/lib/outreach'
 import type { StructurePaySlot, StructurePayTiming } from '@/lib/company-roles'
 import type { CalendarContractInput, CalendarPaymentInput } from '@/lib/payment-calendar'
-import { contractWaveStatus } from '@/lib/contract-halves'
+import { contractWaveStatus, normalizeBasePayCadence } from '@/lib/contract-halves'
 import { buildCreatorPaySchedule, normalizePayTiming, resolvePayTiming } from '@/lib/payment-calendar-math'
 
 type PayRow = { amount: number; paid_on: string; note: string | null }
@@ -100,13 +100,14 @@ function wavesFor(opts: {
   if (!opts.start || opts.amount <= 0.009) {
     return { ...EMPTY_WAVES, detailsDone: opts.detailsDone }
   }
-  const timing = resolvePayTiming({
+  const resolvedTiming = resolvePayTiming({
     stored: opts.timing,
     startDate: opts.start,
     endDate: opts.end,
     paidOn: opts.payments.map((p) => p.paid_on),
     notes: opts.payments.map((p) => p.note ?? ''),
   })
+  const timing = normalizeBasePayCadence(opts.cadence) === 'monthly' ? 'end' : resolvedTiming
   const waves = contractWaveStatus({
     start: opts.start,
     end: opts.end,

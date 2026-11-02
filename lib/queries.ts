@@ -1242,6 +1242,7 @@ export async function getContractComparisons(
         minDue,
         payments,
         timing: contract.pay_timing,
+        cadence: contract.base_pay_cadence,
         firstAmount: contract.first_pay_amount,
         secondAmount: contract.second_pay_amount,
       })
@@ -1254,6 +1255,7 @@ export async function getContractComparisons(
 
       let halves: ContractHalfStatus[] = []
       if (
+        normalizeBasePayCadence(contract.base_pay_cadence) !== 'monthly' &&
         normalizePayTiming(contract.pay_timing) !== 'end' &&
         contract.end_date &&
         contractSupportsBiweeklyHalves(contract.start_date, contract.end_date, everyDays)
@@ -1471,19 +1473,22 @@ export async function getPaymentDueList(
       const paidAmount =
         Math.round(payments.reduce((s, p) => s + (Number(p.amount) || 0), 0) * 100) / 100
       const minDue = minimumContractDue(contract)
-      const timing = resolvePayTiming({
+      const resolvedTiming = resolvePayTiming({
         stored: contract.pay_timing,
         startDate: contract.start_date,
         endDate: contract.end_date,
         paidOn: payments.map((p) => p.paid_on),
         notes: payments.map((p) => p.note ?? ''),
       })
+      const timing =
+        normalizeBasePayCadence(contract.base_pay_cadence) === 'monthly' ? 'end' : resolvedTiming
       const waves = contractWaveStatus({
         start: contract.start_date,
         end: contract.end_date,
         minDue,
         payments,
         timing,
+        cadence: contract.base_pay_cadence,
         firstAmount: contract.first_pay_amount,
         secondAmount: contract.second_pay_amount,
       })
@@ -1520,8 +1525,9 @@ export async function getPaymentDueList(
             }),
             waves,
           )
-          if (contract.end_date <= today) urgent.push(endRow)
-          else willPay.push(endRow)
+          const waitingOnVideos = targets > 0 && !videosComplete
+          if (waitingOnVideos || contract.end_date > today) willPay.push(endRow)
+          else urgent.push(endRow)
         }
       } else {
         if (live && !waves.firstSettled && (minDue > 0 || commissionMissing)) {
@@ -2052,7 +2058,7 @@ export async function attachTracking(
     const goals = goalsForContract(c, active)
     const pay = paySummaryFrom(c, today, active)
     const timingStored = normalizePayTiming(active?.pay_timing)
-    const timing = active
+    const resolvedTiming = active
       ? resolvePayTiming({
           stored: timingStored,
           startDate: active.start_date,
@@ -2061,6 +2067,10 @@ export async function attachTracking(
           notes: (paysByContract.get(active.id) ?? []).map((p) => p.note ?? ''),
         })
       : null
+    const timing =
+      active && normalizeBasePayCadence(active.base_pay_cadence) === 'monthly'
+        ? 'end'
+        : resolvedTiming
     const waves = active
       ? contractWaveStatus({
           start: active.start_date,
@@ -2068,6 +2078,7 @@ export async function attachTracking(
           minDue: minimumContractDue(active),
           payments: paysByContract.get(active.id) ?? [],
           timing: timing ?? undefined,
+          cadence: active.base_pay_cadence,
           firstAmount: active.first_pay_amount,
           secondAmount: active.second_pay_amount,
         })

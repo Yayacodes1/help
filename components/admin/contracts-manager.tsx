@@ -315,7 +315,7 @@ function PayFields({
           <span>
             <span className="font-medium text-foreground">Biweekly</span>
             {' — '}
-            I pay this every 2 weeks. A month contract = two Pays of this amount (e.g. 19 → Pay 19 + Pay 19).
+            I pay this amount twice. Halfway through the contract, then again at the end (e.g. 75, then 75).
           </span>
         </label>
         <label className="flex items-start gap-2 text-xs text-muted-foreground">
@@ -329,7 +329,7 @@ function PayFields({
           <span>
             <span className="font-medium text-foreground">Monthly</span>
             {' — '}
-            This is the full month. Each half gets half (e.g. 38 → Pay 19 + Pay 19).
+            One payment of this amount on the last day, after the required videos are done (e.g. 75 once).
           </span>
         </label>
       </fieldset>
@@ -1062,7 +1062,7 @@ export function ContractsManager({
                       </FormSection>
                       <FormSection
                         title="Pay (base)"
-                        hint="Monthly = full month. Biweekly = each 14-day Pay. Flat bonus optional."
+                        hint="Biweekly = two pays of this amount. Monthly = one pay on the last day, after the videos are done."
                       >
                         <PayFields
                           base={Number(contract.base_amount) || 0}

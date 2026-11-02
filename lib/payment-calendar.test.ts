@@ -239,14 +239,14 @@ test('upfront Novi-style: 200 then 200, not extra dues', () => {
   assert.deepEqual(amounts, [200, 200])
 })
 
-test('monthly 400 over four 15-day pays stays 200 each', () => {
+test('monthly is one payment of the full amount', () => {
   const amounts = amountsForPaySlices({
     baseAmount: 400,
     cadence: 'monthly',
     commission: 0,
-    sliceCount: 4,
+    sliceCount: 1,
   })
-  assert.deepEqual(amounts, [200, 200, 200, 200])
+  assert.deepEqual(amounts, [400])
 })
 
 test('urgency is red for the next 3 days, orange for the next 2, green after that', () => {

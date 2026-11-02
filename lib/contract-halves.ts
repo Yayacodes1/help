@@ -25,8 +25,8 @@ export function normalizeBasePayCadence(
 }
 
 /**
- * Period base total for a month-length (two-wave) contract.
- * Biweekly amount → 2× for the month; monthly amount stays as entered.
+ * Money owed for the contract period.
+ * Biweekly stores one half, so two waves are 2×. Monthly stores the one payment.
  */
 export function periodBaseTotal(
   baseAmount: number,
@@ -150,7 +150,9 @@ export function contractWaveStatus(opts: {
 }): ContractWaveStatus {
   const every = opts.everyDays ?? 14
   const minDue = roundMoney(opts.minDue)
-  const oneTime = (opts.timing ?? '').toString().trim() === 'end'
+  const monthlyOnePay =
+    opts.cadence != null && normalizeBasePayCadence(opts.cadence) === 'monthly'
+  const oneTime = monthlyOnePay || (opts.timing ?? '').toString().trim() === 'end'
   const hasTwoHalves =
     !oneTime && !!opts.end && contractSupportsBiweeklyHalves(opts.start, opts.end, every)
   const firstOverride = explicitPayAmount(opts.firstAmount)

@@ -259,13 +259,15 @@ export function obligationsFromContract(
     return []
   }
 
-  const timing: PayTiming = resolvePayTiming({
+  const resolvedTiming: PayTiming = resolvePayTiming({
     stored: contract.payTiming,
     startDate: contract.startDate,
     endDate: contract.endDate,
     paidOn: contractPayments.map((p) => p.paidOn),
     notes: contractPayments.map((p) => p.note ?? ''),
   })
+  // Monthly is one payment of the typed amount on the last day.
+  const timing: PayTiming = cadence === 'monthly' ? 'end' : resolvedTiming
   const scheduleThrough = timing === 'end' ? (contract.endDate ?? through) : through
   const slices = buildCreatorPaySchedule({
     startDate: contract.startDate,

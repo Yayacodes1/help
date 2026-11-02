@@ -178,9 +178,8 @@ export function splitInTwo(total: number): { first: number; second: number } {
 }
 
 /**
- * One amount per scheduled pay. Biweekly keeps the entered wave;
- * monthly splits the month in two and repeats that wave until the contract ends.
- * Flat commission sits on the last installment only.
+ * One amount per scheduled pay. Biweekly keeps the entered amount on every pay.
+ * Monthly is one payment of the full amount. Flat commission sits on the last pay.
  */
 export function amountsForPaySlices(opts: {
   baseAmount: number
@@ -192,20 +191,13 @@ export function amountsForPaySlices(opts: {
   if (n <= 0) return []
   const base = roundMoney(opts.baseAmount)
   const commission = roundMoney(opts.commission)
-  const amounts: number[] = []
-  if (n === 1) {
-    amounts.push(roundMoney(base + commission))
+  if (opts.cadence !== 'biweekly') {
+    const amounts = Array.from({ length: n }, () => 0)
+    amounts[n - 1] = roundMoney(base + commission)
     return amounts
   }
-  if (opts.cadence === 'biweekly') {
-    for (let i = 0; i < n; i++) amounts.push(base)
-  } else {
-    const split = splitInTwo(base)
-    const wave = split.first
-    for (let i = 0; i < n; i++) {
-      amounts.push(n === 2 && i === 1 ? split.second : wave)
-    }
-  }
+  const amounts: number[] = []
+  for (let i = 0; i < n; i++) amounts.push(base)
   if (commission > 0.009) {
     amounts[n - 1] = roundMoney(amounts[n - 1] + commission)
   }
