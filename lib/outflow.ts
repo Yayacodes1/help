@@ -10,6 +10,7 @@ import {
 } from '@/lib/biweekly'
 import { SAR_PER_USD } from '@/lib/fx'
 import { canSeeStructureTier } from '@/lib/admin-access'
+import { normalizeBasePayCadence, type BasePayCadence } from '@/lib/contract-halves'
 import { payCurrency } from '@/lib/format'
 import { obligationsFromContract, type CalendarContractInput } from '@/lib/payment-calendar'
 import {
@@ -109,6 +110,10 @@ export type MarketingMonthPerson = {
   paymentCount: number
   startedOn: string | null
   endsOn: string | null
+  /** Contract whose pay this row edits. */
+  contractId: number | null
+  /** monthly = the saved amount is the full month. biweekly = that amount each pay. */
+  payCadence: BasePayCadence
 }
 
 export type MarketingMonthBucket = {
@@ -603,6 +608,7 @@ export async function getOutflowSnapshot(opts: {
   }
 
   const peopleByMonth = new Map<string, Map<number, MarketingMonthPerson>>()
+  const cadenceRank = new Map<string, string>()
 
   function ensurePerson(
     monthKey: string,
@@ -628,6 +634,8 @@ export async function getOutflowSnapshot(opts: {
         paymentCount: 0,
         startedOn: null,
         endsOn: null,
+        contractId: null,
+        payCadence: 'monthly',
       }
       byId.set(hit.creator_id, person)
     }
@@ -798,6 +806,13 @@ export async function getOutflowSnapshot(opts: {
       })
       person.startedOn = contract.startDate
       person.endsOn = contract.endDate
+      const rankKey = `${key}:${contract.creatorId}`
+      const earlier = cadenceRank.get(rankKey)
+      if (!earlier || slice.dueDate < earlier) {
+        cadenceRank.set(rankKey, slice.dueDate)
+        person.contractId = contract.contractId
+        person.payCadence = normalizeBasePayCadence(contract.basePayCadence)
+      }
       person.planned += amount
       person.monthlyUsd += amount
       person.installments.push({

@@ -7,7 +7,8 @@ import { DateRangePresets } from '@/components/admin/date-range-presets'
 import { PayCadences } from '@/components/admin/pay-cadence'
 import { formatDate, formatMoney } from '@/lib/format'
 import { usdToSar } from '@/lib/fx'
-import { setPersonPay } from '@/app/actions/admin'
+import { setMarketingPayCadence, setPersonPay } from '@/app/actions/admin'
+import { setStructurePayCadence } from '@/app/actions/company-structure'
 import { CalendarPayEdit } from '@/components/admin/calendar-pay-edit'
 import {
   calendarMonthBounds,
@@ -567,6 +568,50 @@ function PayNowList({ people }: { people: PayNowPerson[] }) {
   )
 }
 
+function CadenceSwitch({
+  creatorId,
+  contractId,
+  cadence,
+}: {
+  creatorId: number
+  contractId: number
+  cadence: 'monthly' | 'biweekly'
+}) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+  function choose(next: 'monthly' | 'biweekly') {
+    if (pending || next === cadence) return
+    const fd = new FormData()
+    fd.set('creator_id', String(creatorId))
+    fd.set('contract_id', String(contractId))
+    fd.set('base_pay_cadence', next)
+    startTransition(async () => {
+      const result =
+        creatorId < 0 ? await setStructurePayCadence(fd) : await setMarketingPayCadence(fd)
+      if (result && !result.ok) return
+      router.refresh()
+    })
+  }
+  const item = (id: 'biweekly' | 'monthly', label: string) => (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() => choose(id)}
+      className={`rounded px-2 py-0.5 ${
+        cadence === id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
+      }`}
+    >
+      {label}
+    </button>
+  )
+  return (
+    <div className="mt-1 inline-flex rounded-md border border-border p-0.5 text-[11px] font-medium">
+      {item('biweekly', 'Biweekly')}
+      {item('monthly', 'Monthly')}
+    </div>
+  )
+}
+
 function MarketingPayCell({
   slice,
   labels,
@@ -663,6 +708,13 @@ function MarketingMonths({
                           {' · '}
                           Ends {p.endsOn ? formatDate(p.endsOn) : '—'}
                         </div>
+                        {p.contractId != null ? (
+                          <CadenceSwitch
+                            creatorId={p.creator_id}
+                            contractId={p.contractId}
+                            cadence={p.payCadence}
+                          />
+                        ) : null}
                         {p.installments.length > 2 ? (
                           <div className="mt-1 space-y-1 text-[11px] text-muted-foreground">
                             {p.installments.slice(2).map((slice) => (

@@ -23,6 +23,7 @@ type StoredPay = {
   first_pay_on: string | null
   second_pay_on: string | null
   pay_slice_overrides: Record<string, { on?: string | null; amount?: number | null }> | null
+  base_pay_cadence: string | null
   details_done: boolean
 }
 
@@ -46,6 +47,7 @@ const EMPTY_WAVES = {
   firstPayOn: null as string | null,
   secondPayOn: null as string | null,
   sliceOverrides: {} as Record<string, { on?: string | null; amount?: number | null }>,
+  basePayCadence: 'monthly' as 'monthly' | 'biweekly',
 }
 
 export async function ensureStructurePayTable() {
@@ -66,6 +68,7 @@ export async function ensureStructurePayTable() {
   await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS first_pay_on date`
   await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS second_pay_on date`
   await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS pay_slice_overrides jsonb NOT NULL DEFAULT '{}'::jsonb`
+  await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS base_pay_cadence text NOT NULL DEFAULT 'monthly'`
   await sql`ALTER TABLE structure_contracts ADD COLUMN IF NOT EXISTS details_done boolean NOT NULL DEFAULT false`
   await sql`
     CREATE TABLE IF NOT EXISTS structure_payments (
@@ -90,6 +93,7 @@ function wavesFor(opts: {
   firstOn?: string | null
   secondOn?: string | null
   sliceOverrides?: Record<string, { on?: string | null; amount?: number | null }> | null
+  cadence?: string | null
   detailsDone: boolean
   today: string
 }) {
@@ -109,6 +113,7 @@ function wavesFor(opts: {
     minDue: opts.amount,
     payments: opts.payments,
     timing,
+    cadence: opts.cadence,
     firstAmount: opts.firstOverride,
     secondAmount: opts.secondOverride,
   })
@@ -138,6 +143,7 @@ function wavesFor(opts: {
     firstPayOn: opts.firstOn ?? null,
     secondPayOn: opts.secondOn ?? null,
     sliceOverrides: opts.sliceOverrides ?? {},
+    basePayCadence: opts.cadence === 'biweekly' ? 'biweekly' : 'monthly',
   }
 }
 
@@ -190,6 +196,7 @@ async function storedPays(): Promise<Map<string, StoredPay>> {
            first_pay_on::text AS first_pay_on,
            second_pay_on::text AS second_pay_on,
            COALESCE(pay_slice_overrides, '{}'::jsonb) AS pay_slice_overrides,
+           base_pay_cadence,
            details_done
     FROM structure_contracts
   `) as StoredPay[]
@@ -363,6 +370,7 @@ export async function loadStructurePaySlots(
         firstOn: saved?.first_pay_on ?? null,
         secondOn: saved?.second_pay_on ?? null,
         sliceOverrides: saved?.pay_slice_overrides ?? null,
+        cadence: saved?.base_pay_cadence,
         detailsDone: Boolean(saved?.details_done),
         today: day,
       }),
@@ -398,6 +406,7 @@ export async function loadStructurePaySlots(
           firstOn: saved?.first_pay_on ?? null,
           secondOn: saved?.second_pay_on ?? null,
           sliceOverrides: saved?.pay_slice_overrides ?? null,
+          cadence: saved?.base_pay_cadence,
           detailsDone: Boolean(saved?.details_done),
           today: day,
         }),
@@ -435,6 +444,7 @@ export async function loadStructurePaySlots(
           firstOn: saved?.first_pay_on ?? null,
           secondOn: saved?.second_pay_on ?? null,
           sliceOverrides: saved?.pay_slice_overrides ?? null,
+          cadence: saved?.base_pay_cadence,
           detailsDone: Boolean(saved?.details_done),
           today: day,
         }),
@@ -514,7 +524,7 @@ export async function structureContractsForCalendar(
       endDate: slot.end,
       baseAmount: slot.amount,
       commissionAmount: 0,
-      basePayCadence: 'monthly',
+      basePayCadence: slot.basePayCadence,
       payTiming: slot.timing ?? 'fifteen',
       firstPayAmount: slot.firstOverride,
       secondPayAmount: slot.secondOverride,

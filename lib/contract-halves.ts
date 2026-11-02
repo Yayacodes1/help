@@ -144,6 +144,7 @@ export function contractWaveStatus(opts: {
   payments: HalfPayment[]
   everyDays?: number
   timing?: string | null
+  cadence?: string | null
   firstAmount?: number | null
   secondAmount?: number | null
 }): ContractWaveStatus {
@@ -170,9 +171,12 @@ export function contractWaveStatus(opts: {
       secondSettled: true,
     }
   }
-  const split = inferBiweeklyInstallments(minDue, [])
-  const firstDue = firstOverride ?? roundMoney(split.first)
-  const secondDue = secondOverride ?? roundMoney(split.second)
+  const wave =
+    opts.cadence === 'biweekly'
+      ? { first: minDue, second: minDue }
+      : inferBiweeklyInstallments(minDue, [])
+  const firstDue = firstOverride ?? roundMoney(wave.first)
+  const secondDue = secondOverride ?? roundMoney(wave.second)
   const assigned = assignPaymentsToHalves(opts.payments, firstDue, secondDue)
   const firstBalance = Math.max(0, roundMoney(firstDue - assigned.firstPaid))
   const secondBalance = Math.max(0, roundMoney(secondDue - assigned.secondPaid))

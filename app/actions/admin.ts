@@ -981,6 +981,49 @@ export async function saveTimelineInstallment(formData: FormData) {
   return { ok: true as const }
 }
 
+/** Marketing by month: this base is paid every 2 weeks, or it is the full month. Clears hand-typed amounts so the new split shows everywhere. */
+export async function setMarketingPayCadence(formData: FormData) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const creatorId = Math.floor(Number(formData.get('creator_id')))
+  const contractId = Math.floor(Number(formData.get('contract_id')))
+  const cadence = formData.get('base_pay_cadence') === 'biweekly' ? 'biweekly' : 'monthly'
+  if (!(creatorId > 0) || !(contractId > 0)) {
+    return { ok: false as const, message: 'Missing contract.' }
+  }
+  const owned = (await sql`
+    SELECT id, pay_slice_overrides
+    FROM contracts
+    WHERE id = ${contractId} AND creator_id = ${creatorId}
+    LIMIT 1
+  `) as { id: number; pay_slice_overrides: unknown }[]
+  if (!owned[0]) return { ok: false as const, message: 'Contract not found.' }
+  const dates = datesOnlyOverrides(owned[0].pay_slice_overrides)
+  await sql`
+    UPDATE contracts
+    SET base_pay_cadence = ${cadence},
+        first_pay_amount = NULL,
+        second_pay_amount = NULL,
+        pay_slice_overrides = ${JSON.stringify(dates)}::jsonb
+    WHERE id = ${contractId} AND creator_id = ${creatorId}
+  `
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  revalidatePath('/admin/payments', 'layout')
+  return { ok: true as const }
+}
+
+function datesOnlyOverrides(value: unknown): Record<string, { on: string }> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, { on: string }> = {}
+  for (const [key, row] of Object.entries(value as Record<string, unknown>)) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+    const on = (row as { on?: unknown }).on
+    if (typeof on === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(on)) out[key] = { on }
+  }
+  return out
+}
+
 function readSliceOverrides(value: unknown): Record<string, { on?: string; amount?: number }> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const out: Record<string, { on?: string; amount?: number }> = {}

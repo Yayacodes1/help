@@ -5,6 +5,7 @@ import {
   canMoveYahyaExpenses,
   canSeeAhmedWallet,
   canSeeStructureTier,
+  canSeeYahyaExpenses,
   canSeeUrgentList,
   canSendUrgentList,
 } from './admin-access.ts'
@@ -14,6 +15,13 @@ test('only Yahya and Ahmed see Ahmed’s wallet', () => {
   assert.equal(canSeeAhmedWallet('ahmed'), true)
   assert.equal(canSeeAhmedWallet('lula'), false)
   assert.equal(canSeeAhmedWallet(null), false)
+})
+
+test('only Yahya and Ahmed see Yahya’s expenses', () => {
+  assert.equal(canSeeYahyaExpenses('yahya'), true)
+  assert.equal(canSeeYahyaExpenses('ahmed'), true)
+  assert.equal(canSeeYahyaExpenses('lula'), false)
+  assert.equal(canSeeYahyaExpenses(null), false)
 })
 
 test('only Yahya and Ahmed can move Yahya expense people', () => {

@@ -3,6 +3,11 @@ export function canSeeAhmedWallet(accountId: string | null | undefined): boolean
   return accountId === 'yahya' || accountId === 'ahmed'
 }
 
+/** Yahya’s expenses payroll. Yahya and Ahmed only. Lula cannot open it. */
+export function canSeeYahyaExpenses(accountId: string | null | undefined): boolean {
+  return accountId === 'yahya' || accountId === 'ahmed'
+}
+
 /** Yahya and Ahmed can move people between Yahya’s expense lists. Lula cannot. */
 export function canMoveYahyaExpenses(accountId: string | null | undefined): boolean {
   return accountId === 'yahya' || accountId === 'ahmed'

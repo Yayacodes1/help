@@ -244,6 +244,49 @@ export async function saveStructureInstallment(formData: FormData) {
   return { ok: true as const }
 }
 
+/** Marketing by month: company salary is biweekly (the amount each pay) or monthly (the amount is the full month). */
+export async function setStructurePayCadence(formData: FormData) {
+  const creatorId = Math.floor(Number(formData.get('creator_id')))
+  const subjectKey = subjectKeyFromCalendarId(creatorId)
+  if (!subjectKey || !(await editableStructure(subjectKey))) {
+    return { ok: false as const, message: 'You cannot edit this pay.' }
+  }
+  const cadence = formData.get('base_pay_cadence') === 'biweekly' ? 'biweekly' : 'monthly'
+  const { sql } = await import('@/lib/db')
+  await ensureStructurePayTable()
+  const rows = (await sql`
+    SELECT pay_slice_overrides
+    FROM structure_contracts
+    WHERE subject_key = ${subjectKey}
+    LIMIT 1
+  `) as { pay_slice_overrides: unknown }[]
+  if (!rows[0]) return { ok: false as const, message: 'Save the contract first.' }
+  const dates = datesOnlyOverrides(rows[0].pay_slice_overrides)
+  await sql`
+    UPDATE structure_contracts
+    SET base_pay_cadence = ${cadence},
+        first_pay_amount = NULL,
+        second_pay_amount = NULL,
+        pay_slice_overrides = ${JSON.stringify(dates)}::jsonb,
+        updated_at = NOW()
+    WHERE subject_key = ${subjectKey}
+  `
+  revalidatePath('/admin')
+  revalidatePath('/admin/payments', 'layout')
+  return { ok: true as const }
+}
+
+function datesOnlyOverrides(value: unknown): Record<string, { on: string }> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, { on: string }> = {}
+  for (const [key, row] of Object.entries(value as Record<string, unknown>)) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+    const on = (row as { on?: unknown }).on
+    if (typeof on === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(on)) out[key] = { on }
+  }
+  return out
+}
+
 /** Record a company salary installment for the amount typed on the calendar day. */
 export async function payStructureAmount(subjectKey: string, installmentIndex: number, amount: number) {
   if (!(await editableStructure(subjectKey))) {

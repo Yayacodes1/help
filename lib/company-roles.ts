@@ -70,6 +70,8 @@ export type StructurePaySlot = {
   firstPayOn: string | null
   secondPayOn: string | null
   sliceOverrides: Record<string, { on?: string | null; amount?: number | null }>
+  /** monthly = the saved amount is the full month. biweekly = that amount each pay. */
+  basePayCadence: 'monthly' | 'biweekly'
   tiktok_username?: string | null
   instagram_username?: string | null
   notek_tiktok_username?: string | null

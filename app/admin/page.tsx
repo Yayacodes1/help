@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import nextDynamic from 'next/dynamic'
 import { redirect } from 'next/navigation'
-import { canManageOutreachAccounts, canMoveYahyaExpenses, canSeeAhmedWallet, canSeeUrgentList, canSendUrgentList } from '@/lib/admin-access'
+import { canManageOutreachAccounts, canMoveYahyaExpenses, canSeeAhmedWallet, canSeeUrgentList, canSeeYahyaExpenses, canSendUrgentList } from '@/lib/admin-access'
 import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import { ADMIN_TABS, resolveAdminTab } from '@/lib/admin-tabs'
 import { AdminTabs } from '@/components/admin/admin-tabs'
@@ -307,6 +307,7 @@ export default async function AdminPage({
   const session = await getAdminSession()
   const isOwner = session?.role === 'owner'
   const showWallet = canSeeAhmedWallet(session?.id)
+  const showYahyaExpenses = canSeeYahyaExpenses(session?.id)
   const showUrgent = canSeeUrgentList(session?.id)
   const canSendUrgent = canSendUrgentList(session?.id)
   const canMoveYahya = canMoveYahyaExpenses(session?.id)
@@ -472,7 +473,9 @@ export default async function AdminPage({
         role: roleSql,
         contractId: cmContractId,
       }),
-      getYahyaExpensesSnapshot({ yearMonth: yeMonth, today }),
+      showYahyaExpenses
+        ? getYahyaExpensesSnapshot({ yearMonth: yeMonth, today })
+        : Promise.resolve(null),
     ])
     return {
       periodPayments,
@@ -866,9 +869,10 @@ export default async function AdminPage({
     strikes: t('strikeCount'),
   }
 
-  const tabPanels: readonly string[] = showWallet
-    ? ADMIN_TABS[tab]
-    : ADMIN_TABS[tab].filter((id) => id !== 'marketing')
+  const hiddenPanels = new Set<string>()
+  if (!showYahyaExpenses) hiddenPanels.add('yahya')
+  if (!showWallet) hiddenPanels.add('marketing')
+  const tabPanels: readonly string[] = ADMIN_TABS[tab].filter((id) => !hiddenPanels.has(id))
   const defaultPanel =
     sp.panel && tabPanels.includes(sp.panel)
       ? sp.panel
@@ -1492,7 +1496,7 @@ export default async function AdminPage({
           },
           ] : []),
           ...(moneyData ? [
-          ...(showWallet
+          ...(showYahyaExpenses
             ? [
           {
             id: 'yahya',
@@ -1521,6 +1525,10 @@ export default async function AdminPage({
               </Suspense>
             ) : null,
           },
+            ]
+            : []),
+          ...(showWallet
+            ? [
           {
             id: 'marketing',
             title: "Ahmed's wallet",
