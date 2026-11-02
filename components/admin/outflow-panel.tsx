@@ -8,6 +8,7 @@ import { PayCadences } from '@/components/admin/pay-cadence'
 import { formatDate, formatMoney } from '@/lib/format'
 import { usdToSar } from '@/lib/fx'
 import { setPersonPay } from '@/app/actions/admin'
+import { CalendarPayEdit } from '@/components/admin/calendar-pay-edit'
 import {
   calendarMonthBounds,
   lastCalendarMonthsRange,
@@ -15,6 +16,7 @@ import {
 } from '@/lib/biweekly'
 import type {
   MarketingMonthBucket,
+  MarketingPaySlice,
   OutflowMonthBucket,
   OutflowPersonTotal,
   OutflowScheduleGroup,
@@ -565,7 +567,40 @@ function PayNowList({ people }: { people: PayNowPerson[] }) {
   )
 }
 
-function MarketingMonths({ months, view }: { months: MarketingMonthBucket[]; view: OutflowView }) {
+function MarketingPayCell({
+  slice,
+  labels,
+}: {
+  slice: MarketingPaySlice | null
+  labels: { edit: string; when: string; save: string; cancel: string; saving: string }
+}) {
+  if (!slice) return <>—</>
+  return (
+    <>
+      <div className="tabular-nums text-muted-foreground">{formatDate(slice.dueOn)}</div>
+      <DualMoney usd={slice.amount} />
+      <CalendarPayEdit
+        creatorId={slice.creatorId}
+        contractId={slice.contractId}
+        installmentIndex={slice.installmentIndex}
+        dueOn={slice.dueOn}
+        amount={slice.payAmount}
+        currency={slice.currency}
+        labels={labels}
+      />
+    </>
+  )
+}
+
+function MarketingMonths({
+  months,
+  view,
+  payEdit,
+}: {
+  months: MarketingMonthBucket[]
+  view: OutflowView
+  payEdit: { edit: string; when: string; save: string; cancel: string; saving: string }
+}) {
   if (months.length === 0) {
     return (
       <p className="px-3 py-6 text-sm text-muted-foreground">
@@ -629,34 +664,20 @@ function MarketingMonths({ months, view }: { months: MarketingMonthBucket[]; vie
                           Ends {p.endsOn ? formatDate(p.endsOn) : '—'}
                         </div>
                         {p.installments.length > 2 ? (
-                          <div className="text-[11px] text-muted-foreground">
+                          <div className="mt-1 space-y-1 text-[11px] text-muted-foreground">
                             {p.installments.slice(2).map((slice) => (
-                              <span key={slice.dueOn + slice.label} className="me-2">
-                                {formatDate(slice.dueOn)} <DualMoney usd={slice.amount} />
-                              </span>
+                              <div key={`${slice.contractId}:${slice.installmentIndex}`}>
+                                <MarketingPayCell slice={slice} labels={payEdit} />
+                              </div>
                             ))}
                           </div>
                         ) : null}
                       </td>
-                      <td className="py-1.5 pr-2 text-xs">
-                        {p.firstPay ? (
-                          <>
-                            <div className="tabular-nums text-muted-foreground">{formatDate(p.firstPay.dueOn)}</div>
-                            <DualMoney usd={p.firstPay.amount} />
-                          </>
-                        ) : (
-                          '—'
-                        )}
+                      <td className="py-1.5 pr-2 align-top text-xs">
+                        <MarketingPayCell slice={p.firstPay} labels={payEdit} />
                       </td>
-                      <td className="py-1.5 pr-2 text-xs">
-                        {p.secondPay ? (
-                          <>
-                            <div className="tabular-nums text-muted-foreground">{formatDate(p.secondPay.dueOn)}</div>
-                            <DualMoney usd={p.secondPay.amount} />
-                          </>
-                        ) : (
-                          '—'
-                        )}
+                      <td className="py-1.5 pr-2 align-top text-xs">
+                        <MarketingPayCell slice={p.secondPay} labels={payEdit} />
                       </td>
                       <td className="py-1.5 pr-2 text-right tabular-nums">
                         {formatMoney(usdToSar(p.monthlyUsd), 'SAR')}
@@ -693,11 +714,13 @@ export function OutflowPanel({
   today,
   defaultFrom,
   defaultTo,
+  payEdit,
 }: {
   snapshot: OutflowSnapshot
   today: string
   defaultFrom: string
   defaultTo: string
+  payEdit: { edit: string; when: string; save: string; cancel: string; saving: string }
 }) {
   const router = useRouter()
   const params = useSearchParams()
@@ -878,7 +901,7 @@ export function OutflowPanel({
         defaultOpen
       >
         {snapshot.marketingMonths.length > 0 ? (
-          <MarketingMonths months={snapshot.marketingMonths} view={view} />
+          <MarketingMonths months={snapshot.marketingMonths} view={view} payEdit={payEdit} />
         ) : null}
       </CollapsibleSection>
 

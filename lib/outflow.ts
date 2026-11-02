@@ -9,9 +9,14 @@ import {
   type ContractPeriod,
 } from '@/lib/biweekly'
 import { SAR_PER_USD } from '@/lib/fx'
+import { canSeeStructureTier } from '@/lib/admin-access'
 import { payCurrency } from '@/lib/format'
 import { obligationsFromContract, type CalendarContractInput } from '@/lib/payment-calendar'
-import { structureContractsForCalendar } from '@/lib/structure-pay'
+import {
+  structureContractsForCalendar,
+  subjectKeyFromCalendarId,
+  tierFromSubjectKey,
+} from '@/lib/structure-pay'
 
 /** Amounts are stored in each person's pay currency; this panel works in USD. */
 function toUsd(amount: number | null | undefined, role: string, saved?: string | null): number {
@@ -77,7 +82,19 @@ export type OutflowMonthBucket = {
   total: number
 }
 
-export type MarketingPaySlice = { dueOn: string; amount: number; label: string }
+export type MarketingPaySlice = {
+  dueOn: string
+  /** USD, for the SAR · USD line. */
+  amount: number
+  label: string
+  creatorId: number
+  contractId: number
+  /** Same installment index the calendar edits, so a change lands on that payment everywhere. */
+  installmentIndex: number
+  /** Amount in the contract currency. Saving this is what the calendar and timeline read. */
+  payAmount: number
+  currency: string
+}
 
 export type MarketingMonthPerson = {
   creator_id: number
@@ -710,6 +727,10 @@ export async function getOutflowSnapshot(opts: {
   if (companyView) {
     const structure = await structureContractsForCalendar(opts.viewerId, today).catch(() => [])
     for (const contract of structure) {
+      const key = subjectKeyFromCalendarId(contract.creatorId)
+      const tier = key ? tierFromSubjectKey(key) : null
+      // COO and CEO salaries stay with Yahya and Ahmed. Lula never receives those rows.
+      if (!tier || tier === 'ceo' || !canSeeStructureTier(opts.viewerId, tier)) continue
       timelineContracts.push({ ...contract, role: 'creator' })
     }
   }
@@ -779,7 +800,16 @@ export async function getOutflowSnapshot(opts: {
       person.endsOn = contract.endDate
       person.planned += amount
       person.monthlyUsd += amount
-      person.installments.push({ dueOn: slice.dueDate, amount, label: slice.installmentLabel })
+      person.installments.push({
+        dueOn: slice.dueDate,
+        amount,
+        label: slice.installmentLabel,
+        creatorId: contract.creatorId,
+        contractId: contract.contractId,
+        installmentIndex: slice.installmentIndex,
+        payAmount: slice.dueAmount,
+        currency: slice.currency,
+      })
     }
   }
 

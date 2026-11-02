@@ -1765,6 +1765,13 @@ export default async function AdminPage({
                   today={today}
                   defaultFrom={ofFrom}
                   defaultTo={ofTo}
+                  payEdit={{
+                    edit: t('paymentCalendarEditPay'),
+                    when: t('timelinePayOn'),
+                    save: t('timelineSaveOnly'),
+                    cancel: t('timelineCancel'),
+                    saving: t('timelineSaving'),
+                  }}
                 />
               </Suspense>
             ),
