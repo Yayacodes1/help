@@ -2053,7 +2053,13 @@ export default async function AdminPage({
               ]
             : []),
           ] : []),
-        ]}
+        ].sort((a, b) => {
+          if (tab !== 'money' && tab !== 'people') return 0
+          const order = ADMIN_TABS[tab] as readonly string[]
+          const ai = order.indexOf(a.id)
+          const bi = order.indexOf(b.id)
+          return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi)
+        })}
       />
       </Suspense>
 
