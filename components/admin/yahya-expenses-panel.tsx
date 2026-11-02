@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   ArrowDownAZ,
@@ -15,6 +16,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { adminPersonHref } from '@/lib/admin-href'
 import { formatMoney } from '@/lib/format'
 import { usdToSar } from '@/lib/fx'
 import { shiftYearMonth } from '@/lib/biweekly'
@@ -477,14 +479,28 @@ function PersonRow({
               <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700 dark:text-sky-300">
                 Monthly
               </p>
-              <button
-                type="button"
-                onClick={() => setEditing(true)}
-                className="mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <Pencil className="h-3 w-3" />
-                Edit
-              </button>
+              <div className="mt-1 flex items-center justify-end gap-1">
+                {person.categoryId === 'creators' && person.creatorId != null && person.creatorId > 0 ? (
+                  <Link
+                    href={adminPersonHref(person.creatorId, {
+                      role: person.role === 'reposter' ? 'reposter' : null,
+                      panel: 'contracts',
+                      from: 'yahya',
+                    })}
+                    className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    Contract
+                  </Link>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </button>
+              </div>
             </>
           )}
         </div>

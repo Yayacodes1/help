@@ -18,6 +18,7 @@ const ADMIN_PANELS = new Set([
   'archive',
   'manage',
   'timeline',
+  'yahya',
   'urgent',
   'ends',
   'structure',

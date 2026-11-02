@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ChevronDown } from 'lucide-react'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
@@ -10,6 +11,7 @@ import { usdToSar } from '@/lib/fx'
 import { setMarketingPayCadence, setPersonPay } from '@/app/actions/admin'
 import { setStructurePayCadence } from '@/app/actions/company-structure'
 import { CalendarPayEdit } from '@/components/admin/calendar-pay-edit'
+import { adminPersonHref } from '@/lib/admin-href'
 import {
   calendarMonthBounds,
   lastCalendarMonthsRange,
@@ -694,14 +696,26 @@ function MarketingMonths({
                   {m.people.map((p) => (
                     <tr key={p.creator_id}>
                       <td className="py-1.5 pr-2">
-                        <div>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span className="font-medium">{p.creator_name}</span>
                           {p.paymentCount > 0 ? (
-                            <span className="ms-1 text-amber-400" aria-label={`${p.paymentCount} paid`}>
+                            <span className="text-amber-400" aria-label={`${p.paymentCount} paid`}>
                               {'★'.repeat(p.paymentCount)}
                             </span>
                           ) : null}
-                          <span className="ml-1 text-[11px] text-muted-foreground">{p.role}</span>
+                          <span className="text-[11px] text-muted-foreground">{p.role}</span>
+                          {p.creator_id > 0 && (p.role === 'creator' || p.role === 'reposter') ? (
+                            <Link
+                              href={adminPersonHref(p.creator_id, {
+                                role: p.role === 'reposter' ? 'reposter' : null,
+                                panel: 'contracts',
+                                from: 'outflow',
+                              })}
+                              className="rounded-md border border-border px-1.5 py-0.5 text-[10px] font-medium text-foreground hover:bg-accent"
+                            >
+                              Contract
+                            </Link>
+                          ) : null}
                         </div>
                         <div className="text-[11px] text-muted-foreground">
                           Started {p.startedOn ? formatDate(p.startedOn) : '—'}
