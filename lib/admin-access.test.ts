@@ -4,6 +4,7 @@ import {
   canManageOutreachAccounts,
   canMoveYahyaExpenses,
   canSeeAhmedWallet,
+  canSeeCreatorPayouts,
   canSeeStructureTier,
   canSeeYahyaExpenses,
   canSeeUrgentList,
@@ -58,4 +59,11 @@ test('Ahmed and Lula can manage outreach accounts', () => {
   assert.equal(canManageOutreachAccounts('lula'), true)
   assert.equal(canManageOutreachAccounts('yahya'), false)
   assert.equal(canManageOutreachAccounts(null), false)
+})
+
+test('Yahya, Ahmed, and Lula can open creator payouts', () => {
+  assert.equal(canSeeCreatorPayouts('yahya'), true)
+  assert.equal(canSeeCreatorPayouts('ahmed'), true)
+  assert.equal(canSeeCreatorPayouts('lula'), true)
+  assert.equal(canSeeCreatorPayouts(null), false)
 })

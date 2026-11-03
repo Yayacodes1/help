@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import nextDynamic from 'next/dynamic'
 import { redirect } from 'next/navigation'
-import { canManageOutreachAccounts, canMoveYahyaExpenses, canSeeAhmedWallet, canSeeUrgentList, canSeeYahyaExpenses, canSendUrgentList } from '@/lib/admin-access'
+import { canManageOutreachAccounts, canMoveYahyaExpenses, canSeeAhmedWallet, canSeeCreatorPayouts, canSeeUrgentList, canSeeYahyaExpenses, canSendUrgentList } from '@/lib/admin-access'
 import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import { ADMIN_TABS, resolveAdminTab } from '@/lib/admin-tabs'
 import { AdminTabs } from '@/components/admin/admin-tabs'
@@ -59,6 +59,8 @@ import { WalletBoard } from '@/components/marketing/wallet-board'
 import { getPayablePeople, getWalletEntries, getWalletTotals } from '@/lib/wallet'
 import { OutflowPanel } from '@/components/admin/outflow-panel'
 import { YahyaExpensesPanel } from '@/components/admin/yahya-expenses-panel'
+import { CreatorPayoutsBoard } from '@/components/admin/creator-payouts-board'
+import { loadCreatorPayoutBoard } from '@/lib/creator-payouts'
 import { PayCadences } from '@/components/admin/pay-cadence'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { idsOnPage } from '@/lib/refresh-scope'
@@ -309,6 +311,7 @@ export default async function AdminPage({
   const showWallet = canSeeAhmedWallet(session?.id)
   const showYahyaExpenses = canSeeYahyaExpenses(session?.id)
   const showUrgent = canSeeUrgentList(session?.id)
+  const showPayouts = canSeeCreatorPayouts(session?.id)
   const canSendUrgent = canSendUrgentList(session?.id)
   const canMoveYahya = canMoveYahyaExpenses(session?.id)
   /** Downloads in the daily sheet: every admin. Wallet stays Yahya + Ahmed. */
@@ -443,6 +446,7 @@ export default async function AdminPage({
       commissionBoard,
       commissionEstimate,
       yahyaExpenses,
+      creatorPayouts,
     ] = await Promise.all([
       getPaymentsInRange(payFrom, payTo, undefined, roleSql),
       getPaymentsTotalInRange(payFrom, payTo, undefined, roleSql),
@@ -476,6 +480,7 @@ export default async function AdminPage({
       showYahyaExpenses
         ? getYahyaExpensesSnapshot({ yearMonth: yeMonth, today })
         : Promise.resolve(null),
+      showPayouts ? loadCreatorPayoutBoard(today) : Promise.resolve(null),
     ])
     return {
       periodPayments,
@@ -491,6 +496,7 @@ export default async function AdminPage({
       commissionBoard,
       commissionEstimate,
       yahyaExpenses,
+      creatorPayouts,
     }
   }
 
@@ -575,6 +581,7 @@ export default async function AdminPage({
     commissionBoard,
     commissionEstimate,
     yahyaExpenses,
+    creatorPayouts,
   } = moneyData ?? ({} as Awaited<ReturnType<typeof loadMoney>>)
 
   const pvModeRaw = sp.pvMode
@@ -872,6 +879,7 @@ export default async function AdminPage({
   const hiddenPanels = new Set<string>()
   if (!showYahyaExpenses) hiddenPanels.add('yahya')
   if (!showWallet) hiddenPanels.add('marketing')
+  if (!showPayouts) hiddenPanels.add('payouts')
   const tabPanels: readonly string[] = ADMIN_TABS[tab].filter((id) => !hiddenPanels.has(id))
   const defaultPanel =
     sp.panel && tabPanels.includes(sp.panel)
@@ -1553,6 +1561,17 @@ export default async function AdminPage({
             ),
           },
             ]
+            : []),
+          ...(showPayouts && creatorPayouts
+            ? [
+                {
+                  id: 'payouts',
+                  title: t('creatorPayouts'),
+                  summary: `${creatorPayouts.filledCount} filled · ${creatorPayouts.missingCount} missing`,
+                  hint: t('creatorPayoutsHint'),
+                  children: <CreatorPayoutsBoard board={creatorPayouts} />,
+                },
+              ]
             : []),
           {
             id: 'commission',

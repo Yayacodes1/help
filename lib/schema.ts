@@ -329,6 +329,12 @@ async function runEnsureCreatorTrackingColumns() {
     )
   `
   await sql`ALTER TABLE urgent_payments ADD COLUMN IF NOT EXISTS marked_paid boolean NOT NULL DEFAULT false`
+  try {
+    const { ensureCreatorPayoutTables } = await import('@/lib/creator-payouts')
+    await ensureCreatorPayoutTables()
+  } catch (err) {
+    console.warn('[schema] creator payouts skipped', err)
+  }
   await sql`
     UPDATE contracts
     SET base_pay_cadence = 'monthly'

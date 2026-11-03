@@ -23,6 +23,11 @@ export function canSeeUrgentList(accountId: string | null | undefined): boolean 
   return accountId === 'yahya' || accountId === 'ahmed' || accountId === 'lula'
 }
 
+/** Yahya, Ahmed, and Lula can open creator payout details (PayPal / bank). */
+export function canSeeCreatorPayouts(accountId: string | null | undefined): boolean {
+  return accountId === 'yahya' || accountId === 'ahmed' || accountId === 'lula'
+}
+
 /** Ahmed and Lula can add someone to the urgent pay list. */
 export function canSendUrgentList(accountId: string | null | undefined): boolean {
   return accountId === 'ahmed' || accountId === 'lula'
