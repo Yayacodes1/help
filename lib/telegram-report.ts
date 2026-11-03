@@ -20,7 +20,8 @@ import { formatCreatorReminder } from '@/lib/telegram-reminder'
  */
 export type ReportMode = 'final' | 'live'
 export type ReportRole = 'creator' | 'reposter'
-export type ReportView = 'summary' | 'list' | 'messages'
+/** `progress` = today so far with video totals (how much posted to this point). */
+export type ReportView = 'summary' | 'list' | 'messages' | 'progress'
 
 type Counts = { posted: number; partial: number; missed: number; away: number; late: number }
 
@@ -183,10 +184,13 @@ function riyadhTime(d: Date): string {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: OPERATIONAL_TZ })
 }
 
-function dayTitle(report: DayReport): string {
-  return report.mode === 'live'
-    ? `${enDay(report.day)} so far (${riyadhTime(report.generatedAt)} Riyadh)`
-    : `${enDay(report.day)} (final)`
+function dayTitle(report: DayReport, flavor: 'default' | 'today' | 'progress' = 'default'): string {
+  if (report.mode === 'final') return `${enDay(report.day)} (previous day · final)`
+  if (flavor === 'today') return `${enDay(report.day)} — today`
+  if (flavor === 'progress') {
+    return `${enDay(report.day)} so far (${riyadhTime(report.generatedAt)} Riyadh)`
+  }
+  return `${enDay(report.day)} so far (${riyadhTime(report.generatedAt)} Riyadh)`
 }
 
 function missingEn(p: AttendancePerson): string {
@@ -211,16 +215,40 @@ const ROLE_TITLE: Record<ReportRole, string> = { creator: '🎬 CREATORS', repos
 
 export const BUTTON_GUIDE =
   'WHAT YOU CAN DO\n' +
+  '📊 Type /update — pick Previous day, Today, or So far today.\n' +
   '📋 Full list — names: who posted, partial, didn\'t post (same day). Or type /list\n' +
   '✉️ Creators — a copy-ready Arabic message for each creator who is behind. Or type /messages_creators\n' +
   '✉️ Reposters — the same for reposters. Or type /messages_reposters\n' +
   '👑 Group Leader — pick Alpha / Beta / Charlie / Delta, then Update, List, Creators reminder, or Reposter reminder. Or type /groups\n' +
-  '📊 Type /update any time for today so far.\n' +
-  '↩️ Reply to a report with /update to refresh last night (late posts included).'
+  '📅 Type /yesterday for the previous day. /today for the day we\'re in. /now for so far today.'
+
+export function updateMenuButtons() {
+  return {
+    inline_keyboard: [
+      [{ text: '📅 Previous day', callback_data: 'upd:prev' }],
+      [{ text: '☀️ Today', callback_data: 'upd:today' }],
+      [{ text: '⏱ So far today', callback_data: 'upd:sofar' }],
+    ],
+  }
+}
+
+export function updateMenuPrompt(): string {
+  return (
+    '📊 WHICH UPDATE?\n' +
+    '📅 Previous day — the day that already ended (late posts included).\n' +
+    '☀️ Today — the day we are in right now (who posted / partial / not yet).\n' +
+    '⏱ So far today — to this point: how many videos posted vs plan.'
+  )
+}
 
 export function reportButtons(mode: ReportMode) {
   return {
     inline_keyboard: [
+      [
+        { text: '📅 Previous day', callback_data: 'upd:prev' },
+        { text: '☀️ Today', callback_data: 'upd:today' },
+        { text: '⏱ So far', callback_data: 'upd:sofar' },
+      ],
       [{ text: '📋 Full list', callback_data: `list:${mode}` }],
       [
         { text: '✉️ Creators', callback_data: `msgs:creator:${mode}` },
@@ -231,9 +259,38 @@ export function reportButtons(mode: ReportMode) {
   }
 }
 
+function videoTotals(people: AttendancePerson[]): { posted: number; goal: number; ig: number; igGoal: number; tt: number; ttGoal: number } {
+  let posted = 0
+  let goal = 0
+  let ig = 0
+  let igGoal = 0
+  let tt = 0
+  let ttGoal = 0
+  for (const p of people) {
+    if (p.status === 'break' || p.status === 'off') continue
+    ig += Math.max(0, p.todayInstagram)
+    igGoal += Math.max(0, p.goalInstagram)
+    tt += Math.max(0, p.todayTiktok)
+    ttGoal += Math.max(0, p.goalTiktok)
+    posted += Math.max(0, p.todayInstagram) + Math.max(0, p.todayTiktok)
+    goal += Math.max(0, p.goalInstagram) + Math.max(0, p.goalTiktok)
+  }
+  return { posted, goal, ig, igGoal, tt, ttGoal }
+}
+
+function videoTotalsLine(people: AttendancePerson[], label = ''): string {
+  const t = videoTotals(people)
+  if (t.goal === 0 && t.posted === 0) return `${label}no plan yet`
+  return `${label}🎬 ${t.posted}/${t.goal} videos · IG ${t.ig}/${t.igGoal} · TT ${t.tt}/${t.ttGoal}`
+}
+
 /** Counts only: posted / partial / didn't, per project, plus on-plan % today vs yesterday. */
-export function formatSummary(report: DayReport): string {
-  const lines: string[] = [`📊 ${dayTitle(report)}`]
+export function formatSummary(report: DayReport, flavor: 'default' | 'today' | 'progress' = 'default'): string {
+  const titleFlavor = flavor === 'today' ? 'today' : flavor === 'progress' ? 'progress' : 'default'
+  const lines: string[] = [`📊 ${dayTitle(report, titleFlavor)}`]
+  if (flavor === 'progress') {
+    lines.push('', 'TO THIS POINT', videoTotalsLine(report.everyone, 'Everyone: '))
+  }
   if (report.dailyViews) {
     lines.push('', formatDailyViewsSection(report.dailyViews))
   }
@@ -242,13 +299,17 @@ export function formatSummary(report: DayReport): string {
     for (const g of report.groups.filter((x) => x.role === role)) {
       const c = g.today
       const label = role === 'reposter' ? '' : `${g.label}: `
+      if (flavor === 'progress') {
+        lines.push(videoTotalsLine(g.people, label))
+      }
       if (c.posted + c.late + c.partial + c.missed + c.away === 0) {
         lines.push(`${label}nobody`)
         continue
       }
       const away = c.away > 0 ? ` · 🏖 ${c.away}` : ''
       const late = c.late > 0 ? ` · ⏰ ${c.late} late` : ''
-      lines.push(`${label}✅ ${c.posted} posted${late} · ⚠️ ${c.partial} partial · ❌ ${c.missed} didn't${away}`)
+      const missLabel = report.mode === 'live' ? 'not yet' : "didn't"
+      lines.push(`${label}✅ ${c.posted} posted${late} · ⚠️ ${c.partial} partial · ❌ ${c.missed} ${missLabel}${away}`)
       const now = onPlanPct(c)
       const before = onPlanPct(g.yesterday)
       if (now != null) {
@@ -477,6 +538,7 @@ export function buildMessageTemplates(
 
 /**
  * `summary` (default, used by the 5 PM / 12 AM jobs): counts only + buttons.
+ * `progress`: today so far with video totals (how much posted to this point).
  * `list`: every name for the same day.
  * `messages`: one copy-ready Arabic message per person of `role` who is behind.
  */
@@ -488,25 +550,32 @@ export async function sendAttendanceReports(
     view?: ReportView
     role?: ReportRole
     squad?: ReportSquad
+    /** How to title a live summary: today vs so-far progress. */
+    flavor?: 'default' | 'today' | 'progress'
   } = {},
 ): Promise<{ ok: boolean; day: string; error?: string; skipped?: boolean; messages?: number }> {
   const { telegramConfigured, sendTelegramMessage } = await import('@/lib/telegram')
   const day = mode === 'live' ? opToday : lastCompletedOperationalDay(opToday)
   if (!telegramConfigured()) return { ok: true, day, skipped: true }
-  const { chatId, view = 'summary', role = 'creator', squad } = opts
+  const { chatId, view = 'summary', role = 'creator', squad, flavor = 'default' } = opts
 
   const report = await buildDayReport(opToday, mode)
   const buttons = squad ? squadRoleButtons(squad, mode) : reportButtons(mode)
   const scope = squad ? ` · ${squadMenuTitle(squad)}` : ''
 
-  if (view === 'summary' || view === 'list') {
+  if (view === 'summary' || view === 'list' || view === 'progress') {
+    const summaryFlavor =
+      view === 'progress' ? 'progress' : flavor === 'today' ? 'today' : flavor === 'progress' ? 'progress' : 'default'
     const text = squad
-      ? view === 'summary'
-        ? formatSquadSummary(report, squad)
-        : formatSquadList(report, squad)
-      : view === 'summary'
-        ? formatSummary(report)
-        : formatFullList(report)
+      ? view === 'list'
+        ? formatSquadList(report, squad)
+        : formatSquadSummary(report, squad) +
+          (view === 'progress' || summaryFlavor === 'progress'
+            ? `\n\nTO THIS POINT\n${videoTotalsLine(peopleInSquad(report.everyone, report.leaders, squad), 'This group: ')}`
+            : '')
+      : view === 'list'
+        ? formatFullList(report)
+        : formatSummary(report, summaryFlavor)
     const res = await sendTelegramMessage(text, { chatId, replyMarkup: buttons })
     return { ok: res.ok, day: report.day, error: res.error }
   }

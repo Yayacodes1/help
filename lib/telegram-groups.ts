@@ -107,9 +107,10 @@ export function squadRolePrompt(squad: ReportSquad): string {
   const title = squadMenuTitle(squad)
   return (
     `👑 ${title}\n` +
-    '📊 Update — counts for this group today.\n' +
+    '📊 Update — counts for this group (same day as the report you opened from).\n' +
     '📋 List — names in this group.\n' +
     `✉️ Creators reminder — copy-ready texts for ${title} creators who are behind.\n` +
-    `✉️ Reposter reminder — the same for ${title} reposters.`
+    `✉️ Reposter reminder — the same for ${title} reposters.\n\n` +
+    'For Previous day / Today / So far today, type /update.'
   )
 }

@@ -13,6 +13,8 @@ import {
   BUTTON_GUIDE,
   reportButtons,
   sendAttendanceReports,
+  updateMenuButtons,
+  updateMenuPrompt,
   type ReportMode,
   type ReportRole,
   type ReportView,
@@ -25,23 +27,30 @@ type Update = {
   message?: {
     chat?: { id?: number | string }
     text?: string
-    reply_to_message?: { text?: string }
   }
   callback_query?: { id: string; data?: string; message?: { chat?: { id?: number | string } } }
 }
 
+type ReportRequest = {
+  view: ReportView
+  mode: ReportMode
+  role?: ReportRole
+  squad?: ReportSquad
+  flavor?: 'default' | 'today' | 'progress'
+}
+
 type Request_ =
-  | { view: ReportView; mode: ReportMode; role?: ReportRole; squad?: ReportSquad }
-  | { menu: 'groups' | 'squad'; mode: ReportMode; squad?: ReportSquad }
+  | ReportRequest
+  | { menu: 'groups' | 'squad' | 'update'; mode: ReportMode; squad?: ReportSquad }
   | 'help'
   | null
 
 const HELP =
   `${BUTTON_GUIDE}\n` +
-  '📋 Type /report for the last full day.\n' +
-  '👑 Type /groups to pick Alpha, Beta, Charlie, Delta, or Ungrouped.\n' +
-  '↩️ Reply to a report and send /update to refresh that last night (not today).\n\n' +
-  'Automatic summary: 5:00 PM Riyadh (today so far) and 12:00 AM Riyadh (the day that just ended).'
+  '📊 Type /update to pick Previous day, Today, or So far today.\n' +
+  '📅 /yesterday — previous day · /today — the day we\'re in · /now — so far today.\n' +
+  '👑 Type /groups to pick Alpha, Beta, Charlie, Delta, or Ungrouped.\n\n' +
+  'Automatic summary: 5:00 PM Riyadh (so far today) and 12:00 AM Riyadh (previous day final).'
 
 function secretMatches(header: string | null): boolean {
   const secret = telegramWebhookSecret()
@@ -55,8 +64,12 @@ function parseText(text: string): Request_ {
   const words = text.trim().toLowerCase().split(/\s+/)
   const cmd = words[0]?.split('@')[0]?.replace(/^\//, '') ?? ''
   const rest = words.slice(1).join(' ')
-  if (['messages_creators', 'msgs_creators'].includes(cmd)) return { view: 'messages', mode: 'live', role: 'creator' }
-  if (['messages_reposters', 'msgs_reposters'].includes(cmd)) return { view: 'messages', mode: 'live', role: 'reposter' }
+  if (['messages_creators', 'msgs_creators'].includes(cmd)) {
+    return { view: 'messages', mode: 'live', role: 'creator' }
+  }
+  if (['messages_reposters', 'msgs_reposters'].includes(cmd)) {
+    return { view: 'messages', mode: 'live', role: 'reposter' }
+  }
   if (['messages', 'message', 'msgs', 'رسائل'].includes(cmd)) {
     if (/repost|معيد/.test(rest)) return { view: 'messages', mode: 'live', role: 'reposter' }
     if (/creat|صانع|صناع/.test(rest)) return { view: 'messages', mode: 'live', role: 'creator' }
@@ -66,8 +79,23 @@ function parseText(text: string): Request_ {
   if (['groups', 'leaders', 'groupleader', 'group_leader'].includes(cmd)) {
     return { menu: 'groups', mode: 'live' }
   }
-  if (['update', 'now', 'today', 'summary'].includes(cmd)) return { view: 'summary', mode: 'live' }
-  if (['report', 'yesterday'].includes(cmd)) return { view: 'summary', mode: 'final' }
+  if (['yesterday', 'report', 'prev', 'previous'].includes(cmd)) {
+    return { view: 'summary', mode: 'final' }
+  }
+  if (['today', 'day'].includes(cmd)) {
+    return { view: 'summary', mode: 'live', flavor: 'today' }
+  }
+  if (['now', 'sofar', 'so_far', 'progress'].includes(cmd)) {
+    return { view: 'progress', mode: 'live', flavor: 'progress' }
+  }
+  if (['update', 'summary'].includes(cmd)) {
+    if (/yester|prev|previous|أمس|امس/.test(rest)) return { view: 'summary', mode: 'final' }
+    if (/so\s*far|now|progress|حتى|الآن|الان/.test(rest)) {
+      return { view: 'progress', mode: 'live', flavor: 'progress' }
+    }
+    if (/today|اليوم/.test(rest)) return { view: 'summary', mode: 'live', flavor: 'today' }
+    return { menu: 'update', mode: 'live' }
+  }
   if (['start', 'help'].includes(cmd)) return 'help'
   return null
 }
@@ -78,6 +106,12 @@ function parseMode(value: string | undefined): ReportMode {
 
 function parseButton(data: string | undefined): Request_ {
   const [kind, a, b, c] = (data ?? '').split(':')
+  if (kind === 'upd') {
+    if (a === 'prev') return { view: 'summary', mode: 'final' }
+    if (a === 'today') return { view: 'summary', mode: 'live', flavor: 'today' }
+    if (a === 'sofar') return { view: 'progress', mode: 'live', flavor: 'progress' }
+    return { menu: 'update', mode: 'live' }
+  }
   if (kind === 'report') return { view: 'summary', mode: parseMode(a) }
   if (kind === 'list') return { view: 'list', mode: parseMode(a) }
   if (kind === 'gl') return { menu: 'groups', mode: parseMode(a) }
@@ -101,7 +135,9 @@ function parseButton(data: string | undefined): Request_ {
     if (!squad || (b !== 'creator' && b !== 'reposter')) return null
     return { view: 'messages', mode: parseMode(c), role: b, squad }
   }
-  if (kind === 'msgs' && (a === 'creator' || a === 'reposter')) return { view: 'messages', mode: parseMode(b), role: a }
+  if (kind === 'msgs' && (a === 'creator' || a === 'reposter')) {
+    return { view: 'messages', mode: parseMode(b), role: a }
+  }
   if (kind === 'msgs') return 'help'
   return null
 }
@@ -126,7 +162,9 @@ export async function POST(req: Request) {
         ? 'menu' in request
           ? request.menu === 'groups'
             ? 'Pick a group…'
-            : 'Update, list, or reminders…'
+            : request.menu === 'update'
+              ? 'Pick an update…'
+              : 'Update, list, or reminders…'
           : request.view === 'messages'
             ? 'Building the messages…'
             : 'Building…'
@@ -134,22 +172,18 @@ export async function POST(req: Request) {
     await answerCallbackQuery(update.callback_query.id, tapNote)
   } else if (update.message?.text) {
     request = parseText(update.message.text)
-    if (
-      request &&
-      request !== 'help' &&
-      !('menu' in request) &&
-      request.mode === 'live' &&
-      update.message.reply_to_message?.text
-    ) {
-      request = { ...request, mode: 'final' }
-    }
   }
 
   if (request === 'help') {
-    await sendTelegramMessage(HELP, { chatId, replyMarkup: reportButtons('live') })
+    await sendTelegramMessage(HELP, { chatId, replyMarkup: updateMenuButtons() })
   } else if (request && 'menu' in request) {
-    if (request.menu === 'groups') {
-      await sendTelegramMessage(groupLeaderPrompt(), { chatId, replyMarkup: groupLeaderButtons(request.mode) })
+    if (request.menu === 'update') {
+      await sendTelegramMessage(updateMenuPrompt(), { chatId, replyMarkup: updateMenuButtons() })
+    } else if (request.menu === 'groups') {
+      await sendTelegramMessage(groupLeaderPrompt(), {
+        chatId,
+        replyMarkup: groupLeaderButtons(request.mode),
+      })
     } else if (request.squad) {
       await sendTelegramMessage(squadRolePrompt(request.squad), {
         chatId,
@@ -157,14 +191,20 @@ export async function POST(req: Request) {
       })
     }
   } else if (request) {
-    const { view, mode, role, squad } = request
+    const { view, mode, role, squad, flavor } = request
     // Answer Telegram now; sending many messages can take a minute and it would retry.
     after(async () => {
       try {
         const { ensureCreatorTrackingColumns } = await import('@/lib/schema')
         const { getOperationalToday } = await import('@/lib/queries')
         await ensureCreatorTrackingColumns()
-        const result = await sendAttendanceReports(await getOperationalToday(), mode, { chatId, view, role, squad })
+        const result = await sendAttendanceReports(await getOperationalToday(), mode, {
+          chatId,
+          view,
+          role,
+          squad,
+          flavor,
+        })
         if (!result.ok && result.error) {
           await sendTelegramMessage(`Could not send everything: ${result.error.slice(0, 500)}`, { chatId })
         }
