@@ -498,7 +498,7 @@ export function CreatorsManager({
                         onClick={() => {
                           if (
                             confirm(
-                              `Pause "${c.name}"? They leave the daily lists, Telegram report and strikes. Their past videos stay in analytics.`,
+                              `Pause "${c.name}"? They leave money (Yahya expenses, commission, pay due, payouts, calendar), Telegram, daily lists, and strikes. Past videos and old payments stay in analytics / archive.`,
                             )
                           )
                             startTransition(() => pauseCreator(c.id))
@@ -542,7 +542,7 @@ export function CreatorsManager({
           <summary className="cursor-pointer text-sm font-medium">
             Paused ({scopedPaused.length})
             <span className="ml-2 text-xs font-normal text-muted-foreground">
-              only here until you resume them. They cannot open the site or the bots.
+              out of money and daily work until you resume. History stays in analytics.
             </span>
           </summary>
           <ul className="mt-2 flex flex-col divide-y divide-border">

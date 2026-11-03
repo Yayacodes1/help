@@ -122,7 +122,6 @@ export async function loadPaymentArchive(today: string): Promise<{
     LEFT JOIN contracts c ON c.id = p.contract_id
     WHERE p.paid_on >= ${start}::date
       AND p.paid_on <= ${end}::date
-      AND cr.paused_at IS NULL
     ORDER BY p.paid_on ASC, cr.name ASC, p.id ASC
   `) as PaymentRow[]
 
