@@ -389,6 +389,18 @@ export async function saveCreatorPayoutProfile(opts: {
   if (!exists[0]) return { ok: false, error: 'Creator not found.' }
 
   const method = asMethod(opts.method)
+  if (!method) return { ok: false, error: 'Pick PayPal or Direct deposit.' }
+  if (method === 'paypal') {
+    if (!emptyToNull(opts.paypalEmail) && !emptyToNull(opts.paypalUsername)) {
+      return { ok: false, error: 'Add a PayPal email or username.' }
+    }
+  } else {
+    if (!emptyToNull(opts.accountHolderName)) return { ok: false, error: 'Full name is required.' }
+    if (!emptyToNull(opts.city)) return { ok: false, error: 'City is required.' }
+    if (!emptyToNull(opts.phone)) return { ok: false, error: 'Phone number is required.' }
+    if (!emptyToNull(opts.bankName)) return { ok: false, error: 'Bank name is required.' }
+    if (!emptyToNull(opts.iban)) return { ok: false, error: 'IBAN is required.' }
+  }
   const dueOn =
     opts.dueOn && /^\d{4}-\d{2}-\d{2}$/.test(opts.dueOn) ? opts.dueOn : null
   const currency =
