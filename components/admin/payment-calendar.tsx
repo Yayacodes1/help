@@ -4,7 +4,12 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { formatMoney, formatNumber, formatYearMonth } from '@/lib/format'
 import { addDays } from '@/lib/campaign'
-import type { CalendarDayCell, PaymentCalendarModel, SettledObligation } from '@/lib/payment-calendar'
+import type {
+  CalendarDayCell,
+  CalendarRoleFilter,
+  PaymentCalendarModel,
+  SettledObligation,
+} from '@/lib/payment-calendar'
 import { daysAhead, type PayUrgency } from '@/lib/payment-calendar-math'
 import { MoneyPair } from '@/components/admin/money-pair'
 import { PushContractForward } from '@/components/admin/push-contract-forward'
@@ -21,6 +26,15 @@ const URGENCY_CLASS: Record<PayUrgency, string> = {
 }
 
 const PAID_CLASS = 'border-blue-600 bg-blue-600 text-white hover:brightness-110'
+
+/** Selected days must read clearly on top of red/orange/green cells. */
+const SELECTED_CLASS =
+  'border-zinc-950 bg-zinc-950 text-white shadow-md ring-2 ring-zinc-950 ring-offset-2 ring-offset-background hover:brightness-100'
+
+function sameDateSet(a: Set<string>, b: string[]): boolean {
+  if (a.size !== b.length) return false
+  return b.every((date) => a.has(date))
+}
 
 type PayPersonRow = {
   creatorId: number
@@ -48,14 +62,27 @@ type SelectionPerson = {
   days: number
 }
 
-function unpaidItemsOnDay(day: CalendarDayCell): SettledObligation[] {
-  return day.items.filter((item) => item.remainingSar > 0.009)
+function matchesRoleFilter(item: SettledObligation, role: CalendarRoleFilter): boolean {
+  if (role === 'all') return true
+  if (role === 'company') return item.creatorId < 0 || item.role === 'reposter'
+  if (item.creatorId < 0) return false
+  return item.role === role
+}
+
+function unpaidItemsOnDay(day: CalendarDayCell, role: CalendarRoleFilter = 'all'): SettledObligation[] {
+  return day.items.filter((item) => item.remainingSar > 0.009 && matchesRoleFilter(item, role))
+}
+
+function dayRemainingForRole(day: CalendarDayCell, role: CalendarRoleFilter): number {
+  if (role === 'all') return day.remainingSar
+  return unpaidItemsOnDay(day, role).reduce((sum, item) => sum + item.remainingSar, 0)
 }
 
 function sumRange(
   days: CalendarDayCell[],
   from: string,
   to: string,
+  role: CalendarRoleFilter = 'all',
 ): { sar: number; usd: number; dates: string[] } {
   let sar = 0
   let usd = 0
@@ -63,9 +90,11 @@ function sumRange(
   for (const day of days) {
     if (!day.inMonth) continue
     if (day.date < from || day.date > to) continue
-    if (day.remainingSar <= 0.009) continue
-    sar += day.remainingSar
-    usd += day.remainingUsd
+    const remaining = dayRemainingForRole(day, role)
+    if (remaining <= 0.009) continue
+    sar += remaining
+    const share = day.remainingSar > 0 ? remaining / day.remainingSar : 0
+    usd += day.remainingUsd * share
     dates.push(day.date)
   }
   return { sar, usd, dates }
@@ -74,12 +103,13 @@ function sumRange(
 function peopleFromDates(
   days: CalendarDayCell[],
   selected: Set<string>,
+  role: CalendarRoleFilter = 'all',
 ): { people: SelectionPerson[]; sar: number } {
   const map = new Map<number, SelectionPerson>()
   let sar = 0
   for (const day of days) {
     if (!selected.has(day.date)) continue
-    for (const item of unpaidItemsOnDay(day)) {
+    for (const item of unpaidItemsOnDay(day, role)) {
       sar += item.remainingSar
       const existing = map.get(item.creatorId)
       if (!existing) {
@@ -254,9 +284,19 @@ export function PaymentCalendarBoard({
     paying: string
     openDay: string
     noSelection: string
+    pickDate: string
+    from: string
+    to: string
+    applyRange: string
+    addDay: string
   }
 }) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const [rangeFrom, setRangeFrom] = useState(model.today)
+  const [rangeTo, setRangeTo] = useState(addDays(model.today, 14))
+  const [pickOne, setPickOne] = useState(model.today)
+  /** Local filter for owed totals / selection; follows page role when that page is already filtered. */
+  const [pickRole, setPickRole] = useState<CalendarRoleFilter>(model.role)
 
   const hrefFor = (date: string) => {
     const q = new URLSearchParams()
@@ -265,20 +305,28 @@ export function PaymentCalendarBoard({
     return `/admin/payments/${date}?${q.toString()}`
   }
 
+  const roleFilter = model.role !== 'all' ? model.role : pickRole
+
   const next15 = useMemo(
-    () => sumRange(model.days, model.today, addDays(model.today, 14)),
-    [model.days, model.today],
+    () => sumRange(model.days, model.today, addDays(model.today, 14), roleFilter),
+    [model.days, model.today, roleFilter],
   )
   const monthFull = useMemo(
-    () => sumRange(model.days, model.start, model.end),
-    [model.days, model.start, model.end],
+    () => sumRange(model.days, model.start, model.end, roleFilter),
+    [model.days, model.start, model.end, roleFilter],
   )
   const todayToEnd = useMemo(
-    () => sumRange(model.days, model.today, model.end),
-    [model.days, model.today, model.end],
+    () => sumRange(model.days, model.today, model.end, roleFilter),
+    [model.days, model.today, model.end, roleFilter],
   )
 
-  const selection = useMemo(() => peopleFromDates(model.days, selected), [model.days, selected])
+  const selection = useMemo(
+    () => peopleFromDates(model.days, selected, roleFilter),
+    [model.days, selected, roleFilter],
+  )
+  const next15Active = sameDateSet(selected, next15.dates)
+  const monthFullActive = sameDateSet(selected, monthFull.dates)
+  const todayToEndActive = sameDateSet(selected, todayToEnd.dates)
 
   function applyPreset(dates: string[]) {
     setSelected(new Set(dates))
@@ -292,6 +340,31 @@ export function PaymentCalendarBoard({
       return next
     })
   }
+
+  function applyCustomRange() {
+    const from = rangeFrom <= rangeTo ? rangeFrom : rangeTo
+    const to = rangeFrom <= rangeTo ? rangeTo : rangeFrom
+    const dates = sumRange(model.days, from, to, roleFilter).dates
+    setSelected(new Set(dates))
+  }
+
+  function addPickedDay() {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(pickOne)) return
+    const day = model.days.find((d) => d.date === pickOne && d.inMonth)
+    const remaining = day ? dayRemainingForRole(day, roleFilter) : 0
+    if (!day || remaining <= 0.009) {
+      setSelected((prev) => new Set(prev).add(pickOne))
+      return
+    }
+    toggleDay(pickOne)
+  }
+
+  const inputClass =
+    'h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
+  const roleToggleClass = (active: boolean) =>
+    `rounded-md px-2.5 py-1.5 text-xs font-medium sm:text-sm ${
+      active ? 'bg-zinc-950 text-white' : 'text-muted-foreground hover:bg-accent'
+    }`
 
   const unpaidRows = model.items.filter((i) => i.remainingSar > 0.009)
   const people = new Map<number, PayPersonRow>()
@@ -385,36 +458,117 @@ export function PaymentCalendarBoard({
       <section className="rounded-xl border border-border bg-card p-4">
         <h4 className="text-sm font-semibold">{labels.owedPresets}</h4>
         <p className="mt-1 text-xs text-muted-foreground">{labels.pickDays}</p>
+
+        {model.role === 'all' ? (
+          <div className="mt-3 inline-flex flex-wrap rounded-lg border border-border p-0.5">
+            {(
+              [
+                { id: 'all' as const, label: labels.all },
+                { id: 'creator' as const, label: labels.creators },
+                { id: 'reposter' as const, label: labels.reposters },
+                { id: 'company' as const, label: labels.company },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => {
+                  setPickRole(opt.id)
+                  setSelected(new Set())
+                }}
+                className={roleToggleClass(pickRole === opt.id)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          {(
+            [
+              { key: 'next15', label: labels.next15, data: next15, active: next15Active },
+              { key: 'month', label: labels.monthStartEnd, data: monthFull, active: monthFullActive },
+              { key: 'todayEnd', label: labels.todayToEnd, data: todayToEnd, active: todayToEndActive },
+            ] as const
+          ).map((preset) => (
+            <button
+              key={preset.key}
+              type="button"
+              onClick={() => applyPreset(preset.data.dates)}
+              className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                preset.active
+                  ? 'border-zinc-950 bg-zinc-950 text-white shadow-md'
+                  : 'border-border hover:border-primary/50 hover:bg-accent/40'
+              }`}
+            >
+              <div
+                className={`text-xs font-semibold ${
+                  preset.active ? 'text-white/80' : 'text-muted-foreground'
+                }`}
+              >
+                {preset.label}
+                {preset.active ? ' · ✓' : ''}
+              </div>
+              <div className={`mt-1 ${preset.active ? '[&_span]:text-white' : ''}`}>
+                <MoneyPair sar={preset.data.sar} usd={preset.data.usd} />
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-4 grid gap-3 rounded-lg border border-border bg-muted/30 p-3 sm:grid-cols-[1fr_1fr_auto]">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {labels.from}
+            <input
+              type="date"
+              value={rangeFrom}
+              min={model.start}
+              max={model.end}
+              onChange={(e) => setRangeFrom(e.target.value)}
+              className={inputClass}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {labels.to}
+            <input
+              type="date"
+              value={rangeTo}
+              min={model.start}
+              max={model.end}
+              onChange={(e) => setRangeTo(e.target.value)}
+              className={inputClass}
+            />
+          </label>
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={applyCustomRange}
+              className="h-9 w-full rounded-lg bg-zinc-950 px-3 text-sm font-medium text-white hover:bg-zinc-800 sm:w-auto"
+            >
+              {labels.applyRange}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+            {labels.pickDate}
+            <input
+              type="date"
+              value={pickOne}
+              min={model.start}
+              max={model.end}
+              onChange={(e) => setPickOne(e.target.value)}
+              className={inputClass}
+            />
+          </label>
           <button
             type="button"
-            onClick={() => applyPreset(next15.dates)}
-            className="rounded-lg border border-border px-3 py-2 text-left hover:border-primary/50 hover:bg-accent/40"
+            onClick={addPickedDay}
+            className="h-9 rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
           >
-            <div className="text-xs font-medium text-muted-foreground">{labels.next15}</div>
-            <div className="mt-1">
-              <MoneyPair sar={next15.sar} usd={next15.usd} />
-            </div>
-          </button>
-          <button
-            type="button"
-            onClick={() => applyPreset(monthFull.dates)}
-            className="rounded-lg border border-border px-3 py-2 text-left hover:border-primary/50 hover:bg-accent/40"
-          >
-            <div className="text-xs font-medium text-muted-foreground">{labels.monthStartEnd}</div>
-            <div className="mt-1">
-              <MoneyPair sar={monthFull.sar} usd={monthFull.usd} />
-            </div>
-          </button>
-          <button
-            type="button"
-            onClick={() => applyPreset(todayToEnd.dates)}
-            className="rounded-lg border border-border px-3 py-2 text-left hover:border-primary/50 hover:bg-accent/40"
-          >
-            <div className="text-xs font-medium text-muted-foreground">{labels.todayToEnd}</div>
-            <div className="mt-1">
-              <MoneyPair sar={todayToEnd.sar} usd={todayToEnd.usd} />
-            </div>
+            {labels.addDay}
           </button>
         </div>
       </section>
@@ -467,45 +621,57 @@ export function PaymentCalendarBoard({
               if (!day.inMonth) {
                 return <div key={day.date} className="min-h-16 rounded-lg bg-muted/20 sm:min-h-28" />
               }
-              const showPay = day.remainingSar > 0.009
-              const paidOff = day.recipientCount > 0 && !showPay
+              const roleItems = unpaidItemsOnDay(day, roleFilter)
+              const roleRemaining = dayRemainingForRole(day, roleFilter)
+              const showPay = roleRemaining > 0.009
+              const paidOff = day.recipientCount > 0 && day.remainingSar <= 0.009
               const isSelected = selected.has(day.date)
+              const baseTone = paidOff ? PAID_CLASS : URGENCY_CLASS[day.urgency]
+              const roleNames = [...new Set(roleItems.map((item) => item.creatorName))]
+              const roleUsd =
+                day.remainingSar > 0 ? day.remainingUsd * (roleRemaining / day.remainingSar) : 0
               return (
                 <div
                   key={day.date}
                   className={`relative flex min-h-16 flex-col rounded-lg border p-1 text-left sm:min-h-28 sm:p-2 ${
-                    paidOff ? PAID_CLASS : URGENCY_CLASS[day.urgency]
-                  } ${day.isToday ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' : ''} ${
-                    isSelected ? 'outline outline-2 outline-offset-1 outline-foreground' : ''
-                  }`}
+                    isSelected ? SELECTED_CLASS : baseTone
+                  } ${!isSelected && day.isToday ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' : ''}`}
                 >
                   <button
                     type="button"
                     onClick={() => {
-                      if (showPay) toggleDay(day.date)
+                      if (showPay || isSelected) toggleDay(day.date)
                     }}
-                    disabled={!showPay}
+                    disabled={!showPay && !isSelected}
                     className="flex min-h-0 flex-1 flex-col text-left disabled:cursor-default"
                   >
-                    <span className={`tabular-nums text-xs ${day.isToday ? 'font-bold' : 'font-medium'}`}>
-                      {Number(day.date.slice(8))}
-                      {isSelected ? ' ✓' : ''}
+                    <span
+                      className={`flex items-center justify-between gap-1 tabular-nums text-xs ${
+                        day.isToday || isSelected ? 'font-bold' : 'font-medium'
+                      }`}
+                    >
+                      <span>{Number(day.date.slice(8))}</span>
+                      {isSelected ? (
+                        <span className="rounded bg-white/20 px-1 text-[10px] font-bold uppercase tracking-wide">
+                          On
+                        </span>
+                      ) : null}
                     </span>
                     {showPay ? (
                       <>
                         <div className="mt-0.5 leading-tight">
-                          <MoneyPair sar={day.remainingSar} usd={day.remainingUsd} big tone="inherit" />
+                          <MoneyPair sar={roleRemaining} usd={roleUsd} big tone="inherit" />
                         </div>
                         <div className="mt-1 hidden min-h-0 flex-1 flex-col gap-0.5 overflow-hidden text-[10px] leading-tight sm:flex">
-                          {day.names.slice(0, 3).map((name) => (
+                          {roleNames.slice(0, 3).map((name) => (
                             <span key={name} className="truncate">
                               {name}
                             </span>
                           ))}
-                          {day.names.length > 3 ? <span>+{day.names.length - 3}</span> : null}
+                          {roleNames.length > 3 ? <span>+{roleNames.length - 3}</span> : null}
                         </div>
                         <div className="mt-auto pt-0.5 text-[10px] font-medium sm:hidden">
-                          {day.unpaidCount}
+                          {roleItems.length}
                         </div>
                       </>
                     ) : paidOff ? (
@@ -519,7 +685,9 @@ export function PaymentCalendarBoard({
                   {showPay || paidOff ? (
                     <Link
                       href={hrefFor(day.date)}
-                      className="mt-1 text-[10px] font-medium underline-offset-2 hover:underline"
+                      className={`mt-1 text-[10px] font-medium underline-offset-2 hover:underline ${
+                        isSelected ? 'text-white/90' : ''
+                      }`}
                       onClick={(e) => e.stopPropagation()}
                     >
                       {labels.openDay}
