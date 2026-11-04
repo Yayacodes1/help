@@ -90,8 +90,9 @@ import { ContractReviewsPanel } from '@/components/admin/contract-reviews-panel'
 import { getPendingContractReviews } from '@/lib/contract-reviews'
 import { getReposterStrikeBoard, syncReposterStrikes } from '@/lib/strikes'
 import { getCreatorFitnessBoard } from '@/lib/creator-fitness'
-import { syncProbationMisses } from '@/lib/probation'
+import { getProbationStreakBoard, syncProbationMisses } from '@/lib/probation'
 import { FitnessBoardPanel } from '@/components/admin/fitness-board'
+import { ProbationStreaksBoard } from '@/components/admin/probation-streaks-board'
 import { getAttendanceForDay } from '@/lib/attendance'
 import { formatPlanCompare, getLeaderBoard, getLeaderDirectory, loadLeaderLinks, withLeaderFields } from '@/lib/leaders'
 import { LeadersBoard } from '@/components/admin/leaders-board'
@@ -574,6 +575,9 @@ export default async function AdminPage({
   let companyStructure: Awaited<ReturnType<typeof getCompanyStructure>> | null = null
   let companyStructureError: string | null = null
   let fitnessBoard: Awaited<ReturnType<typeof getCreatorFitnessBoard>> | null = null
+  let fitnessBoardError: string | null = null
+  let streakBoard: Awaited<ReturnType<typeof getProbationStreakBoard>> | null = null
+  let streakBoardError: string | null = null
   if (tab === 'people') {
     try {
       companyStructure = await getCompanyStructure()
@@ -590,6 +594,17 @@ export default async function AdminPage({
     } catch (err) {
       console.error('[admin] fitness board', err)
       fitnessBoard = null
+      fitnessBoardError = t('fitnessLoadError')
+    }
+    try {
+      streakBoard = await getProbationStreakBoard({
+        today: opToday,
+        projectId,
+      })
+    } catch (err) {
+      console.error('[admin] probation streaks', err)
+      streakBoard = null
+      streakBoardError = t('streaksLoadError')
     }
   }
   const twodayData = tab === 'twoday' ? { requests: await listBreakRequests({ limit: 80 }) } : null
@@ -1872,45 +1887,98 @@ export default async function AdminPage({
           },
           ] : []),
           ...(tab === 'people' ? [
-          ...(fitnessBoard
-            ? [
-                {
-                  id: 'fitness',
-                  title: t('fitnessTitle'),
-                  summary: `${fitnessBoard.rows.filter((r) => r.action === 'cut').length} ${t('fitnessCut').toLowerCase()} · ${Math.round(fitnessBoard.top15Share * 100)}% top 15`,
+          {
+            id: 'fitness',
+            title: t('fitnessTitle'),
+            summary: fitnessBoard
+              ? `${fitnessBoard.rows.filter((r) => r.action === 'cut').length} ${t('fitnessCut').toLowerCase()} · ${Math.round(fitnessBoard.top15Share * 100)}% top 15`
+              : fitnessBoardError ?? '—',
+            hint: t('fitnessHint'),
+            children: fitnessBoardError ? (
+              <p className="text-sm text-destructive">{fitnessBoardError}</p>
+            ) : fitnessBoard ? (
+              <FitnessBoardPanel
+                board={fitnessBoard}
+                projects={projects}
+                projectId={projectId}
+                labels={{
                   hint: t('fitnessHint'),
-                  children: (
-                    <FitnessBoardPanel
-                      board={fitnessBoard}
-                      projects={projects}
-                      projectId={projectId}
-                      labels={{
-                        hint: t('fitnessHint'),
-                        allProjects: t('allProjects'),
-                        chooseProject: t('chooseProject'),
-                        protect: t('fitnessProtect'),
-                        probation: t('fitnessProbation'),
-                        clear: t('fitnessClear'),
-                        protectTop15: t('fitnessProtectTop15'),
-                        probationCuts: t('fitnessProbationCuts'),
-                        keep: t('fitnessKeep'),
-                        watch: t('fitnessWatch'),
-                        cut: t('fitnessCut'),
-                        protected: t('fitnessProtected'),
-                        onProbation: t('fitnessOnProbation'),
-                        paused: t('fitnessPaused'),
-                        quwa: t('fitnessQuwa'),
-                        score: t('fitnessScore'),
-                        views: t('views'),
-                        consistency: t('fitnessConsistency'),
-                        action: t('fitnessAction'),
-                        empty: t('fitnessEmpty'),
-                      }}
-                    />
-                  ),
-                },
-              ]
-            : []),
+                  allProjects: t('allProjects'),
+                  chooseProject: t('chooseProject'),
+                  protect: t('fitnessProtect'),
+                  probation: t('fitnessProbation'),
+                  clear: t('fitnessClear'),
+                  protectTop15: t('fitnessProtectTop15'),
+                  probationCuts: t('fitnessProbationCuts'),
+                  keep: t('fitnessKeep'),
+                  watch: t('fitnessWatch'),
+                  cut: t('fitnessCut'),
+                  protected: t('fitnessProtected'),
+                  onProbation: t('fitnessOnProbation'),
+                  paused: t('fitnessPaused'),
+                  quwa: t('fitnessQuwa'),
+                  score: t('fitnessScore'),
+                  views: t('views'),
+                  consistency: t('fitnessConsistency'),
+                  action: t('fitnessAction'),
+                  empty: t('fitnessEmpty'),
+                }}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('loadingPage')}</p>
+            ),
+          },
+          {
+            id: 'streaks',
+            title: t('streaksTitle'),
+            summary: streakBoard
+              ? `${streakBoard.counts.due} ${t('streaksDue').toLowerCase()} · ${streakBoard.counts.approaching} ${t('streaksApproaching').toLowerCase()}`
+              : streakBoardError ?? '—',
+            hint: t('streaksHint'),
+            children: streakBoardError ? (
+              <p className="text-sm text-destructive">{streakBoardError}</p>
+            ) : streakBoard ? (
+              <ProbationStreaksBoard
+                board={streakBoard}
+                projects={projects}
+                projectId={projectId}
+                labels={{
+                  hint: t('streaksHint'),
+                  allProjects: t('allProjects'),
+                  chooseProject: t('chooseProject'),
+                  onProbation: t('streaksOnProbation'),
+                  approaching: t('streaksApproaching'),
+                  due: t('streaksDue'),
+                  paused: t('fitnessPaused'),
+                  person: t('streaksPerson'),
+                  project: t('streaksProject'),
+                  misses: t('streaksMisses'),
+                  progress: t('streaksProgress'),
+                  status: t('streaksStatus'),
+                  next: t('streaksNext'),
+                  started: t('streaksStarted'),
+                  empty: t('streaksEmpty'),
+                  clear: t('fitnessClear'),
+                  copyArabic: t('streaksCopyArabic'),
+                  copied: t('streaksCopied'),
+                  markSent: t('streaksMarkSent'),
+                  filterAll: t('streaksFilterAll'),
+                  filterApproaching: t('streaksFilterApproaching'),
+                  filterDue: t('streaksFilterDue'),
+                  phaseClean: t('streaksPhaseClean'),
+                  phaseNearVerbal1: t('streaksPhaseNearVerbal1'),
+                  phaseDueVerbal1: t('streaksPhaseDueVerbal1'),
+                  phaseNearVerbal2: t('streaksPhaseNearVerbal2'),
+                  phaseDueVerbal2: t('streaksPhaseDueVerbal2'),
+                  phaseNearKick: t('streaksPhaseNearKick'),
+                  phaseDueKick: t('streaksPhaseDueKick'),
+                  phasePaused: t('fitnessPaused'),
+                }}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('loadingPage')}</p>
+            ),
+          },
           ...(showUrgent
             ? [
                 {

@@ -2154,3 +2154,18 @@ export async function bulkProbationBottomCreators(
   await syncProbationMisses({ today: opToday })
   revalidatePath('/admin')
 }
+
+/** Mark a probation streak notice as messaged (same as Telegram tap). Level 3 pauses. */
+export async function markProbationNoticeMessagedAction(noticeId: number) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const today = await getServerToday()
+  const { markProbationNoticeMessaged } = await import('@/lib/probation')
+  const result = await markProbationNoticeMessaged(noticeId, today)
+  revalidatePath('/admin')
+  if (result.creatorId) {
+    revalidatePath(`/admin/creators/${result.creatorId}`)
+    revalidatePath('/submit')
+  }
+  return result
+}

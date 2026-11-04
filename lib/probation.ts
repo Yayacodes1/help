@@ -3,20 +3,24 @@ import { sql } from '@/lib/db'
 import { lastCompletedOperationalDay } from '@/lib/operational-day'
 import { isPostingDay, scheduleFromContract, type ScheduleColumns } from '@/lib/posting-schedule'
 import { pausePerson } from '@/lib/pause-person'
+import {
+  PROBATION_LEVEL_THRESHOLDS,
+  buildProbationStreakMessage,
+  type ProbationLevel,
+  type ProbationNotice,
+  type ProbationStreakBoard,
+  type ProbationStreakPhase,
+  type ProbationStreakRow,
+} from '@/lib/probation-copy'
 
-/** Miss-day thresholds → verbal streak 1, 2, then kick. */
-export const PROBATION_LEVEL_THRESHOLDS = { 1: 2, 2: 4, 3: 5 } as const
-export type ProbationLevel = 1 | 2 | 3
-
-export type ProbationNotice = {
-  id: number
-  creatorId: number
-  name: string
-  level: ProbationLevel
-  unlockedOn: string
-  missDates: string[]
-  messagedAt: string | null
-  missCount: number
+export {
+  PROBATION_LEVEL_THRESHOLDS,
+  buildProbationStreakMessage,
+  type ProbationLevel,
+  type ProbationNotice,
+  type ProbationStreakBoard,
+  type ProbationStreakPhase,
+  type ProbationStreakRow,
 }
 
 function parseMissDates(raw: string | null | undefined): string[] {
@@ -225,41 +229,6 @@ export async function listPendingProbationNotices(): Promise<ProbationNotice[]> 
   }))
 }
 
-export function buildProbationStreakMessage(notice: ProbationNotice): string {
-  const days =
-    notice.missDates.length > 0
-      ? notice.missDates.map((d) => d.slice(5)).join(' و ')
-      : notice.unlockedOn.slice(5)
-  const left = Math.max(0, 3 - notice.level)
-
-  if (notice.level === 1) {
-    return [
-      `مرحباً ${notice.name}،`,
-      `هذا إنذار شفهي رقم 1 من 3 (ستريك).`,
-      `لم تنشر في الأيام: ${days}.`,
-      `متبقي لديك ${left} إنذار${left === 1 ? '' : 'ات'}. بعد الإنذار الثالث سنتوقف عن العمل معك.`,
-      `يرجى الالتزام بالنشر يومياً ورفع الروابط في نفس اليوم على الموقع.`,
-    ].join('\n')
-  }
-  if (notice.level === 2) {
-    return [
-      `مرحباً ${notice.name}،`,
-      `هذا إنذار شفهي رقم 2 من 3 (ستريك).`,
-      `الأيام بدون نشر: ${days}.`,
-      `متبقي لديك إنذار واحد فقط. الإنذار الثالث = إيقاف التعاون.`,
-      `انشر اليوم وارفع الرابط على الموقع فوراً.`,
-    ].join('\n')
-  }
-  return [
-    `مرحباً ${notice.name}،`,
-    `هذا الإنذار الثالث والأخير.`,
-    `بسبب تكرار عدم النشر في الموعد، سنتوقف عن العمل معك اعتباراً من اليوم.`,
-    days ? `آخر أيام بدون نشر: ${days}.` : '',
-  ]
-    .filter(Boolean)
-    .join('\n')
-}
-
 export async function markProbationNoticeMessaged(
   noticeId: number,
   today: string,
@@ -323,6 +292,206 @@ export async function getProbationNoticeById(noticeId: number): Promise<Probatio
     missDates: parseMissDates(r.miss_dates),
     messagedAt: r.messaged_at,
     missCount: r.miss_count,
+  }
+}
+
+function phaseFor(opts: {
+  missCount: number
+  pendingLevel: ProbationLevel | null
+  paused: boolean
+}): ProbationStreakPhase {
+  if (opts.paused) return 'paused'
+  if (opts.pendingLevel === 3) return 'due_kick'
+  if (opts.pendingLevel === 2) return 'due_verbal2'
+  if (opts.pendingLevel === 1) return 'due_verbal1'
+  const c = opts.missCount
+  if (c >= PROBATION_LEVEL_THRESHOLDS[3]) return 'due_kick'
+  if (c === 4) return 'near_kick'
+  if (c === 3) return 'near_verbal2'
+  if (c === 2) return 'near_verbal2'
+  if (c === 1) return 'near_verbal1'
+  return 'clean'
+}
+
+/** Admin board: everyone on probation + miss progress toward verbal / kick. */
+export async function getProbationStreakBoard(opts: {
+  today: string
+  projectId?: number | null
+}): Promise<ProbationStreakBoard> {
+  const today = opts.today
+  const projectId = opts.projectId ?? null
+
+  await syncProbationMisses({ today })
+
+  const people = (await sql`
+    SELECT
+      c.id,
+      c.name,
+      c.project_id,
+      p.name AS project_name,
+      c.probation_started_on::text AS probation_started_on,
+      c.paused_at::text AS paused_at
+    FROM creators c
+    LEFT JOIN projects p ON p.id = c.project_id
+    WHERE c.role = 'creator'
+      AND c.fitness_tier = 'probation'
+      AND c.probation_started_on IS NOT NULL
+      AND (${projectId}::int IS NULL OR c.project_id = ${projectId})
+    ORDER BY c.name ASC
+  `) as Array<{
+    id: number
+    name: string
+    project_id: number | null
+    project_name: string | null
+    probation_started_on: string
+    paused_at: string | null
+  }>
+
+  const notices = (await sql`
+    SELECT
+      n.id,
+      n.creator_id,
+      n.level,
+      n.messaged_at::text AS messaged_at,
+      n.miss_count
+    FROM probation_streak_notices n
+    JOIN creators c ON c.id = n.creator_id
+    WHERE c.fitness_tier = 'probation'
+      AND (${projectId}::int IS NULL OR c.project_id = ${projectId})
+  `) as Array<{
+    id: number
+    creator_id: number
+    level: number
+    messaged_at: string | null
+    miss_count: number
+  }>
+
+  const byCreator = new Map<number, typeof notices>()
+  for (const n of notices) {
+    const list = byCreator.get(n.creator_id) ?? []
+    list.push(n)
+    byCreator.set(n.creator_id, list)
+  }
+
+  const rows: ProbationStreakRow[] = []
+
+  for (const person of people) {
+    const contractRows = (await sql`
+      SELECT id, start_date::text AS start_date,
+             COALESCE(schedule_type, 'daily') AS schedule_type,
+             GREATEST(COALESCE(schedule_every_days, 2), 1) AS schedule_every_days,
+             COALESCE(schedule_weekdays, '') AS schedule_weekdays,
+             COALESCE(schedule_per_week, 0) AS schedule_per_week
+      FROM contracts
+      WHERE creator_id = ${person.id}
+        AND start_date <= ${today}::date
+        AND (end_date IS NULL OR end_date >= ${person.probation_started_on}::date)
+      ORDER BY start_date DESC, id DESC
+      LIMIT 1
+    `) as Array<{ id: number; start_date: string } & ScheduleColumns>
+
+    const contract = contractRows[0]
+    const schedule = contract ? scheduleFromContract(contract) : null
+
+    const missRows = (await sql`
+      SELECT strike_date::text AS strike_date
+      FROM creator_strikes
+      WHERE creator_id = ${person.id}
+        AND status = 'active'
+        AND strike_date >= ${person.probation_started_on}::date
+      ORDER BY strike_date ASC
+    `) as Array<{ strike_date: string }>
+
+    const missDates =
+      schedule && contract
+        ? missRows
+            .map((r) => r.strike_date)
+            .filter((d) => isPostingDay(schedule, contract.start_date, d))
+        : missRows.map((r) => r.strike_date)
+    const missCount = missDates.length
+
+    const personNotices = byCreator.get(person.id) ?? []
+    const pending = personNotices
+      .filter((n) => n.messaged_at == null)
+      .sort((a, b) => a.level - b.level)[0]
+    const lastMessaged = personNotices
+      .filter((n) => n.messaged_at != null)
+      .sort((a, b) => b.level - a.level)[0]
+
+    const pendingLevel = pending
+      ? ((pending.level === 2 || pending.level === 3 ? pending.level : 1) as ProbationLevel)
+      : null
+    const lastMessagedLevel = lastMessaged
+      ? ((lastMessaged.level === 2 || lastMessaged.level === 3
+          ? lastMessaged.level
+          : 1) as ProbationLevel)
+      : null
+
+    const paused = person.paused_at != null
+    const phase = phaseFor({ missCount, pendingLevel, paused })
+
+    const nextThreshold =
+      missCount < PROBATION_LEVEL_THRESHOLDS[1]
+        ? PROBATION_LEVEL_THRESHOLDS[1]
+        : missCount < PROBATION_LEVEL_THRESHOLDS[2]
+          ? PROBATION_LEVEL_THRESHOLDS[2]
+          : missCount < PROBATION_LEVEL_THRESHOLDS[3]
+            ? PROBATION_LEVEL_THRESHOLDS[3]
+            : null
+
+    rows.push({
+      creatorId: person.id,
+      name: person.name,
+      projectId: person.project_id,
+      projectName: person.project_name,
+      probationStartedOn: person.probation_started_on,
+      missCount,
+      missDates,
+      nextThreshold,
+      missesToNext: nextThreshold != null ? nextThreshold - missCount : null,
+      phase,
+      pendingNoticeId: pending?.id ?? null,
+      pendingLevel,
+      lastMessagedLevel,
+      paused,
+    })
+  }
+
+  const phaseRank: Record<ProbationStreakPhase, number> = {
+    due_kick: 0,
+    due_verbal2: 1,
+    due_verbal1: 2,
+    near_kick: 3,
+    near_verbal2: 4,
+    near_verbal1: 5,
+    clean: 6,
+    paused: 7,
+  }
+  rows.sort(
+    (a, b) =>
+      phaseRank[a.phase] - phaseRank[b.phase] ||
+      b.missCount - a.missCount ||
+      a.name.localeCompare(b.name),
+  )
+
+  return {
+    today,
+    projectId,
+    rows,
+    counts: {
+      onProbation: rows.filter((r) => !r.paused).length,
+      approaching: rows.filter((r) =>
+        r.phase === 'near_verbal1' ||
+        r.phase === 'near_verbal2' ||
+        r.phase === 'near_kick',
+      ).length,
+      due: rows.filter((r) =>
+        r.phase === 'due_verbal1' ||
+        r.phase === 'due_verbal2' ||
+        r.phase === 'due_kick',
+      ).length,
+      paused: rows.filter((r) => r.paused).length,
+    },
   }
 }
 

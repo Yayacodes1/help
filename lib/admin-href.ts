@@ -23,6 +23,8 @@ const ADMIN_PANELS = new Set([
   'ends',
   'structure',
   'strikes',
+  'fitness',
+  'streaks',
 ])
 
 export function adminReturnPanel(from?: string | null): string {
