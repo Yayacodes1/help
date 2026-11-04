@@ -18,30 +18,44 @@ export type {
 } from '@/lib/creator-fitness-copy'
 export { sortFitnessRows } from '@/lib/creator-fitness-copy'
 
-function clampScore(n: number): number {
-  return Math.max(1, Math.min(5, Math.round(n)))
+function dayCountInclusive(start: string, end: string): number {
+  if (!start || !end || start > end) return 0
+  const a = Date.parse(`${start}T00:00:00Z`)
+  const b = Date.parse(`${end}T00:00:00Z`)
+  return Math.max(0, Math.round((b - a) / 86_400_000) + 1)
 }
 
-/** Score 1–5 from views + consistency percentiles. Quwa = 0–100 strong score. */
-function scoreFromRanks(
-  viewsRankPct: number,
-  consistencyRankPct: number,
-): { score: number; quwa: number } {
-  const viewsStrength = 1 - viewsRankPct
-  const consStrength = 1 - consistencyRankPct
-  const blended = viewsStrength * 0.55 + consStrength * 0.45
-  const quwa = Math.round(blended * 100)
-  const score = clampScore(1 + blended * 4)
-  return { score, quwa }
+function percentileRank(orderedBestFirst: number[], id: number, ids: number[]): number {
+  const n = Math.max(1, ids.length)
+  const idx = orderedBestFirst.indexOf(id)
+  if (idx < 0) return 0
+  return 1 - idx / n
 }
 
-function actionFrom(score: number, tier: FitnessTier, viewsRank: number): FitnessAction {
-  if (tier === 'protected') return 'keep'
-  if (tier === 'probation') return 'cut'
-  if (viewsRank <= 15 && score >= 4) return 'keep'
-  if (score <= 2) return 'cut'
-  if (score === 3) return 'watch'
-  return score >= 4 ? 'keep' : 'watch'
+function actionFrom(opts: {
+  strength: number
+  tier: FitnessTier
+  viewsRank: number
+  costPer1k: number | null
+  medianCost: number | null
+}): FitnessAction {
+  if (opts.tier === 'protected') return 'keep'
+  if (opts.tier === 'probation') return 'cut'
+  // Top 15 by views with solid strength → keep
+  if (opts.viewsRank <= 15 && opts.strength >= 60) return 'keep'
+  // Expensive vs team median → cut candidate
+  if (
+    opts.costPer1k != null &&
+    opts.medianCost != null &&
+    opts.medianCost > 0 &&
+    opts.costPer1k > opts.medianCost * 1.35 &&
+    opts.strength < 55
+  ) {
+    return 'cut'
+  }
+  if (opts.strength < 35) return 'cut'
+  if (opts.strength < 55) return 'watch'
+  return 'keep'
 }
 
 export async function getCreatorFitnessBoard(opts: {
@@ -54,12 +68,7 @@ export async function getCreatorFitnessBoard(opts: {
   const from =
     opts.from && /^\d{4}-\d{2}-\d{2}$/.test(opts.from) ? opts.from : addDays(to, -29)
   const projectId = opts.projectId ?? null
-  const daySpan = Math.max(
-    1,
-    Math.round(
-      (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000,
-    ) + 1,
-  )
+  const daySpan = Math.max(1, dayCountInclusive(from, to))
 
   const people = (await sql`
     SELECT
@@ -70,11 +79,19 @@ export async function getCreatorFitnessBoard(opts: {
       c.paused_at::text AS paused_at,
       c.fitness_tier,
       c.probation_started_on::text AS probation_started_on,
+      c.created_at::date::text AS created_on,
+      ct.first_contract::text AS first_contract,
       COALESCE(v.views, 0)::bigint AS views,
       COALESCE(v.videos, 0)::int AS videos,
-      COALESCE(v.post_days, 0)::int AS post_days
+      COALESCE(v.post_days, 0)::int AS post_days,
+      COALESCE(pay.paid, 0)::float AS paid
     FROM creators c
     LEFT JOIN projects p ON p.id = c.project_id
+    LEFT JOIN LATERAL (
+      SELECT MIN(start_date)::date AS first_contract
+      FROM contracts
+      WHERE creator_id = c.id
+    ) ct ON true
     LEFT JOIN LATERAL (
       SELECT
         COALESCE(SUM(s.views), 0)::bigint AS views,
@@ -86,6 +103,13 @@ export async function getCreatorFitnessBoard(opts: {
         AND s.video_date <= ${to}::date
         AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
     ) v ON true
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM(pay.amount), 0)::float AS paid
+      FROM payments pay
+      WHERE pay.creator_id = c.id
+        AND pay.paid_on >= ${from}::date
+        AND pay.paid_on <= ${to}::date
+    ) pay ON true
     WHERE c.role = 'creator'
       AND (${projectId}::int IS NULL OR c.project_id = ${projectId}
            OR EXISTS (
@@ -104,27 +128,59 @@ export async function getCreatorFitnessBoard(opts: {
     paused_at: string | null
     fitness_tier: string | null
     probation_started_on: string | null
+    created_on: string | null
+    first_contract: string | null
     views: number | string
     videos: number
     post_days: number
+    paid: number
   }>
 
-  const normalized = people.map((p) => ({
-    ...p,
-    views: Number(p.views) || 0,
-  }))
+  const normalized = people.map((p) => {
+    const views = Number(p.views) || 0
+    const paid = Number(p.paid) || 0
+    const joinedOn =
+      p.first_contract && p.created_on
+        ? p.first_contract < p.created_on
+          ? p.first_contract
+          : p.created_on
+        : p.first_contract ?? p.created_on
+    const daysWithUs = joinedOn ? dayCountInclusive(joinedOn, today) : 0
+    const costPer1k = views > 0 && paid > 0 ? (paid / views) * 1000 : null
+    const viewsPerSar = paid > 0 ? views / paid : null
+    return {
+      ...p,
+      views,
+      paid,
+      joinedOn,
+      daysWithUs,
+      costPer1k,
+      viewsPerSar,
+    }
+  })
 
+  const ids = normalized.map((p) => p.id)
   const byViews = [...normalized].sort((a, b) => b.views - a.views || a.name.localeCompare(b.name))
   const viewsRank = new Map<number, number>()
   byViews.forEach((p, i) => viewsRank.set(p.id, i + 1))
 
-  const byCons = [...normalized].sort((a, b) => {
-    const ca = a.post_days / daySpan
-    const cb = b.post_days / daySpan
-    return cb - ca || b.views - a.views || a.name.localeCompare(b.name)
-  })
-  const consRank = new Map<number, number>()
-  byCons.forEach((p, i) => consRank.set(p.id, i + 1))
+  const byCons = [...normalized].sort(
+    (a, b) => b.post_days / daySpan - a.post_days / daySpan || b.views - a.views,
+  )
+  const byRoi = [...normalized]
+    .filter((p) => p.viewsPerSar != null)
+    .sort((a, b) => (b.viewsPerSar ?? 0) - (a.viewsPerSar ?? 0))
+
+  const costs = normalized
+    .map((p) => p.costPer1k)
+    .filter((c): c is number => c != null && Number.isFinite(c))
+    .sort((a, b) => a - b)
+  const medianCost =
+    costs.length === 0
+      ? null
+      : costs.length % 2 === 1
+        ? costs[(costs.length - 1) / 2]!
+        : (costs[costs.length / 2 - 1]! + costs[costs.length / 2]!) / 2
 
   const n = Math.max(1, normalized.length)
   const totalViews = normalized.reduce((s, p) => s + p.views, 0)
@@ -132,9 +188,29 @@ export async function getCreatorFitnessBoard(opts: {
 
   const rows: FitnessRow[] = normalized.map((p) => {
     const vr = viewsRank.get(p.id) ?? n
-    const cr = consRank.get(p.id) ?? n
+    const viewsPct = percentileRank(
+      byViews.map((x) => x.id),
+      p.id,
+      ids,
+    )
+    const consPct = percentileRank(
+      byCons.map((x) => x.id),
+      p.id,
+      ids,
+    )
+    const roiPct =
+      p.viewsPerSar == null
+        ? 0.35 // unknown pay → mild penalty, don't invent ROI
+        : percentileRank(
+            byRoi.map((x) => x.id),
+            p.id,
+            byRoi.map((x) => x.id),
+          )
+    // One strength number: views + consistency + ROI (money efficiency)
+    const strength = Math.round(
+      Math.min(100, Math.max(0, (viewsPct * 0.4 + consPct * 0.25 + roiPct * 0.35) * 100)),
+    )
     const consistency = Math.min(1, p.post_days / daySpan)
-    const { score, quwa } = scoreFromRanks((vr - 1) / n, (cr - 1) / n)
     const tier: FitnessTier =
       p.fitness_tier === 'protected' || p.fitness_tier === 'probation' ? p.fitness_tier : null
     return {
@@ -147,9 +223,19 @@ export async function getCreatorFitnessBoard(opts: {
       postDays: p.post_days,
       daySpan,
       consistency,
-      score,
-      quwa,
-      action: actionFrom(score, tier, vr),
+      strength,
+      paid: p.paid,
+      costPer1k: p.costPer1k,
+      viewsPerSar: p.viewsPerSar,
+      daysWithUs: p.daysWithUs,
+      joinedOn: p.joinedOn,
+      action: actionFrom({
+        strength,
+        tier,
+        viewsRank: vr,
+        costPer1k: p.costPer1k,
+        medianCost,
+      }),
       tier,
       probationStartedOn: p.probation_started_on,
       paused: p.paused_at != null,
@@ -157,7 +243,10 @@ export async function getCreatorFitnessBoard(opts: {
     }
   })
 
-  rows.sort((a, b) => a.quwa - b.quwa || a.views - b.views || a.name.localeCompare(b.name))
+  rows.sort((a, b) => {
+    const order = { cut: 0, watch: 1, keep: 2 }
+    return order[a.action] - order[b.action] || a.strength - b.strength || a.views - b.views
+  })
 
   return {
     from,

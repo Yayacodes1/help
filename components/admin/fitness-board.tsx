@@ -9,7 +9,8 @@ import {
   bulkProbationBottomCreators,
 } from '@/app/actions/admin'
 import { adminPersonHref } from '@/lib/admin-href'
-import { formatNumber } from '@/lib/format'
+import { formatMoney, formatNumber } from '@/lib/format'
+import { addDays } from '@/lib/campaign'
 import {
   sortFitnessRows,
   type FitnessBoard,
@@ -17,6 +18,14 @@ import {
 } from '@/lib/creator-fitness-copy'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
 import { PanelProjectFilter } from '@/components/admin/panel-project-filter'
+
+function daysLabel(days: number): string {
+  if (days <= 0) return '—'
+  if (days < 60) return `${days}d`
+  const months = Math.round(days / 30)
+  if (months < 24) return `${months}mo`
+  return `${Math.round(days / 365)}y`
+}
 
 export function FitnessBoardPanel({
   board,
@@ -42,30 +51,52 @@ export function FitnessBoardPanel({
     protected: string
     onProbation: string
     paused: string
-    quwa: string
-    score: string
+    strength: string
+    strengthHint: string
     views: string
-    consistency: string
-    action: string
+    paid: string
+    costPer1k: string
+    daysWithUs: string
+    posts: string
+    verdict: string
     empty: string
+    reset: string
+    sort: string
+    sortCutFirst: string
+    sortWorstRoi: string
+    sortBestRoi: string
+    sortViewsHigh: string
+    sortViewsLow: string
+    sortNewest: string
+    sortLongest: string
+    sortName: string
   }
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
-  const [sort, setSort] = useState<FitnessSort>('quwa')
+  const [sort, setSort] = useState<FitnessSort>('cut_first')
   const [pending, startTransition] = useTransition()
 
   const rows = useMemo(() => sortFitnessRows(board.rows, sort), [board.rows, sort])
+  const cutCount = board.rows.filter((r) => r.action === 'cut' || r.tier === 'probation').length
 
   function push(patch: Record<string, string | null>) {
     const next = new URLSearchParams(params.toString())
     next.set('panel', 'fitness')
+    next.set('tab', 'people')
     for (const [k, v] of Object.entries(patch)) {
       if (v == null || v === '') next.delete(k)
       else next.set(k, v)
     }
     router.push(`${pathname}?${next.toString()}`)
+  }
+
+  function reset() {
+    setSort('cut_first')
+    const to = board.today
+    const from = addDays(to, -29)
+    push({ fitFrom: from, fitTo: to, project: null })
   }
 
   function run(fn: () => Promise<unknown>) {
@@ -76,7 +107,10 @@ export function FitnessBoardPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-xs text-muted-foreground">{labels.hint}</p>
+      <div className="rounded-xl border border-border bg-card p-4">
+        <p className="text-sm font-medium text-foreground">{labels.hint}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{labels.strengthHint}</p>
+      </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-lg border border-border bg-card p-3">
@@ -102,11 +136,9 @@ export function FitnessBoardPanel({
           </div>
         </div>
         <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3">
-          <div className="text-xl font-semibold tabular-nums">
-            {board.rows.filter((r) => r.tier === 'probation' || r.action === 'cut').length}
-          </div>
+          <div className="text-xl font-semibold tabular-nums">{cutCount}</div>
           <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {labels.cut} / {labels.onProbation}
+            {labels.cut}
           </div>
         </div>
       </div>
@@ -145,20 +177,29 @@ export function FitnessBoardPanel({
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Sort
+          {labels.sort}
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as FitnessSort)}
-            className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+            className="h-9 min-w-[11rem] rounded-lg border border-input bg-background px-2 text-sm"
           >
-            <option value="quwa">{labels.quwa} ↑</option>
-            <option value="score">{labels.score} ↑</option>
-            <option value="views">{labels.views} ↓</option>
-            <option value="consistency">{labels.consistency} ↑</option>
-            <option value="cut">{labels.action}</option>
-            <option value="number"># / name</option>
+            <option value="cut_first">{labels.sortCutFirst}</option>
+            <option value="worst_roi">{labels.sortWorstRoi}</option>
+            <option value="best_roi">{labels.sortBestRoi}</option>
+            <option value="views_high">{labels.sortViewsHigh}</option>
+            <option value="views_low">{labels.sortViewsLow}</option>
+            <option value="newest">{labels.sortNewest}</option>
+            <option value="longest">{labels.sortLongest}</option>
+            <option value="name">{labels.sortName}</option>
           </select>
         </label>
+        <button
+          type="button"
+          onClick={reset}
+          className="h-9 rounded-lg border border-border bg-card px-3 text-xs font-semibold hover:bg-accent"
+        >
+          {labels.reset}
+        </button>
         <button
           type="button"
           disabled={pending}
@@ -183,17 +224,21 @@ export function FitnessBoardPanel({
         <p className="text-sm text-muted-foreground">{labels.empty}</p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[780px] text-left text-sm">
+          <table className="w-full min-w-[860px] text-left text-sm">
             <thead className="border-b border-border bg-secondary/40 text-xs text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 font-medium">#</th>
                 <th className="px-3 py-2 font-medium">Person</th>
+                <th className="px-3 py-2 font-medium">{labels.daysWithUs}</th>
                 <th className="px-3 py-2 font-medium">{labels.views}</th>
-                <th className="px-3 py-2 font-medium">{labels.consistency}</th>
-                <th className="px-3 py-2 font-medium">{labels.score}</th>
-                <th className="px-3 py-2 font-medium">{labels.quwa}</th>
-                <th className="px-3 py-2 font-medium">{labels.action}</th>
-                <th className="px-3 py-2 font-medium">Tier</th>
+                <th className="px-3 py-2 font-medium">{labels.paid}</th>
+                <th className="px-3 py-2 font-medium">{labels.costPer1k}</th>
+                <th className="px-3 py-2 font-medium">{labels.posts}</th>
+                <th className="px-3 py-2 font-medium" title={labels.strengthHint}>
+                  {labels.strength}
+                </th>
+                <th className="px-3 py-2 font-medium">{labels.verdict}</th>
+                <th className="px-3 py-2 font-medium"> </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -226,10 +271,27 @@ export function FitnessBoardPanel({
                     ) : null}
                   </td>
                   <td className="px-3 py-2 tabular-nums">
+                    {daysLabel(r.daysWithUs)}
+                    {r.joinedOn ? (
+                      <div className="text-[10px] text-muted-foreground">{r.joinedOn}</div>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums">
                     {formatNumber(r.views)}
                     <div className="text-[10px] text-muted-foreground">
                       {Math.round(r.viewsShare * 1000) / 10}%
                     </div>
+                  </td>
+                  <td className="px-3 py-2 tabular-nums">
+                    {r.paid > 0 ? formatMoney(r.paid, 'SAR') : '—'}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums">
+                    {r.costPer1k != null ? formatMoney(r.costPer1k, 'SAR') : '—'}
+                    {r.viewsPerSar != null ? (
+                      <div className="text-[10px] text-muted-foreground">
+                        {formatNumber(Math.round(r.viewsPerSar))} views/SAR
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2 tabular-nums">
                     {Math.round(r.consistency * 100)}%
@@ -237,8 +299,21 @@ export function FitnessBoardPanel({
                       {r.postDays}/{r.daySpan}d
                     </div>
                   </td>
-                  <td className="px-3 py-2 font-semibold tabular-nums">{r.score}</td>
-                  <td className="px-3 py-2 font-semibold tabular-nums">{r.quwa}</td>
+                  <td className="px-3 py-2">
+                    <div className="font-semibold tabular-nums">{r.strength}</div>
+                    <div className="mt-1 h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={`h-full rounded-full ${
+                          r.strength >= 60
+                            ? 'bg-emerald-500'
+                            : r.strength >= 35
+                              ? 'bg-amber-500'
+                              : 'bg-rose-500'
+                        }`}
+                        style={{ width: `${r.strength}%` }}
+                      />
+                    </div>
+                  </td>
                   <td className="px-3 py-2">
                     <span
                       className={`rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase ${
@@ -255,19 +330,19 @@ export function FitnessBoardPanel({
                           ? labels.watch
                           : labels.keep}
                     </span>
+                    {r.tier === 'protected' ? (
+                      <div className="mt-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+                        {labels.protected}
+                      </div>
+                    ) : null}
+                    {r.tier === 'probation' ? (
+                      <div className="mt-1 text-[10px] font-medium text-[#9a0d18] dark:text-rose-300">
+                        {labels.onProbation}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">
-                      {r.tier === 'protected' ? (
-                        <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                          {labels.protected}
-                        </span>
-                      ) : null}
-                      {r.tier === 'probation' ? (
-                        <span className="text-[11px] font-medium text-[#9a0d18] dark:text-rose-300">
-                          {labels.onProbation}
-                        </span>
-                      ) : null}
                       <button
                         type="button"
                         disabled={pending || r.tier === 'protected'}
