@@ -49,14 +49,8 @@ export async function getCommissionSettings(): Promise<CommissionTerms> {
   return toTerms(rows[0])
 }
 
-export type MajorityCommissionBoard = CommissionBoard & {
-  month: string
-  majorityPct: number
-  totalUsd: number
-  earnersOnly: boolean
-  contractCount: number
-  months: string[]
-}
+export type { MajorityCommissionBoard } from '@/lib/commission-board-types'
+import type { MajorityCommissionBoard } from '@/lib/commission-board-types'
 
 /** Earliest contract start (for month chips). */
 export async function getCommissionMonthSpan(): Promise<{ earliest: string | null; months: string[] }> {

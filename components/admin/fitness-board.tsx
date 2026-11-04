@@ -14,7 +14,7 @@ import {
   sortFitnessRows,
   type FitnessBoard,
   type FitnessSort,
-} from '@/lib/creator-fitness'
+} from '@/lib/creator-fitness-copy'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
 import { PanelProjectFilter } from '@/components/admin/panel-project-filter'
 

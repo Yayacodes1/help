@@ -12,7 +12,7 @@ import { sarToUsd } from '@/lib/fx'
 import { calendarMonthRange } from '@/lib/campaign'
 import { adminPersonHref } from '@/lib/admin-href'
 import type { CommissionEstimate, CommissionEstimateOption } from '@/lib/commission'
-import type { MajorityCommissionBoard } from '@/lib/commission-data'
+import type { MajorityCommissionBoard } from '@/lib/commission-board-types'
 import { CommissionEstimateCards } from '@/components/admin/commission-estimate'
 
 function vsLabel(vs: number | null): string {

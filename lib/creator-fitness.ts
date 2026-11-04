@@ -2,47 +2,21 @@ import 'server-only'
 import { sql } from '@/lib/db'
 import { addDays } from '@/lib/campaign'
 import { getServerToday } from '@/lib/queries'
+import type {
+  FitnessAction,
+  FitnessBoard,
+  FitnessRow,
+  FitnessTier,
+} from '@/lib/creator-fitness-copy'
 
-export type FitnessTier = 'protected' | 'probation' | null
-
-export type FitnessAction = 'keep' | 'watch' | 'cut'
-
-export type FitnessSort =
-  | 'number'
-  | 'score'
-  | 'quwa'
-  | 'views'
-  | 'consistency'
-  | 'cut'
-
-export type FitnessRow = {
-  creatorId: number
-  name: string
-  projectId: number | null
-  projectName: string | null
-  views: number
-  videos: number
-  postDays: number
-  daySpan: number
-  consistency: number
-  score: number
-  quwa: number
-  action: FitnessAction
-  tier: FitnessTier
-  probationStartedOn: string | null
-  paused: boolean
-  viewsShare: number
-}
-
-export type FitnessBoard = {
-  from: string
-  to: string
-  today: string
-  totalViews: number
-  top15Views: number
-  top15Share: number
-  rows: FitnessRow[]
-}
+export type {
+  FitnessAction,
+  FitnessBoard,
+  FitnessRow,
+  FitnessSort,
+  FitnessTier,
+} from '@/lib/creator-fitness-copy'
+export { sortFitnessRows } from '@/lib/creator-fitness-copy'
 
 function clampScore(n: number): number {
   return Math.max(1, Math.min(5, Math.round(n)))
@@ -53,12 +27,10 @@ function scoreFromRanks(
   viewsRankPct: number,
   consistencyRankPct: number,
 ): { score: number; quwa: number } {
-  // Higher pct = better (1 = best). Convert to 0..1 strength.
   const viewsStrength = 1 - viewsRankPct
   const consStrength = 1 - consistencyRankPct
   const blended = viewsStrength * 0.55 + consStrength * 0.45
   const quwa = Math.round(blended * 100)
-  // Map to 1–5: top quintile → 5, bottom → 1
   const score = clampScore(1 + blended * 4)
   return { score, quwa }
 }
@@ -82,7 +54,12 @@ export async function getCreatorFitnessBoard(opts: {
   const from =
     opts.from && /^\d{4}-\d{2}-\d{2}$/.test(opts.from) ? opts.from : addDays(to, -29)
   const projectId = opts.projectId ?? null
-  const daySpan = Math.max(1, Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1)
+  const daySpan = Math.max(
+    1,
+    Math.round(
+      (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000,
+    ) + 1,
+  )
 
   const people = (await sql`
     SELECT
@@ -191,34 +168,6 @@ export async function getCreatorFitnessBoard(opts: {
     top15Share: totalViews > 0 ? top15Views / totalViews : 0,
     rows,
   }
-}
-
-export function sortFitnessRows(rows: FitnessRow[], sort: FitnessSort): FitnessRow[] {
-  const copy = [...rows]
-  const actionOrder: Record<FitnessAction, number> = { cut: 0, watch: 1, keep: 2 }
-  copy.sort((a, b) => {
-    switch (sort) {
-      case 'number':
-        return a.name.localeCompare(b.name)
-      case 'score':
-        return a.score - b.score || a.quwa - b.quwa
-      case 'quwa':
-        return a.quwa - b.quwa || a.views - b.views
-      case 'views':
-        return b.views - a.views || a.name.localeCompare(b.name)
-      case 'consistency':
-        return a.consistency - b.consistency || a.views - b.views
-      case 'cut':
-        return (
-          actionOrder[a.action] - actionOrder[b.action] ||
-          a.quwa - b.quwa ||
-          a.views - b.views
-        )
-      default:
-        return 0
-    }
-  })
-  return copy
 }
 
 export async function setCreatorFitnessTier(
