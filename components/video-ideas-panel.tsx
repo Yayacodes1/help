@@ -19,6 +19,7 @@ export function VideoIdeasPanel({
   labels: {
     title: string
     hint: string
+    guideBox: string
     highlySuggested: string
     period30: string
     period60: string
@@ -26,6 +27,8 @@ export function VideoIdeasPanel({
     sortTrending: string
     sortViewsHint: string
     sortTrendingHint: string
+    filterViewsLabel: string
+    filterTrendLabel: string
     empty: string
     open: string
     username: string
@@ -66,6 +69,18 @@ export function VideoIdeasPanel({
       <div>
         <h2 className="text-sm font-semibold">{labels.title}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">{labels.hint}</p>
+      </div>
+
+      <div className="rounded-2xl border border-[#e8cfc0] bg-[#fff7f0] p-4 text-sm leading-relaxed text-[#5c2b24] dark:border-border dark:bg-card dark:text-foreground">
+        {labels.guideBox.split('\n').map((line, i) =>
+          line.trim() === '' ? (
+            <div key={i} className="h-2" />
+          ) : (
+            <p key={i} className={i === 0 ? 'font-semibold' : undefined}>
+              {line}
+            </p>
+          ),
+        )}
       </div>
 
       {showProjectPicker ? (
@@ -133,15 +148,20 @@ export function VideoIdeasPanel({
                   : 'text-muted-foreground hover:bg-accent'
               }`}
             >
-              {s === 'views' ? labels.sortViews : labels.sortTrending}
+              {s === 'views' ? labels.filterViewsLabel : labels.filterTrendLabel}
             </button>
           ))}
         </div>
       </div>
 
-      <p className="text-[11px] text-muted-foreground">
-        {sort === 'trending' ? labels.sortTrendingHint : labels.sortViewsHint}
-      </p>
+      <div className="rounded-xl border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        <p className="font-medium text-foreground">
+          {sort === 'trending' ? labels.filterTrendLabel : labels.filterViewsLabel}
+        </p>
+        <p className="mt-0.5">
+          {sort === 'trending' ? labels.sortTrendingHint : labels.sortViewsHint}
+        </p>
+      </div>
 
       {videos.length === 0 ? (
         <p className="text-sm text-muted-foreground">{labels.empty}</p>

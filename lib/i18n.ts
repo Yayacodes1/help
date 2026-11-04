@@ -755,16 +755,20 @@ export const messages = {
     submitModeMine: 'My videos',
     ideasTitle: 'Video ideas to remake',
     ideasHint:
-      'Top videos from your project(s). Remake these, then switch back to Post. Trending favors recent winners.',
+      'Come here when you’re out of ideas. Remake one from the list, then switch back to Post.',
+    ideasGuideBox:
+      'Out of ideas? This list is for you.\n\nHow to use it:\n• Pick one video from the top 3 (start at #1, then #2, then #3 if needed) and remake it in your style.\n• Your other video should come from your own creativity — don’t copy everything from the list.\n• Open a video, watch it, then go back to Post and upload your remake.\n\nFilters:\n1) Views — highest total views in the period. Strong proven videos, but they may be older and the trend may have cooled.\n2) Trend — views ÷ days since posted. Recent videos climbing right now. Better chance to catch a similar wave while the topic is still hot.\n\nTip: when you’re unsure, start with Trend + Top 5.',
     ideasHighlySuggested: 'Highly suggested to remake',
     ideasPeriod30: 'Last 30 days',
     ideasPeriod60: 'Last 2 months',
     ideasSortViews: 'Views',
     ideasSortTrending: 'Trending',
     ideasSortViewsHint:
-      'Highest total views in the period — proven big videos, but may be older.',
+      'Views: highest total views — proven, but maybe older.',
     ideasSortTrendingHint:
-      'Views ÷ days since posted — recent videos that are climbing now. Better chance to catch a similar wave.',
+      'Trend: recent videos climbing now — better chance to catch the wave.',
+    ideasFilterViewsLabel: '1) Views',
+    ideasFilterTrendLabel: '2) Trend',
     ideasEmpty: 'No videos in this range yet.',
     ideasOpen: 'Open',
     ideasUsername: 'Username',
@@ -1535,17 +1539,18 @@ export const messages = {
     submitModeIdeas: 'أفكار فيديو',
     submitModeMine: 'فيديوهاتي',
     ideasTitle: 'أفكار فيديو لإعادة التصوير',
-    ideasHint:
-      'أفضل فيديوهات مشروعك/مشاريعك. صوّر مثلها ثم ارجع لـ نشر. الترند يفضّل الفيديوهات اللي طالعة الآن.',
+    ideasHint: 'إذا خلصت أفكارك — هنا المكان. اختر فيديو من القائمة، صوّر مثله، ثم ارجع لـ نشر.',
+    ideasGuideBox:
+      'خلصت أفكار؟ هالقائمة لك.\n\nكيف تستخدمها:\n• خذ فيديو واحد من أفضل 3 (ابدأ من #1، وبعدين #2، وبعدين #3 إذا احتجت) وأعد تصويره بأسلوبك.\n• الفيديو الثاني من إبداعك أنت — لا تنسخ كل شيء من القائمة.\n• افتح الفيديو، شوفه، ارجع لـ نشر وارفع إعادة التصوير.\n\nالفلاتر:\n1) مشاهدات — أعلى مجموع مشاهدات في الفترة. فيديوهات كبيرة مثبتة، لكن ممكن تكون أقدم والموجة بردت.\n2) ترند — مشاهدات ÷ أيام من النشر. فيديوهات حديثة طالعة الآن. فرصة أعلى تلحق موجة مشابهة والموضوع لسه سخن.\n\nنصيحة: إذا محتار، ابدأ بـ ترند + أفضل 5.',
     ideasHighlySuggested: 'مقترح بقوة لإعادة التصوير',
     ideasPeriod30: 'آخر 30 يوم',
     ideasPeriod60: 'آخر شهرين',
     ideasSortViews: 'مشاهدات',
     ideasSortTrending: 'ترند',
-    ideasSortViewsHint:
-      'أعلى مجموع مشاهدات في الفترة — فيديوهات كبيرة مثبتة، لكن قد تكون أقدم.',
-    ideasSortTrendingHint:
-      'مشاهدات ÷ أيام من النشر — فيديوهات حديثة طالعة الآن. فرصة أعلى تلحق موجة مشابهة.',
+    ideasSortViewsHint: 'مشاهدات: أعلى مجموع — مثبتة، لكن ممكن أقدم.',
+    ideasSortTrendingHint: 'ترند: فيديوهات حديثة طالعة الآن — فرصة أعلى تلحق الموجة.',
+    ideasFilterViewsLabel: '1) مشاهدات',
+    ideasFilterTrendLabel: '2) ترند',
     ideasEmpty: 'لا فيديوهات في هذه الفترة بعد.',
     ideasOpen: 'فتح',
     ideasUsername: 'اسم المستخدم',

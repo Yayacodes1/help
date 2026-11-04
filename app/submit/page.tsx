@@ -554,6 +554,7 @@ export default async function SubmitPage({
               labels={{
                 title: t('ideasTitle'),
                 hint: t('ideasHint'),
+                guideBox: t('ideasGuideBox'),
                 highlySuggested: t('ideasHighlySuggested'),
                 period30: t('ideasPeriod30'),
                 period60: t('ideasPeriod60'),
@@ -561,6 +562,8 @@ export default async function SubmitPage({
                 sortTrending: t('ideasSortTrending'),
                 sortViewsHint: t('ideasSortViewsHint'),
                 sortTrendingHint: t('ideasSortTrendingHint'),
+                filterViewsLabel: t('ideasFilterViewsLabel'),
+                filterTrendLabel: t('ideasFilterTrendLabel'),
                 empty: t('ideasEmpty'),
                 open: t('ideasOpen'),
                 username: t('ideasUsername'),
