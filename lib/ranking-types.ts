@@ -24,6 +24,8 @@ export type LeagueRow = {
   viewsByProject: Record<number, number>
   sparkline: number[]
   viewsToNext: number | null
+  /** True when viewing a past month and this person is fired now. */
+  firedNow: boolean
 }
 
 export type LeagueDayPoint = {

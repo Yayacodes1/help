@@ -118,6 +118,7 @@ export function RankingBoard({
     collapse: string
     search: string
     rank: string
+    firedNow?: string
     views: string
     videos: string
     creatorRole?: string
@@ -198,7 +199,11 @@ export function RankingBoard({
               const open = openId === row.creatorId
               return (
                 <Fragment key={row.creatorId}>
-                  <tr className={`border-b border-border ${mine ? 'bg-primary/5' : ''}`}>
+                  <tr
+                    className={`border-b border-border ${mine ? 'bg-primary/5' : ''} ${
+                      row.firedNow ? 'opacity-70' : ''
+                    }`}
+                  >
                     <td className="px-3 py-2 font-semibold tabular-nums">{row.rank}</td>
                     <td className="px-1 py-2">
                       <Movement delta={row.delta} />
@@ -212,11 +217,18 @@ export function RankingBoard({
                         {identity === 'handle' ? `@${row.loginHandle}` : row.name}
                         <ChevronDown className={`size-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
                       </button>
-                      {identity === 'handle' ? (
-                        <p className="text-xs text-muted-foreground">
-                          {row.loginPlatform === 'instagram' ? 'Instagram' : 'TikTok'}
-                        </p>
-                      ) : null}
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                        {row.firedNow ? (
+                          <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#9a0d18] dark:text-rose-300">
+                            {labels.firedNow ?? 'Fired now'}
+                          </span>
+                        ) : null}
+                        {identity === 'handle' ? (
+                          <span className="text-xs text-muted-foreground">
+                            {row.loginPlatform === 'instagram' ? 'Instagram' : 'TikTok'}
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     {showRole ? (
                       <td className="px-3 py-2 text-xs text-muted-foreground">

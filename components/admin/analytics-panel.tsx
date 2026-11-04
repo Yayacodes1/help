@@ -67,6 +67,7 @@ type Labels = {
   clear: string
   pickHint: string
   splitPlatforms: string
+  firedNow?: string
 }
 
 type NavPatch = {
@@ -652,6 +653,11 @@ export function AnalyticsPanel({
                           aria-hidden
                         />
                         {i + 1}. {row.creator_name}
+                        {row.fired_now ? (
+                          <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#9a0d18] dark:text-rose-300">
+                            {labels.firedNow ?? 'Fired now'}
+                          </span>
+                        ) : null}
                       </span>
                       <span className="tabular-nums text-muted-foreground">
                         {formatNumber(row.views)} {labels.views.toLowerCase()} · {row.videos}{' '}

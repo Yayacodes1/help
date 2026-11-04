@@ -435,6 +435,7 @@ export async function ReposterDashboard({
       clear: t('analyticsClear'),
       pickHint: t('analyticsPickHint'),
       splitPlatforms: t('analyticsSplit'),
+      firedNow: t('rankingFiredNow'),
     }
     panels.push(
       {
@@ -501,6 +502,7 @@ export async function ReposterDashboard({
                   collapse: t('rankingCollapse'),
                   search: t('rankingSearch'),
                   rank: t('rankingRank'),
+                  firedNow: t('rankingFiredNow'),
                   views: t('views'),
                   videos: t('videosWord'),
                 }}

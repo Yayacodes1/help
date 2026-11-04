@@ -62,11 +62,17 @@ export async function getLeagueBoard(opts: {
     (p) => projectId == null || p.id === projectId,
   )
 
+  // Current month: hide fired. Past months: keep them, mark firedNow in the UI.
+  const includeFired = to.slice(0, 7) < today.slice(0, 7)
   const people = (await sql`
-    SELECT id, name, role, tiktok_username, instagram_username, login_platform
+    SELECT id, name, role, tiktok_username, instagram_username, login_platform,
+           paused_at::text AS paused_at
     FROM creators
     WHERE (${role}::text IS NULL OR role = ${role})
-      AND paused_at IS NULL
+      AND (
+        paused_at IS NULL
+        OR ${includeFired}::boolean
+      )
     ORDER BY name ASC
   `) as {
     id: number
@@ -75,6 +81,7 @@ export async function getLeagueBoard(opts: {
     tiktok_username: string | null
     instagram_username: string | null
     login_platform: string | null
+    paused_at: string | null
   }[]
 
   const aggs = (await sql`
@@ -103,6 +110,7 @@ export async function getLeagueBoard(opts: {
 
   const names = new Map<number, string>()
   const roles = new Map<number, ParticipantRole>()
+  const firedNow = new Map<number, boolean>()
   const meta = new Map<number, {
     tiktokUsername: string | null
     instagramUsername: string | null
@@ -120,6 +128,7 @@ export async function getLeagueBoard(opts: {
     const login = loginHandleFor(p)
     names.set(p.id, p.name)
     roles.set(p.id, p.role === 'reposter' ? 'reposter' : 'creator')
+    firedNow.set(p.id, p.paused_at != null)
     meta.set(p.id, {
       tiktokUsername: p.tiktok_username,
       instagramUsername: p.instagram_username,
@@ -198,6 +207,7 @@ export async function getLeagueBoard(opts: {
       viewsByProject: byProject.get(id) ?? {},
       sparkline: sparkDates.map((d) => dailyViews.get(id)?.get(d) ?? 0),
       viewsToNext: null,
+      firedNow: firedNow.get(id) === true,
     }
   })
 

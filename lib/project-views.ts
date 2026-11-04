@@ -24,6 +24,8 @@ export type ProjectViewsPerson = {
   viewsTiktok: number
   views: number
   videos: number
+  /** Fired now; only set when viewing a past month. */
+  firedNow: boolean
 }
 
 export type ProjectViewsTotals = {
@@ -76,6 +78,8 @@ export async function getProjectViewsBoard(opts: {
   const role = opts.role ?? null
   const projectId = opts.projectId ?? null
   const includeAllPeople = opts.includeAllPeople ?? false
+  // Current month: hide fired. Past months: keep them (if they had activity) marked firedNow.
+  const includeFired = to.slice(0, 7) < today.slice(0, 7)
 
   const [projectRows, roster, aggs] = await Promise.all([
     // Always list every project so the UI can switch Miqat ↔ Notek even when
@@ -85,15 +89,18 @@ export async function getProjectViewsBoard(opts: {
       ORDER BY name ASC
     `,
     sql`
-      SELECT id, name, role FROM creators
+      SELECT id, name, role, paused_at::text AS paused_at FROM creators
       WHERE (${role}::text IS NULL OR role = ${role})
         AND (
           paused_at IS NULL
-          OR EXISTS (
-            SELECT 1 FROM submissions sv
-            WHERE sv.creator_id = creators.id
-              AND sv.video_date >= ${from}::date
-              AND sv.video_date <= ${to}::date
+          OR (
+            ${includeFired}::boolean
+            AND EXISTS (
+              SELECT 1 FROM submissions sv
+              WHERE sv.creator_id = creators.id
+                AND sv.video_date >= ${from}::date
+                AND sv.video_date <= ${to}::date
+            )
           )
         )
         AND (
@@ -124,6 +131,10 @@ export async function getProjectViewsBoard(opts: {
         AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
       WHERE (${role}::text IS NULL OR c.role = ${role})
         AND (
+          c.paused_at IS NULL
+          OR ${includeFired}::boolean
+        )
+        AND (
           ${projectId}::int IS NULL
           OR ${includeAllPeople}::boolean
           OR c.role = 'reposter'
@@ -138,7 +149,12 @@ export async function getProjectViewsBoard(opts: {
     `,
   ])
   const projects = sortProjects(projectRows as ProjectViewsProject[])
-  const peopleRoster = roster as Array<{ id: number; name: string; role: ParticipantRole }>
+  const peopleRoster = roster as Array<{
+    id: number
+    name: string
+    role: ParticipantRole
+    paused_at: string | null
+  }>
   const aggRows = aggs as AggRow[]
   const byId = new Map<number, ProjectViewsPerson>()
 
@@ -155,6 +171,7 @@ export async function getProjectViewsBoard(opts: {
       viewsTiktok: 0,
       views: 0,
       videos: 0,
+      firedNow: person.paused_at != null,
     })
   }
 

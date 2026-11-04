@@ -536,6 +536,7 @@ export default async function LeaderHomePage({
               clear: t('analyticsClear'),
               pickHint: t('analyticsPickHint'),
               splitPlatforms: t('analyticsSplit'),
+              firedNow: t('rankingFiredNow'),
             }}
           />
         ),

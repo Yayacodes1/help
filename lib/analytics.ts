@@ -20,6 +20,8 @@ export type CreatorViewsRow = {
   views_tiktok: number
   videos_instagram: number
   videos_tiktok: number
+  /** Fired now; only appears when viewing a past month. */
+  fired_now?: boolean
 }
 
 export type CreatorDailyViewsRow = {
@@ -195,6 +197,9 @@ export async function getViewsLeaderboard(opts: {
   const ids = opts.creatorIds ?? null
   const limit = Math.min(1000, Math.max(1, opts.limit ?? 10))
 
+  // Current / future month: hide fired. Past months: keep + mark fired_now.
+  const includeFired = to.slice(0, 7) < today.slice(0, 7)
+
   return (await sql`
     SELECT
       c.id AS creator_id,
@@ -204,7 +209,8 @@ export async function getViewsLeaderboard(opts: {
       COALESCE(SUM(CASE WHEN s.platform = 'instagram' THEN s.views ELSE 0 END), 0)::int AS views_instagram,
       COALESCE(SUM(CASE WHEN s.platform = 'tiktok' THEN s.views ELSE 0 END), 0)::int AS views_tiktok,
       COALESCE(SUM(CASE WHEN s.platform = 'instagram' THEN 1 ELSE 0 END), 0)::int AS videos_instagram,
-      COALESCE(SUM(CASE WHEN s.platform = 'tiktok' THEN 1 ELSE 0 END), 0)::int AS videos_tiktok
+      COALESCE(SUM(CASE WHEN s.platform = 'tiktok' THEN 1 ELSE 0 END), 0)::int AS videos_tiktok,
+      (c.paused_at IS NOT NULL) AS fired_now
     FROM creators c
     LEFT JOIN submissions s
       ON s.creator_id = c.id
@@ -214,6 +220,10 @@ export async function getViewsLeaderboard(opts: {
     WHERE (${role}::text IS NULL OR c.role = ${role})
       AND (${ids}::int[] IS NULL OR c.id = ANY(${ids}::int[]))
       AND (
+        c.paused_at IS NULL
+        OR ${includeFired}::boolean
+      )
+      AND (
         ${projectId}::int IS NULL
         OR c.project_id = ${projectId}
         OR EXISTS (
@@ -221,7 +231,7 @@ export async function getViewsLeaderboard(opts: {
           WHERE sp.creator_id = c.id AND sp.project_id = ${projectId}
         )
       )
-    GROUP BY c.id, c.name
+    GROUP BY c.id, c.name, c.paused_at
     ORDER BY views DESC, videos DESC, c.name ASC
     LIMIT ${limit}
   `) as CreatorViewsRow[]

@@ -39,6 +39,7 @@ type Labels = {
   noVideosMatch: string
   allProjects: string
   chooseProject: string
+  firedNow?: string
 }
 
 function csvEscape(value: string | number): string {
@@ -496,7 +497,7 @@ export function ProjectViewsPanel({
                     key={row.creatorId}
                     className={`border-b border-border last:border-0 ${
                       active ? 'bg-primary/5' : ''
-                    }`}
+                    } ${row.firedNow ? 'opacity-70' : ''}`}
                   >
                     <td className="px-3 py-2 text-muted-foreground tabular-nums">{i + 1}</td>
                     <td className="px-3 py-2">
@@ -509,6 +510,11 @@ export function ProjectViewsPanel({
                       >
                         {row.name}
                       </button>
+                      {row.firedNow ? (
+                        <span className="ml-1.5 rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#9a0d18] dark:text-rose-300">
+                          {labels.firedNow ?? 'Fired now'}
+                        </span>
+                      ) : null}
                     </td>
                     {kind === 'all' ? (
                       <td className="px-3 py-2 text-xs text-muted-foreground">
