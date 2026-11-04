@@ -1,13 +1,30 @@
 'use client'
 
-import { useTransition } from 'react'
-import type { Contract } from '@/lib/db'
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import type { Contract, PaymentAmountKind } from '@/lib/db'
 import type { PaymentRow } from '@/lib/queries'
-import { deletePayment, recordPayment } from '@/app/actions/admin'
+import {
+  addMissingCommissionPayments,
+  deletePayment,
+  recordPayment,
+} from '@/app/actions/admin'
 import { formatDate, formatMoney } from '@/lib/format'
 
 const inputClass =
   'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+function kindLabel(kind: PaymentAmountKind | null | undefined): string {
+  if (kind === 'base') return 'Base'
+  if (kind === 'commission') return 'Commission'
+  return 'Full amount'
+}
+
+function kindClass(kind: PaymentAmountKind | null | undefined): string {
+  if (kind === 'base') return 'bg-sky-500/15 text-sky-800 dark:text-sky-200'
+  if (kind === 'commission') return 'bg-amber-500/15 text-amber-800 dark:text-amber-200'
+  return 'bg-primary/10 text-primary'
+}
 
 export function PaymentsManager({
   creatorId,
@@ -28,7 +45,9 @@ export function PaymentsManager({
   /** Yahya can mark a payment as paid directly (not from Ahmed's wallet). */
   isOwner?: boolean
 }) {
+  const router = useRouter()
   const [pending, startTransition] = useTransition()
+  const [backfillMsg, setBackfillMsg] = useState<string | null>(null)
   const latest = payments[0] ?? null
   const total =
     paidTotal ??
@@ -38,6 +57,11 @@ export function PaymentsManager({
     <div className="flex flex-col gap-4">
       <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
         <p className="font-medium text-foreground">Total paid = this list only</p>
+        <p className="mt-1">
+          Each row is <span className="text-foreground">Full amount</span> (base + commission),{' '}
+          <span className="text-foreground">Base</span>, or{' '}
+          <span className="text-foreground">Commission</span>. Untagged old rows count as Full amount.
+        </p>
         <p className="mt-1">
           Filling base/commission on a <span className="text-foreground">past</span> contract and saving
           (or tapping “Record past amounts as paid” under Contracts) adds rows here. Current-contract
@@ -61,6 +85,8 @@ export function PaymentsManager({
           {latest ? (
             <p className="mt-2 text-sm">
               <span className="font-semibold tabular-nums">{formatMoney(latest.amount, currency)}</span>
+              {' · '}
+              {kindLabel(latest.amount_kind)}
               {' on '}
               {formatDate(latest.paid_on)}
               {latest.note ? ` · ${latest.note}` : ''}
@@ -73,6 +99,37 @@ export function PaymentsManager({
         </div>
       </div>
 
+      <div className="rounded-lg border border-dashed border-border bg-card p-4">
+        <p className="text-sm font-semibold">Missing commission on past pays?</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Adds a Commission row for every contract that has commission set but no commission payment yet.
+        </p>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            setBackfillMsg(null)
+            startTransition(async () => {
+              const res = await addMissingCommissionPayments(creatorId)
+              if (!res.ok) {
+                setBackfillMsg(res.error)
+                return
+              }
+              setBackfillMsg(
+                res.added === 0
+                  ? 'Nothing missing — commission already recorded where set.'
+                  : `Added ${res.added} commission payment${res.added === 1 ? '' : 's'}.`,
+              )
+              router.refresh()
+            })
+          }}
+          className="mt-3 h-10 rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-60"
+        >
+          {pending ? 'Working…' : 'Add commission to previous payments'}
+        </button>
+        {backfillMsg ? <p className="mt-2 text-xs text-muted-foreground">{backfillMsg}</p> : null}
+      </div>
+
       <form
         action={(fd) => startTransition(() => recordPayment(creatorId, fd))}
         className="rounded-lg border border-border bg-card p-4"
@@ -80,7 +137,7 @@ export function PaymentsManager({
         <h2 className="text-sm font-semibold">Add a payment manually</h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Usually you don’t need this — saving a past contract records pay for you. Use this for
-          extras / bonuses.
+          extras / bonuses. Pick whether this row is full amount, base, or commission.
         </p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -98,6 +155,14 @@ export function PaymentsManager({
               placeholder="0.00"
               className={inputClass}
             />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2">
+            What is this?
+            <select name="amount_kind" defaultValue="full" className={inputClass}>
+              <option value="full">Full amount (base + commission)</option>
+              <option value="base">Base only</option>
+              <option value="commission">Commission only</option>
+            </select>
           </label>
           <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2">
             Contract
@@ -141,6 +206,7 @@ export function PaymentsManager({
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-3 font-medium">Date</th>
                 <th className="px-4 py-3 font-medium">Amount</th>
+                <th className="px-4 py-3 font-medium">Kind</th>
                 <th className="px-4 py-3 font-medium">Contract</th>
                 <th className="px-4 py-3 font-medium">Note</th>
                 <th className="px-4 py-3" />
@@ -152,6 +218,11 @@ export function PaymentsManager({
                   <td className="whitespace-nowrap px-4 py-3">{formatDate(p.paid_on)}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-medium tabular-nums">
                     {formatMoney(p.amount, currency)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${kindClass(p.amount_kind)}`}>
+                      {kindLabel(p.amount_kind)}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {p.contract_name ?? '—'}

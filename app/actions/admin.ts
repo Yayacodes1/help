@@ -39,7 +39,13 @@ import {
   normalizeBasePayCadence,
 } from '@/lib/contract-halves'
 import { scheduleFromContract } from '@/lib/posting-schedule'
-import type { CountMode } from '@/lib/db'
+import type { CountMode, PaymentAmountKind } from '@/lib/db'
+
+function parsePaymentAmountKind(value: FormDataEntryValue | null | undefined): PaymentAmountKind {
+  const raw = (value ?? '').toString().trim().toLowerCase()
+  if (raw === 'base' || raw === 'commission') return raw
+  return 'full'
+}
 
 async function requireAdmin() {
   if (!(await isAdmin())) throw new Error('Unauthorized')
@@ -703,8 +709,8 @@ async function syncPaymentFromEndedContractTerms(input: {
   const paidOn = input.end <= input.today ? input.end : input.today
   const note = `Paid for ${input.name} (from contract amounts)`
   await sql`
-    INSERT INTO payments (creator_id, contract_id, paid_on, amount, note)
-    VALUES (${input.creatorId}, ${input.contractId}, ${paidOn}, ${gap}, ${note})
+    INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, amount_kind)
+    VALUES (${input.creatorId}, ${input.contractId}, ${paidOn}, ${gap}, ${note}, 'full')
   `
   await sql`
     UPDATE creators SET last_paid_at = ${paidOn} WHERE id = ${input.creatorId}
@@ -1226,6 +1232,7 @@ export async function recordPayment(creatorId: number, formData: FormData) {
   if (amount <= 0) return
   const noteRaw = (formData.get('note') ?? '').toString().trim()
   const note = noteRaw ? noteRaw.slice(0, 500) : null
+  const amountKind = parsePaymentAmountKind(formData.get('amount_kind'))
   const contractRaw = (formData.get('contract_id') ?? '').toString()
   let contractId =
     contractRaw && Number.isFinite(Number(contractRaw))
@@ -1257,13 +1264,91 @@ export async function recordPayment(creatorId: number, formData: FormData) {
 
   const source = await paymentSource(formData.get('paid_from'))
   await sql`
-    INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by)
-    VALUES (${creatorId}, ${contractId}, ${paidOn}, ${amount}, ${note}, ${source.paidBy}, ${source.recordedBy})
+    INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by, amount_kind)
+    VALUES (
+      ${creatorId}, ${contractId}, ${paidOn}, ${amount}, ${note},
+      ${source.paidBy}, ${source.recordedBy}, ${amountKind}
+    )
   `
   await sql`UPDATE creators SET last_paid_at = ${paidOn} WHERE id = ${creatorId}`
   revalidatePath('/admin')
   revalidatePath(`/admin/creators/${creatorId}`)
   revalidatePath('/submit')
+}
+
+/**
+ * For each past contract that has a commission set, insert a commission payment
+ * if one was never recorded (option B: add commission onto previous base/full pays).
+ */
+export async function addMissingCommissionPayments(creatorId: number): Promise<{
+  ok: true
+  added: number
+} | { ok: false; error: string }> {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const id = Math.floor(Number(creatorId))
+  if (!(id > 0)) return { ok: false, error: 'Unknown person.' }
+  const today = await getServerToday()
+
+  const contracts = (await sql`
+    SELECT id, name,
+           start_date::text AS start_date,
+           end_date::text AS end_date,
+           commission_amount::float AS commission_amount
+    FROM contracts
+    WHERE creator_id = ${id}
+      AND commission_amount IS NOT NULL
+      AND commission_amount > 0
+    ORDER BY start_date ASC, id ASC
+  `) as {
+    id: number
+    name: string
+    start_date: string
+    end_date: string | null
+    commission_amount: number
+  }[]
+
+  let added = 0
+  for (const contract of contracts) {
+    const existing = (await sql`
+      SELECT id FROM payments
+      WHERE creator_id = ${id}
+        AND contract_id = ${contract.id}
+        AND amount_kind = 'commission'
+      LIMIT 1
+    `) as { id: number }[]
+    if (existing[0]) continue
+
+    const commission = Math.round((Number(contract.commission_amount) || 0) * 100) / 100
+    if (commission <= 0) continue
+
+    const paidOn =
+      contract.end_date && contract.end_date <= today
+        ? contract.end_date
+        : today
+    const note = `Commission for ${contract.name}`
+    await sql`
+      INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, amount_kind)
+      VALUES (${id}, ${contract.id}, ${paidOn}, ${commission}, ${note}, 'commission')
+    `
+    added += 1
+  }
+
+  if (added > 0) {
+    const latest = (await sql`
+      SELECT paid_on::text AS paid_on FROM payments
+      WHERE creator_id = ${id}
+      ORDER BY paid_on DESC, id DESC LIMIT 1
+    `) as { paid_on: string }[]
+    if (latest[0]?.paid_on) {
+      await sql`UPDATE creators SET last_paid_at = ${latest[0].paid_on} WHERE id = ${id}`
+    }
+  }
+
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${id}`)
+  revalidatePath('/submit')
+  return { ok: true, added }
 }
 
 export async function deletePayment(id: number, creatorId: number) {
@@ -1331,9 +1416,13 @@ export async function recordContractPayment(
   if (!owned[0]) return
 
   const source = await paymentSource(formData.get('paid_from'))
+  const amountKind = parsePaymentAmountKind(formData.get('amount_kind'))
   await sql`
-    INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by)
-    VALUES (${creatorId}, ${contractId}, ${paidOn}, ${amount}, ${note}, ${source.paidBy}, ${source.recordedBy})
+    INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by, amount_kind)
+    VALUES (
+      ${creatorId}, ${contractId}, ${paidOn}, ${amount}, ${note},
+      ${source.paidBy}, ${source.recordedBy}, ${amountKind}
+    )
   `
   await sql`UPDATE creators SET last_paid_at = ${paidOn} WHERE id = ${creatorId}`
   revalidatePath('/admin')
@@ -1409,8 +1498,11 @@ export async function recordDueHalfPayment(
 
   for (const item of toRecord) {
     await sql`
-      INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by)
-      VALUES (${creatorId}, ${contractId}, ${today}, ${item.amount}, ${item.note}, ${source.paidBy}, ${source.recordedBy})
+      INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by, amount_kind)
+      VALUES (
+        ${creatorId}, ${contractId}, ${today}, ${item.amount}, ${item.note},
+        ${source.paidBy}, ${source.recordedBy}, 'full'
+      )
     `
   }
   await sql`UPDATE creators SET last_paid_at = ${today} WHERE id = ${creatorId}`
@@ -1444,8 +1536,8 @@ export async function payCalendarAmount(
   const source = await paymentSource(null)
   const note = halfPaymentNote(installmentIndex === 0 ? 1 : 2, owned[0].name)
   await sql`
-    INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by)
-    VALUES (${personId}, ${id}, ${today}, ${pay}, ${note}, ${source.paidBy}, ${source.recordedBy})
+    INSERT INTO payments (creator_id, contract_id, paid_on, amount, note, paid_by, recorded_by, amount_kind)
+    VALUES (${personId}, ${id}, ${today}, ${pay}, ${note}, ${source.paidBy}, ${source.recordedBy}, 'full')
   `
   await sql`UPDATE creators SET last_paid_at = ${today} WHERE id = ${personId}`
   revalidatePath('/admin')

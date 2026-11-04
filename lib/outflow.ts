@@ -283,7 +283,8 @@ export async function getOutflowSnapshot(opts: {
            COALESCE(c.pay_every_days, 14)::int AS pay_every_days,
            c.paused_at::text AS paused_at
     FROM creators c
-    WHERE (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
+    WHERE c.paused_at IS NULL
+      AND (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
       AND (
         ${projectId}::int IS NULL
         OR (c.role = 'reposter' AND ${includeAllReposters}::boolean)
@@ -323,7 +324,8 @@ export async function getOutflowSnapshot(opts: {
            COALESCE(NULLIF(ct.base_pay_cadence, ''), 'monthly') AS base_pay_cadence
     FROM contracts ct
     JOIN creators c ON c.id = ct.creator_id
-    WHERE (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
+    WHERE c.paused_at IS NULL
+      AND (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
       AND (
         ${projectId}::int IS NULL
         OR (c.role = 'reposter' AND ${includeAllReposters}::boolean)
@@ -547,16 +549,22 @@ export async function getOutflowSnapshot(opts: {
   for (const person of peopleRows) {
     touchPerson(person)
   }
+  const activePeopleIds = new Set(peopleRows.map((person) => person.creator_id))
   for (const rate of rateByCreator.values()) {
+    if (!activePeopleIds.has(rate.creator_id)) continue
     const existing = touchPerson(rate)
     existing.baseContract = rate.baseContract
     existing.biweekly = rate.biweekly
     existing.monthly = rate.monthly
   }
   for (const hit of plannedHits) {
+    if (!activePeopleIds.has(hit.creator_id)) continue
     touchPerson(hit).planned += hit.amount
   }
   for (const p of payments) {
+    // Paused people stay out of live expense / roster totals; their payment history
+    // still appears in payment lists via the payments query above.
+    if (!activePeopleIds.has(p.creator_id)) continue
     touchPerson(p).paid += Number(p.amount) || 0
   }
   const peopleTotals = [...peopleMap.values()].sort((a, b) =>

@@ -103,6 +103,13 @@ async function runEnsureCreatorTrackingColumns() {
   // paid_by = 'ahmed' when it came out of the money sent to Ahmed; recorded_by = admin account id.
   await sql`ALTER TABLE payments ADD COLUMN IF NOT EXISTS paid_by text`
   await sql`ALTER TABLE payments ADD COLUMN IF NOT EXISTS recorded_by text`
+  // full = base+commission (or untagged legacy), base = salary only, commission = bonus only.
+  await sql`ALTER TABLE payments ADD COLUMN IF NOT EXISTS amount_kind text DEFAULT 'full'`
+  await sql`
+    UPDATE payments
+    SET amount_kind = 'full'
+    WHERE amount_kind IS NULL OR amount_kind = ''
+  `
 
   // Link unattached payments to the contract that covers paid_on (or the latest one).
   await sql`

@@ -1650,20 +1650,27 @@ export type PaymentRow = Payment & {
   creator_role?: ParticipantRole
   creator_pay_currency?: string | null
   contract_name?: string | null
+  amount_kind: import('@/lib/db').PaymentAmountKind
+}
+
+function asPaymentKind(value: string | null | undefined): import('@/lib/db').PaymentAmountKind {
+  return value === 'base' || value === 'commission' ? value : 'full'
 }
 
 export async function getPaymentsForCreator(creatorId: number): Promise<PaymentRow[]> {
-  return (await sql`
+  const rows = (await sql`
     SELECT p.id, p.creator_id, p.contract_id,
            p.paid_on::text AS paid_on,
            p.amount::float AS amount,
            p.note, p.created_at,
+           p.amount_kind,
            ct.name AS contract_name
     FROM payments p
     LEFT JOIN contracts ct ON ct.id = p.contract_id
     WHERE p.creator_id = ${creatorId}
     ORDER BY p.paid_on DESC, p.id DESC
-  `) as PaymentRow[]
+  `) as Array<PaymentRow & { amount_kind: string | null }>
+  return rows.map((row) => ({ ...row, amount_kind: asPaymentKind(row.amount_kind) }))
 }
 
 export async function getLatestPayment(creatorId: number): Promise<Payment | null> {
@@ -1671,13 +1678,15 @@ export async function getLatestPayment(creatorId: number): Promise<Payment | nul
     SELECT id, creator_id, contract_id,
            paid_on::text AS paid_on,
            amount::float AS amount,
-           note, created_at
+           note, created_at, amount_kind
     FROM payments
     WHERE creator_id = ${creatorId}
     ORDER BY paid_on DESC, id DESC
     LIMIT 1
-  `) as Payment[]
-  return rows[0] ?? null
+  `) as Array<Payment & { amount_kind: string | null }>
+  const row = rows[0]
+  if (!row) return null
+  return { ...row, amount_kind: asPaymentKind(row.amount_kind) }
 }
 
 export async function getPaymentsInRange(
@@ -1688,11 +1697,12 @@ export async function getPaymentsInRange(
 ): Promise<PaymentRow[]> {
   const cid = creatorId ?? null
   const roleFilter = role ?? null
-  return (await sql`
+  const rows = (await sql`
     SELECT p.id, p.creator_id, p.contract_id,
            p.paid_on::text AS paid_on,
            p.amount::float AS amount,
            p.note, p.created_at,
+           p.amount_kind,
            c.name AS creator_name,
            c.role AS creator_role,
            c.pay_currency AS creator_pay_currency,
@@ -1705,7 +1715,8 @@ export async function getPaymentsInRange(
       AND (${cid}::int IS NULL OR p.creator_id = ${cid})
       AND (${roleFilter}::text IS NULL OR c.role = ${roleFilter})
     ORDER BY p.paid_on DESC, p.id DESC
-  `) as PaymentRow[]
+  `) as Array<PaymentRow & { amount_kind: string | null }>
+  return rows.map((row) => ({ ...row, amount_kind: asPaymentKind(row.amount_kind) }))
 }
 
 export async function getPaymentsTotalInRange(

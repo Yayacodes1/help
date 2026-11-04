@@ -170,6 +170,9 @@ export type CommissionSettings = {
   count_mode: CountMode
 }
 
+/** What this payment row covers: full (base+commission), base only, or commission only. */
+export type PaymentAmountKind = 'full' | 'base' | 'commission'
+
 export type Payment = {
   id: number
   creator_id: number
@@ -177,5 +180,7 @@ export type Payment = {
   paid_on: string
   amount: number
   note: string | null
+  /** Defaults to full for legacy rows that were never tagged. */
+  amount_kind?: PaymentAmountKind | null
   created_at: string
 }
