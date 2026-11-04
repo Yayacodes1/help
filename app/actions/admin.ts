@@ -2090,3 +2090,67 @@ export async function markAllContractReviewsDone() {
   await markAllContractReviewsReviewed()
   revalidatePath('/admin')
 }
+
+// --- Creator fitness / probation ---
+
+export async function setCreatorFitnessTierAction(
+  creatorId: number,
+  tier: 'protected' | 'probation' | null,
+) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const today = await getServerToday()
+  const { setCreatorFitnessTier } = await import('@/lib/creator-fitness')
+  await setCreatorFitnessTier(creatorId, tier, today)
+  if (tier === 'probation') {
+    const { syncProbationMisses } = await import('@/lib/probation')
+    await syncProbationMisses({ today: await getOperationalToday(), creatorId })
+  }
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  revalidatePath('/submit')
+}
+
+/** Protect the top N creators by views in the fitness window. */
+export async function bulkProtectTopCreators(
+  topN: number,
+  from: string,
+  to: string,
+  projectId: number | null,
+) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const today = await getServerToday()
+  const { getCreatorFitnessBoard, setCreatorFitnessTier } = await import('@/lib/creator-fitness')
+  const board = await getCreatorFitnessBoard({ from, to, projectId })
+  const byViews = [...board.rows].sort((a, b) => b.views - a.views)
+  const n = Math.max(1, Math.min(50, Math.floor(topN) || 15))
+  for (const row of byViews.slice(0, n)) {
+    if (row.paused) continue
+    await setCreatorFitnessTier(row.creatorId, 'protected', today)
+  }
+  revalidatePath('/admin')
+}
+
+/** Put suggested-cut creators (not protected) onto probation. */
+export async function bulkProbationBottomCreators(
+  from: string,
+  to: string,
+  projectId: number | null,
+) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const today = await getServerToday()
+  const opToday = await getOperationalToday()
+  const { getCreatorFitnessBoard, setCreatorFitnessTier } = await import('@/lib/creator-fitness')
+  const { syncProbationMisses } = await import('@/lib/probation')
+  const board = await getCreatorFitnessBoard({ from, to, projectId })
+  for (const row of board.rows) {
+    if (row.paused || row.tier === 'protected') continue
+    if (row.action !== 'cut' && row.tier !== 'probation') continue
+    if (row.tier === 'probation') continue
+    await setCreatorFitnessTier(row.creatorId, 'probation', today)
+  }
+  await syncProbationMisses({ today: opToday })
+  revalidatePath('/admin')
+}

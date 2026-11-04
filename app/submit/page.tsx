@@ -41,6 +41,10 @@ import { getOutreachMemberByCreator } from '@/lib/outreach'
 import { outreachGreeting } from '@/lib/outreach-status'
 import { ReposterDashboard } from '@/app/submit/reposter-dashboard'
 import { creatorIsPaused } from '@/lib/pause-person'
+import { VideoIdeasPanel } from '@/components/video-ideas-panel'
+import { getTopVideos } from '@/lib/analytics'
+import { addDays } from '@/lib/campaign'
+import { SubmitModeToggle } from '@/components/submit-mode-toggle'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -66,10 +70,31 @@ export default async function SubmitPage({
     rTo?: string
     videoDate?: string
     checkDate?: string
+    mode?: string
+    ideasPeriod?: string
+    ideasLimit?: string
+    ideasSort?: string
   }>
 }) {
-  const { u, date: dateParam, panel, tab, taskDay, vPage, vSize, cFrom, cTo, rFrom, rTo, videoDate, checkDate } =
-    await searchParams
+  const {
+    u,
+    date: dateParam,
+    panel,
+    tab,
+    taskDay,
+    vPage,
+    vSize,
+    cFrom,
+    cTo,
+    rFrom,
+    rTo,
+    videoDate,
+    checkDate,
+    mode: modeParam,
+    ideasPeriod,
+    ideasLimit,
+    ideasSort,
+  } = await searchParams
   const [locale, leaderSession] = await Promise.all([getLocale(), getLeaderSession()])
   const t = createT(locale)
   const creator = u ? await getCreatorByName(u) : null
@@ -140,8 +165,12 @@ export default async function SubmitPage({
   ])
   const opToday = operationalDayFromIso(serverNow)
   const today = opToday
-  const date = isValidDate(dateParam) ? dateParam : today
+  const { creatorIsOnProbation } = await import('@/lib/creator-fitness')
+  const onProbation =
+    creator.role === 'creator' ? await creatorIsOnProbation(creator.id).catch(() => false) : false
+  const date = onProbation ? today : isValidDate(dateParam) ? dateParam : today
   const isToday = date === today
+  const submitMode = modeParam === 'ideas' ? 'ideas' : 'post'
 
   const projects = await getAllProjects()
   const miqatId = findMiyqatProject(projects)?.id ?? null
@@ -188,6 +217,22 @@ export default async function SubmitPage({
     getCreatorPaidTotal(creator.id),
   ])
   const paidTotal = loadedPaidTotal
+
+  const ideasDays = ideasPeriod === '60' ? 60 : 30
+  const ideasLimitN = [5, 10, 15, 20].includes(Number(ideasLimit)) ? Number(ideasLimit) : 10
+  const ideasSortMode = ideasSort === 'trending' ? 'trending' : 'views'
+  const ideaVideos =
+    submitMode === 'ideas' && creator.role === 'creator'
+      ? await getTopVideos({
+          from: addDays(today, -(ideasDays - 1)),
+          to: today,
+          projectId: creator.project_id,
+          role: 'creator',
+          limit: ideasLimitN,
+          sort: ideasSortMode,
+          asOf: today,
+        }).catch(() => [])
+      : []
 
   const dailyGoals = goalsForContract(creator, active)
   const goalShape = {
@@ -399,68 +444,103 @@ export default async function SubmitPage({
           />
         ) : null}
 
+        {creator.role === 'creator' ? (
+          <SubmitModeToggle
+            mode={submitMode}
+            labels={{ post: t('submitModePost'), ideas: t('submitModeIdeas') }}
+          />
+        ) : null}
+
         <div className="flex flex-col gap-4">
-          <section className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <Send className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold text-foreground">{t('addLinks')}</h2>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {t('platforms')}: {t('platformsBoth')}
-              {' · '}
-              {t('dailyGoal')}: {t('instagram')} {dailyGoals.goalInstagram}
-              {' · '}
-              {t('tiktok')} {dailyGoals.goalTiktok}
-            </p>
-            <SubmitForm
-              username={username}
-              fields={fields}
-              projects={projects}
-              videoDate={date}
-              defaultTime={defaultTime}
-              brandProjects={brandProjects}
+          {submitMode === 'ideas' && creator.role === 'creator' ? (
+            <VideoIdeasPanel
+              videos={ideaVideos}
               labels={{
-                pasteLinks: t('pasteLinks'),
-                pasteHint: t('pasteLinksHint'),
-                send: t('submitVideos'),
-                sendTo: t('submitVideosTo'),
-                sending: t('sending'),
-                project: t('submitProject'),
-                projectHint: t('submitProjectHint'),
-                pickProject: t('pickProject'),
-                autoProject: t('autoProject'),
-                postDate: t('postDate'),
-                postTime: t('postTime'),
-                postWhenHint: t('submitTimeHint'),
+                title: t('ideasTitle'),
+                hint: t('ideasHint'),
+                highlySuggested: t('ideasHighlySuggested'),
+                period30: t('ideasPeriod30'),
+                period60: t('ideasPeriod60'),
+                sortViews: t('ideasSortViews'),
+                sortTrending: t('ideasSortTrending'),
+                empty: t('ideasEmpty'),
+                open: t('ideasOpen'),
+                username: t('ideasUsername'),
               }}
             />
-          </section>
+          ) : (
+            <>
+              <section className="flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <Send className="h-4 w-4 text-primary" />
+                  <h2 className="text-sm font-semibold text-foreground">{t('addLinks')}</h2>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t('platforms')}: {t('platformsBoth')}
+                  {' · '}
+                  {t('dailyGoal')}: {t('instagram')} {dailyGoals.goalInstagram}
+                  {' · '}
+                  {t('tiktok')} {dailyGoals.goalTiktok}
+                </p>
+                <SubmitForm
+                  username={username}
+                  fields={fields}
+                  projects={projects}
+                  videoDate={date}
+                  defaultTime={defaultTime}
+                  brandProjects={brandProjects}
+                  labels={{
+                    pasteLinks: t('pasteLinks'),
+                    pasteHint: t('pasteLinksHint'),
+                    send: t('submitVideos'),
+                    sendTo: t('submitVideosTo'),
+                    sending: t('sending'),
+                    project: t('submitProject'),
+                    projectHint: t('submitProjectHint'),
+                    pickProject: t('pickProject'),
+                    autoProject: t('autoProject'),
+                    postDate: t('postDate'),
+                    postTime: t('postTime'),
+                    postWhenHint: t('submitTimeHint'),
+                  }}
+                />
+              </section>
 
-          <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold text-foreground">{t('chooseDay')}</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">{t('chooseDayHint')}</p>
-              </div>
-              <DateSelect date={date} />
-            </div>
-            {!isToday && (
-              <p className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground">
-                {t('addingPast')}
-              </p>
-            )}
-          </section>
+              <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">{t('chooseDay')}</h2>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {onProbation ? t('probationDateLocked') : t('chooseDayHint')}
+                    </p>
+                  </div>
+                  {onProbation ? (
+                    <span className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm font-medium tabular-nums">
+                      {date}
+                    </span>
+                  ) : (
+                    <DateSelect date={date} />
+                  )}
+                </div>
+                {!isToday && !onProbation ? (
+                  <p className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground">
+                    {t('addingPast')}
+                  </p>
+                ) : null}
+              </section>
 
-          <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-semibold text-foreground">{t('todaysVideos')}</h2>
-            <TodayVideos
-              username={username}
-              submissions={submissions}
-              locale={locale}
-              projects={projects}
-              changeProjectLabel={t('changeProject')}
-            />
-          </section>
+              <section className="flex flex-col gap-3">
+                <h2 className="text-sm font-semibold text-foreground">{t('todaysVideos')}</h2>
+                <TodayVideos
+                  username={username}
+                  submissions={submissions}
+                  locale={locale}
+                  projects={projects}
+                  changeProjectLabel={t('changeProject')}
+                />
+              </section>
+            </>
+          )}
         </div>
 
         <p className="text-xs text-muted-foreground">{t('creatorTapHint')}</p>

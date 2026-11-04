@@ -17,6 +17,23 @@ async function runEnsureCreatorTrackingColumns() {
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS paused_at date`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS streak_carry integer NOT NULL DEFAULT 0`
   await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS streak_resume_on date`
+  await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS fitness_tier text`
+  await sql`ALTER TABLE creators ADD COLUMN IF NOT EXISTS probation_started_on date`
+  await sql`
+    CREATE TABLE IF NOT EXISTS probation_streak_notices (
+      id SERIAL PRIMARY KEY,
+      creator_id INTEGER NOT NULL REFERENCES creators(id) ON DELETE CASCADE,
+      level INTEGER NOT NULL CHECK (level IN (1, 2, 3)),
+      unlocked_on DATE NOT NULL,
+      miss_dates TEXT NOT NULL DEFAULT '',
+      miss_count INTEGER NOT NULL DEFAULT 0,
+      messaged_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (creator_id, level)
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS probation_streak_notices_pending_idx
+    ON probation_streak_notices (messaged_at) WHERE messaged_at IS NULL`
 
   await sql`
     CREATE TABLE IF NOT EXISTS contracts (

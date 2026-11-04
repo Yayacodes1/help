@@ -31,6 +31,12 @@ async function run(req: Request) {
   await ensureCreatorTrackingColumns()
   const opToday = await getOperationalToday()
   const strikesAdded = await syncReposterStrikes({ today: opToday })
+  const { syncProbationMisses } = await import('@/lib/probation')
+  const probation = await syncProbationMisses({ today: opToday }).catch((e) => ({
+    strikesAdded: 0,
+    noticesUnlocked: 0,
+    error: String(e),
+  }))
   const streakEpoch = await ensureStreakEpoch(await getServerToday())
   const telegram = await sendAttendanceReports(opToday, 'final')
   const webhook = await ensureTelegramWebhook(new URL(req.url).origin).catch((e) => ({ ok: false, error: String(e) }))
@@ -73,6 +79,7 @@ async function run(req: Request) {
     opToday,
     day: telegram.day,
     strikesAdded,
+    probation,
     streakEpoch,
     telegramSkipped: telegram.skipped ?? false,
     telegramError: telegram.error ?? null,

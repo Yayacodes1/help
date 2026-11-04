@@ -34,7 +34,7 @@ import {
   getViewsLeaderboard,
   getViewsSummary,
 } from '@/lib/analytics'
-import { monthRange, parseYearMonth, rankingMonthRange } from '@/lib/campaign'
+import { addDays, monthRange, parseYearMonth, rankingMonthRange } from '@/lib/campaign'
 import { ensureMarketingTables, listMarketingRequests } from '@/lib/marketing'
 import { StatCard } from '@/components/stat-card'
 import { FiltersBar } from '@/components/admin/filters-bar'
@@ -89,6 +89,9 @@ import { StrikesPanel } from '@/components/admin/strikes-panel'
 import { ContractReviewsPanel } from '@/components/admin/contract-reviews-panel'
 import { getPendingContractReviews } from '@/lib/contract-reviews'
 import { getReposterStrikeBoard, syncReposterStrikes } from '@/lib/strikes'
+import { getCreatorFitnessBoard } from '@/lib/creator-fitness'
+import { syncProbationMisses } from '@/lib/probation'
+import { FitnessBoardPanel } from '@/components/admin/fitness-board'
 import { getAttendanceForDay } from '@/lib/attendance'
 import { formatPlanCompare, getLeaderBoard, getLeaderDirectory, loadLeaderLinks, withLeaderFields } from '@/lib/leaders'
 import { LeadersBoard } from '@/components/admin/leaders-board'
@@ -160,6 +163,8 @@ export default async function AdminPage({
     tvFrom?: string
     tvTo?: string
     tvPlatform?: string
+    fitFrom?: string
+    fitTo?: string
     ofFrom?: string
     ofTo?: string
     ofView?: string
@@ -198,6 +203,7 @@ export default async function AdminPage({
   const today = await getServerToday()
   const opToday = await getOperationalToday()
   await syncReposterStrikes({ today: opToday })
+  await syncProbationMisses({ today: opToday }).catch(() => undefined)
   const { start: monthStart, end: monthEnd } = monthRange(today)
   const analyticsDefault = defaultAnalyticsRange(today)
 
@@ -253,6 +259,11 @@ export default async function AdminPage({
   const tvTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.tvTo ?? '') ? sp.tvTo! : monthEnd
   const tvPlatform =
     sp.tvPlatform === 'instagram' || sp.tvPlatform === 'tiktok' ? sp.tvPlatform : null
+
+  const fitTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.fitTo ?? '') ? sp.fitTo! : today
+  const fitFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.fitFrom ?? '')
+    ? sp.fitFrom!
+    : addDays(fitTo, -29)
 
   const ofFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.ofFrom ?? '') ? sp.ofFrom! : monthStart
   const ofTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.ofTo ?? '') ? sp.ofTo! : monthEnd
@@ -541,12 +552,23 @@ export default async function AdminPage({
   }
   let companyStructure: Awaited<ReturnType<typeof getCompanyStructure>> | null = null
   let companyStructureError: string | null = null
+  let fitnessBoard: Awaited<ReturnType<typeof getCreatorFitnessBoard>> | null = null
   if (tab === 'people') {
     try {
       companyStructure = await getCompanyStructure()
     } catch (err) {
       console.error('[admin] company structure', err)
       companyStructureError = t('companyStructureError')
+    }
+    try {
+      fitnessBoard = await getCreatorFitnessBoard({
+        from: fitFrom,
+        to: fitTo,
+        projectId,
+      })
+    } catch (err) {
+      console.error('[admin] fitness board', err)
+      fitnessBoard = null
     }
   }
   const twodayData = tab === 'twoday' ? { requests: await listBreakRequests({ limit: 80 }) } : null
@@ -1820,6 +1842,45 @@ export default async function AdminPage({
           },
           ] : []),
           ...(tab === 'people' ? [
+          ...(fitnessBoard
+            ? [
+                {
+                  id: 'fitness',
+                  title: t('fitnessTitle'),
+                  summary: `${fitnessBoard.rows.filter((r) => r.action === 'cut').length} ${t('fitnessCut').toLowerCase()} · ${Math.round(fitnessBoard.top15Share * 100)}% top 15`,
+                  hint: t('fitnessHint'),
+                  children: (
+                    <FitnessBoardPanel
+                      board={fitnessBoard}
+                      projects={projects}
+                      projectId={projectId}
+                      labels={{
+                        hint: t('fitnessHint'),
+                        allProjects: t('allProjects'),
+                        chooseProject: t('chooseProject'),
+                        protect: t('fitnessProtect'),
+                        probation: t('fitnessProbation'),
+                        clear: t('fitnessClear'),
+                        protectTop15: t('fitnessProtectTop15'),
+                        probationCuts: t('fitnessProbationCuts'),
+                        keep: t('fitnessKeep'),
+                        watch: t('fitnessWatch'),
+                        cut: t('fitnessCut'),
+                        protected: t('fitnessProtected'),
+                        onProbation: t('fitnessOnProbation'),
+                        paused: t('fitnessPaused'),
+                        quwa: t('fitnessQuwa'),
+                        score: t('fitnessScore'),
+                        views: t('views'),
+                        consistency: t('fitnessConsistency'),
+                        action: t('fitnessAction'),
+                        empty: t('fitnessEmpty'),
+                      }}
+                    />
+                  ),
+                },
+              ]
+            : []),
           ...(showUrgent
             ? [
                 {

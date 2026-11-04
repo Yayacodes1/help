@@ -107,7 +107,12 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   if (!TIME_RE.test(postTimeRaw)) {
     return { ok: false, message: 'Pick the time you posted.' }
   }
-  const videoDate = videoDateRaw
+  const opToday = operationalDayFromIso(await getServerNowIso())
+  const { creatorIsOnProbation } = await import('@/lib/creator-fitness')
+  const onProbation =
+    creator.role === 'creator' ? await creatorIsOnProbation(creator.id).catch(() => false) : false
+  // Probation creators cannot backdate — only today's operational day counts.
+  const videoDate = onProbation ? opToday : videoDateRaw
   const postTime = postTimeRaw.length === 5 ? `${postTimeRaw}:00` : postTimeRaw
 
   // Same video can't be submitted twice (by anyone), however the link is written.

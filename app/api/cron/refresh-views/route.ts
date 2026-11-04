@@ -30,6 +30,8 @@ async function run(req: Request) {
   await ensureCreatorTrackingColumns()
   const opToday = await getOperationalToday()
   const strikesAdded = await syncReposterStrikes({ today: opToday })
+  const { syncProbationMisses } = await import('@/lib/probation')
+  await syncProbationMisses({ today: opToday }).catch(() => undefined)
   const { ensureStreakEpoch } = await import('@/lib/streak-epoch')
   const streakEpoch = await ensureStreakEpoch(await getServerToday())
   const telegram = await sendAttendanceReports(opToday, 'final')

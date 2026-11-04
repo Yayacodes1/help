@@ -231,14 +231,19 @@ export type TopVideoRow = {
   id: number
   creator_id: number
   creator_name: string
+  creator_username: string | null
   project_name: string | null
   platform: string
   url: string
   video_date: string
   views: number
+  /** Views ÷ age days — used when sort=trending. */
+  trend_score?: number
 }
 
-/** Individual submissions ranked by views. */
+export type TopVideoSort = 'views' | 'trending'
+
+/** Individual submissions ranked by views or trending (views / age). */
 export async function getTopVideos(opts: {
   from?: string | null
   to?: string | null
@@ -248,6 +253,8 @@ export async function getTopVideos(opts: {
   creatorIds?: number[] | null
   platform?: string | null
   limit?: number
+  sort?: TopVideoSort
+  asOf?: string | null
 } = {}): Promise<TopVideoRow[]> {
   const today = await getServerToday()
   const { from, to } = normalizeRange(opts.from, opts.to, today)
@@ -256,17 +263,25 @@ export async function getTopVideos(opts: {
   const ids = opts.creatorIds ?? null
   const platform = opts.platform === 'instagram' || opts.platform === 'tiktok' ? opts.platform : null
   const limit = Math.min(200, Math.max(1, opts.limit ?? 25))
+  const sort: TopVideoSort = opts.sort === 'trending' ? 'trending' : 'views'
+  const asOf = opts.asOf && /^\d{4}-\d{2}-\d{2}$/.test(opts.asOf) ? opts.asOf : today
 
-  return (await sql`
+  const rows = (await sql`
     SELECT
       s.id,
       s.creator_id,
       c.name AS creator_name,
+      COALESCE(
+        NULLIF(btrim(c.tiktok_username), ''),
+        NULLIF(btrim(c.instagram_username), ''),
+        c.name
+      ) AS creator_username,
       p.name AS project_name,
       s.platform,
       s.url,
       s.video_date::text AS video_date,
-      s.views
+      s.views,
+      (s.views::float / GREATEST(1, (${asOf}::date - s.video_date) + 1))::float AS trend_score
     FROM submissions s
     JOIN creators c ON c.id = s.creator_id
     LEFT JOIN projects p ON p.id = s.project_id
@@ -276,9 +291,13 @@ export async function getTopVideos(opts: {
       AND (${ids}::int[] IS NULL OR c.id = ANY(${ids}::int[]))
       AND (${platform}::text IS NULL OR s.platform = ${platform})
       AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
-    ORDER BY s.views DESC, s.video_date DESC, s.id DESC
+    ORDER BY
+      CASE WHEN ${sort}::text = 'trending' THEN (s.views::float / GREATEST(1, (${asOf}::date - s.video_date) + 1)) ELSE s.views::float END DESC,
+      s.video_date DESC,
+      s.id DESC
     LIMIT ${limit}
   `) as TopVideoRow[]
+  return rows
 }
 
 export type SheetRow = {

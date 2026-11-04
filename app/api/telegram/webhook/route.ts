@@ -42,6 +42,8 @@ type ReportRequest = {
 type Request_ =
   | ReportRequest
   | { menu: 'groups' | 'squad' | 'update'; mode: ReportMode; squad?: ReportSquad }
+  | { probation: 'list' }
+  | { probation: 'send'; noticeId: number }
   | 'help'
   | null
 
@@ -49,6 +51,7 @@ const HELP =
   `${BUTTON_GUIDE}\n` +
   '📊 Type /update to pick Previous day, Today, or So far today.\n' +
   '📅 /yesterday — previous day · /today — the day we\'re in · /now — so far today.\n' +
+  '⚠️ /streaks — creator probation verbal / kick queue.\n' +
   '👑 Type /groups to pick Alpha, Beta, Charlie, Delta, or Ungrouped.\n\n' +
   'Automatic summary: 5:00 PM Riyadh (so far today) and 12:00 AM Riyadh (previous day final).'
 
@@ -96,6 +99,9 @@ function parseText(text: string): Request_ {
     if (/today|اليوم/.test(rest)) return { view: 'summary', mode: 'live', flavor: 'today' }
     return { menu: 'update', mode: 'live' }
   }
+  if (['streaks', 'pstreaks', 'creator_streaks', 'probation'].includes(cmd)) {
+    return { probation: 'list' }
+  }
   if (['start', 'help'].includes(cmd)) return 'help'
   return null
 }
@@ -139,6 +145,11 @@ function parseButton(data: string | undefined): Request_ {
     return { view: 'messages', mode: parseMode(b), role: a }
   }
   if (kind === 'msgs') return 'help'
+  if (kind === 'pstreaks') return { probation: 'list' }
+  if (kind === 'pstreak') {
+    const noticeId = Number(a)
+    if (Number.isFinite(noticeId) && noticeId > 0) return { probation: 'send', noticeId }
+  }
   return null
 }
 
@@ -159,15 +170,19 @@ export async function POST(req: Request) {
     request = parseButton(update.callback_query.data)
     const tapNote =
       request && request !== 'help'
-        ? 'menu' in request
-          ? request.menu === 'groups'
-            ? 'Pick a group…'
-            : request.menu === 'update'
-              ? 'Pick an update…'
-              : 'Update, list, or reminders…'
-          : request.view === 'messages'
-            ? 'Building the messages…'
-            : 'Building…'
+        ? 'probation' in request
+          ? request.probation === 'list'
+            ? 'Loading streaks…'
+            : 'Building streak message…'
+          : 'menu' in request
+            ? request.menu === 'groups'
+              ? 'Pick a group…'
+              : request.menu === 'update'
+                ? 'Pick an update…'
+                : 'Update, list, or reminders…'
+            : request.view === 'messages'
+              ? 'Building the messages…'
+              : 'Building…'
         : undefined
     await answerCallbackQuery(update.callback_query.id, tapNote)
   } else if (update.message?.text) {
@@ -176,6 +191,78 @@ export async function POST(req: Request) {
 
   if (request === 'help') {
     await sendTelegramMessage(HELP, { chatId, replyMarkup: updateMenuButtons() })
+  } else if (request && 'probation' in request) {
+    const probationReq = request
+    after(async () => {
+      try {
+        const { ensureCreatorTrackingColumns } = await import('@/lib/schema')
+        const { getOperationalToday, getServerToday } = await import('@/lib/queries')
+        const {
+          syncProbationMisses,
+          listPendingProbationNotices,
+          probationStreakButtons,
+          probationStreakListText,
+          getProbationNoticeById,
+          buildProbationStreakMessage,
+          markProbationNoticeMessaged,
+        } = await import('@/lib/probation')
+        const { reportButtons } = await import('@/lib/telegram-report')
+        await ensureCreatorTrackingColumns()
+        const opToday = await getOperationalToday()
+        await syncProbationMisses({ today: opToday })
+
+        if (probationReq.probation === 'list') {
+          const notices = await listPendingProbationNotices()
+          await sendTelegramMessage(probationStreakListText(notices, opToday), {
+            chatId,
+            replyMarkup:
+              notices.length > 0 ? probationStreakButtons(notices) : reportButtons('live'),
+          })
+          return
+        }
+
+        const notice = await getProbationNoticeById(probationReq.noticeId)
+        if (!notice || notice.messagedAt) {
+          const notices = await listPendingProbationNotices()
+          await sendTelegramMessage(
+            notice?.messagedAt
+              ? `Already sent for ${notice.name} (streak ${notice.level}). They stay off this list until the next streak.`
+              : 'That streak notice was not found.',
+            {
+              chatId,
+              replyMarkup:
+                notices.length > 0 ? probationStreakButtons(notices) : reportButtons('live'),
+            },
+          )
+          return
+        }
+
+        const body = buildProbationStreakMessage(notice)
+        await sendTelegramMessage(
+          `<b>${escapeHtml(notice.name)}</b> · streak ${notice.level}\n\n` +
+            escapeHtml(body) +
+            (notice.level === 3 ? '\n\n<i>Sending this marks them paused (kicked).</i>' : ''),
+          { chatId, parseMode: 'HTML' },
+        )
+        await markProbationNoticeMessaged(notice.id, await getServerToday())
+        const remaining = await listPendingProbationNotices()
+        await sendTelegramMessage(
+          notice.level === 3
+            ? `✅ Kick message ready · ${notice.name} paused. ${remaining.length} left on the streak list.`
+            : `✅ Marked streak ${notice.level} as sent for ${notice.name}. They won’t reappear until the next streak. ${remaining.length} left.`,
+          {
+            chatId,
+            replyMarkup:
+              remaining.length > 0 ? probationStreakButtons(remaining) : reportButtons('live'),
+          },
+        )
+      } catch (e) {
+        await sendTelegramMessage(
+          `Could not build creator streaks: ${e instanceof Error ? e.message.slice(0, 300) : 'unknown error'}`,
+          { chatId },
+        )
+      }
+    })
   } else if (request && 'menu' in request) {
     if (request.menu === 'update') {
       await sendTelegramMessage(updateMenuPrompt(), { chatId, replyMarkup: updateMenuButtons() })
@@ -217,4 +304,8 @@ export async function POST(req: Request) {
     })
   }
   return NextResponse.json({ ok: true })
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
