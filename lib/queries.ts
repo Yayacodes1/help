@@ -197,10 +197,12 @@ export async function getProjectById(id: number): Promise<Project | null> {
 
 export async function getSubmissionsForCreator(
   creatorId: number,
-  opts: { limit?: number; offset?: number } = {},
+  opts: { limit?: number; offset?: number; from?: string | null; to?: string | null } = {},
 ): Promise<Array<Submission & { project_name: string | null }>> {
   const limit = Math.min(Math.max(Math.floor(opts.limit ?? VIDEO_PAGE_SIZE), 1), 200)
   const offset = Math.max(Math.floor(opts.offset ?? 0), 0)
+  const from = opts.from && /^\d{4}-\d{2}-\d{2}$/.test(opts.from) ? opts.from : null
+  const to = opts.to && /^\d{4}-\d{2}-\d{2}$/.test(opts.to) ? opts.to : null
   return (await sql`
     SELECT s.id, s.creator_id, s.project_id, s.platform, s.url, s.video_date::text AS video_date,
            s.views, s.views_error, s.created_at, s.submitted_at, s.platform_posted_at, s.batch_id, s.batch_index,
@@ -208,6 +210,8 @@ export async function getSubmissionsForCreator(
     FROM submissions s
     LEFT JOIN projects p ON p.id = s.project_id
     WHERE s.creator_id = ${creatorId}
+      AND (${from}::date IS NULL OR s.video_date >= ${from}::date)
+      AND (${to}::date IS NULL OR s.video_date <= ${to}::date)
     ORDER BY s.video_date DESC, s.created_at DESC, s.id DESC
     LIMIT ${limit} OFFSET ${offset}
   `) as Array<Submission & { project_name: string | null }>

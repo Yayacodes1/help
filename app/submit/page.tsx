@@ -15,6 +15,7 @@ import {
   getCreatorByName,
   getServerNowIso,
   getServerTimeHm,
+  getSubmissionsForCreator,
   getSubmissionsForCreatorOnDate,
   getCreatorCountsByPlatformOnDate,
   getCreatorStats,
@@ -42,6 +43,7 @@ import { outreachGreeting } from '@/lib/outreach-status'
 import { ReposterDashboard } from '@/app/submit/reposter-dashboard'
 import { creatorIsPaused } from '@/lib/pause-person'
 import { VideoIdeasPanel } from '@/components/video-ideas-panel'
+import { MyVideosPanel } from '@/components/my-videos-panel'
 import { getTopVideos } from '@/lib/analytics'
 import { addDays } from '@/lib/campaign'
 import { SubmitModeToggle } from '@/components/submit-mode-toggle'
@@ -74,6 +76,7 @@ export default async function SubmitPage({
     ideasPeriod?: string
     ideasLimit?: string
     ideasSort?: string
+    ideasProject?: string
   }>
 }) {
   const {
@@ -94,6 +97,7 @@ export default async function SubmitPage({
     ideasPeriod,
     ideasLimit,
     ideasSort,
+    ideasProject: ideasProjectParam,
   } = await searchParams
   const [locale, leaderSession] = await Promise.all([getLocale(), getLeaderSession()])
   const t = createT(locale)
@@ -176,7 +180,8 @@ export default async function SubmitPage({
       : null
   const date = onProbation ? today : isValidDate(dateParam) ? dateParam : today
   const isToday = date === today
-  const submitMode = modeParam === 'ideas' ? 'ideas' : 'post'
+  const submitMode =
+    modeParam === 'ideas' ? 'ideas' : modeParam === 'mine' ? 'mine' : 'post'
 
   const projects = await getAllProjects()
   const miqatId = findMiyqatProject(projects)?.id ?? null
@@ -198,6 +203,28 @@ export default async function SubmitPage({
         }
       : null,
   ].filter((b): b is BrandProject => b != null && b.handles.length > 0)
+
+  // Projects this creator can pull ideas from (home + brands they have handles for).
+  const ideaProjectMap = new Map<number, string>()
+  if (homeProject) ideaProjectMap.set(homeProject.id, homeProject.name)
+  for (const b of brandProjects) {
+    const p = projects.find((x) => x.id === b.projectId)
+    if (p) ideaProjectMap.set(p.id, p.name)
+  }
+  const ideaProjectOptions = [...ideaProjectMap.entries()].map(([id, name]) => ({ id, name }))
+  const ideasMultiProject = ideaProjectOptions.length > 1
+  const ideasLockedProjectId = ideasMultiProject
+    ? null
+    : ideaProjectOptions[0]?.id ?? creator.project_id ?? null
+  const ideasProjectPicked =
+    ideasProjectParam != null && Number.isFinite(Number(ideasProjectParam))
+      ? Number(ideasProjectParam)
+      : null
+  const ideasProjectId = ideasMultiProject
+    ? ideasProjectPicked != null && ideaProjectMap.has(ideasProjectPicked)
+      ? ideasProjectPicked
+      : ideaProjectOptions[0]?.id ?? null
+    : ideasLockedProjectId
 
   const [
     counts,
@@ -232,11 +259,19 @@ export default async function SubmitPage({
       ? await getTopVideos({
           from: addDays(today, -(ideasDays - 1)),
           to: today,
-          projectId: creator.project_id,
+          projectId: ideasProjectId,
           role: 'creator',
           limit: ideasLimitN,
           sort: ideasSortMode,
           asOf: today,
+        }).catch(() => [])
+      : []
+  const myRecentVideos =
+    submitMode === 'mine' && creator.role === 'creator'
+      ? await getSubmissionsForCreator(creator.id, {
+          from: addDays(today, -29),
+          to: today,
+          limit: 100,
         }).catch(() => [])
       : []
 
@@ -502,7 +537,11 @@ export default async function SubmitPage({
         {creator.role === 'creator' ? (
           <SubmitModeToggle
             mode={submitMode}
-            labels={{ post: t('submitModePost'), ideas: t('submitModeIdeas') }}
+            labels={{
+              post: t('submitModePost'),
+              ideas: t('submitModeIdeas'),
+              mine: t('submitModeMine'),
+            }}
           />
         ) : null}
 
@@ -510,6 +549,8 @@ export default async function SubmitPage({
           {submitMode === 'ideas' && creator.role === 'creator' ? (
             <VideoIdeasPanel
               videos={ideaVideos}
+              projects={ideaProjectOptions}
+              lockedProjectId={ideasLockedProjectId}
               labels={{
                 title: t('ideasTitle'),
                 hint: t('ideasHint'),
@@ -518,9 +559,31 @@ export default async function SubmitPage({
                 period60: t('ideasPeriod60'),
                 sortViews: t('ideasSortViews'),
                 sortTrending: t('ideasSortTrending'),
+                sortViewsHint: t('ideasSortViewsHint'),
+                sortTrendingHint: t('ideasSortTrendingHint'),
                 empty: t('ideasEmpty'),
                 open: t('ideasOpen'),
                 username: t('ideasUsername'),
+                postedOn: t('ideasPostedOn'),
+                project: t('ideasProject'),
+                allProjects: t('allProjects'),
+                pickProject: t('ideasPickProject'),
+                topN: t('ideasTopN'),
+                viewsWord: t('ideasViewsWord'),
+                trendWord: t('ideasTrendWord'),
+              }}
+            />
+          ) : submitMode === 'mine' && creator.role === 'creator' ? (
+            <MyVideosPanel
+              videos={myRecentVideos}
+              labels={{
+                title: t('mineTitle'),
+                hint: t('mineHint'),
+                empty: t('mineEmpty'),
+                open: t('ideasOpen'),
+                postedOn: t('ideasPostedOn'),
+                project: t('ideasProject'),
+                viewsWord: t('ideasViewsWord'),
               }}
             />
           ) : (

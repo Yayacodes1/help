@@ -20,7 +20,7 @@ export function LanguageToggle({
     <div
       className="inline-flex items-center rounded-lg border border-border bg-card p-0.5 text-xs font-semibold"
       role="group"
-      aria-label="Language"
+      aria-label={locale === 'ar' ? 'اللغة' : 'Language'}
     >
       <button
         type="button"
