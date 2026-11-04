@@ -51,7 +51,7 @@ const HELP =
   `${BUTTON_GUIDE}\n` +
   '📊 Type /update to pick Previous day, Today, or So far today.\n' +
   '📅 /yesterday — previous day · /today — the day we\'re in · /now — so far today.\n' +
-  '⚠️ /streaks — creator probation verbal / kick queue.\n' +
+  '⚠️ /streaks — creator probation first / second / final streak queue.\n' +
   '👑 Type /groups to pick Alpha, Beta, Charlie, Delta, or Ungrouped.\n\n' +
   'Automatic summary: 5:00 PM Riyadh (so far today) and 12:00 AM Riyadh (previous day final).'
 
@@ -241,14 +241,14 @@ export async function POST(req: Request) {
         await sendTelegramMessage(
           `<b>${escapeHtml(notice.name)}</b> · streak ${notice.level}\n\n` +
             escapeHtml(body) +
-            (notice.level === 3 ? '\n\n<i>Sending this marks them paused (kicked).</i>' : ''),
+            (notice.level === 3 ? '\n\n<i>Sending this marks them fired (final streak).</i>' : ''),
           { chatId, parseMode: 'HTML' },
         )
         await markProbationNoticeMessaged(notice.id, await getServerToday())
         const remaining = await listPendingProbationNotices()
         await sendTelegramMessage(
           notice.level === 3
-            ? `✅ Kick message ready · ${notice.name} paused. ${remaining.length} left on the streak list.`
+            ? `✅ Final streak ready · ${notice.name} fired. ${remaining.length} left on the streak list.`
             : `✅ Marked streak ${notice.level} as sent for ${notice.name}. They won’t reappear until the next streak. ${remaining.length} left.`,
           {
             chatId,

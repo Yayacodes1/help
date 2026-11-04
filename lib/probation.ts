@@ -313,7 +313,7 @@ function phaseFor(opts: {
   return 'clean'
 }
 
-/** Admin board: everyone on probation + miss progress toward verbal / kick. */
+/** Admin board: everyone on probation + miss progress toward first / second / final streak. */
 export async function getProbationStreakBoard(opts: {
   today: string
   projectId?: number | null
@@ -499,7 +499,9 @@ export async function getProbationStreakBoard(opts: {
 export function probationStreakButtons(notices: ProbationNotice[]) {
   const rows = notices.slice(0, 40).map((n) => [
     {
-      text: `${n.level === 3 ? '🚪' : '⚠️'} ${n.name} · streak ${n.level}`,
+      text: `${n.level === 3 ? '🚪' : '⚠️'} ${n.name} · ${
+        n.level === 1 ? 'first' : n.level === 2 ? 'second' : 'final'
+      }`,
       callback_data: `pstreak:${n.id}`,
     },
   ])
@@ -512,17 +514,17 @@ export function probationStreakListText(notices: ProbationNotice[], today: strin
     return (
       `⚠️ CREATOR STREAKS · ${today}\n` +
       `No creators waiting for a streak message.\n` +
-      `They only appear after 2 / 4 / 5 missed posting days on probation.`
+      `They only appear after 2 / 4 / 5 missed posting days → first / second / final streak.`
     )
   }
   const lines = [
     `⚠️ CREATOR STREAKS · ${today}`,
-    `Tap a name to get the Arabic message, then send it. They leave this list until their next streak.`,
+    `Tap a name for first / second / final streak Arabic. They leave this list until the next streak.`,
     '',
   ]
   for (const n of notices) {
     const label =
-      n.level === 1 ? '1st verbal' : n.level === 2 ? '2nd verbal' : '3rd = kick'
+      n.level === 1 ? 'first streak' : n.level === 2 ? 'second streak' : 'final streak'
     lines.push(`• ${n.name} — ${label} (${n.missCount} miss days)`)
   }
   return lines.join('\n')

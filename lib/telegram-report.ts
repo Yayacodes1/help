@@ -219,7 +219,7 @@ export const BUTTON_GUIDE =
   '📋 Full list — names: who posted, partial, didn\'t post (same day). Or type /list\n' +
   '✉️ Creators — a copy-ready Arabic message for each creator who is behind. Or type /messages_creators\n' +
   '✉️ Reposters — the same for reposters. Or type /messages_reposters\n' +
-  '⚠️ Creator streaks — probation verbal / kick list. Tap a name to copy the message. Or type /streaks\n' +
+  '⚠️ Creator streaks — first / second / final streak list. Tap a name to copy the message. Or type /streaks\n' +
   '👑 Group Leader — pick Alpha / Beta / Charlie / Delta, then Update, List, Creators reminder, or Reposter reminder. Or type /groups\n' +
   '📅 Type /yesterday for the previous day. /today for the day we\'re in. /now for so far today.'
 

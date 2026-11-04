@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
+  clearAllProbationCreators,
   markProbationNoticeMessagedAction,
   setCreatorFitnessTierAction,
 } from '@/app/actions/admin'
@@ -33,6 +34,8 @@ type Labels = {
   started: string
   empty: string
   clear: string
+  clearAll: string
+  clearAllConfirm: string
   copyArabic: string
   copied: string
   markSent: string
@@ -47,6 +50,9 @@ type Labels = {
   phaseNearKick: string
   phaseDueKick: string
   phasePaused: string
+  firstStreak: string
+  secondStreak: string
+  finalStreak: string
 }
 
 const PHASE_LABEL: Record<ProbationStreakPhase, keyof Labels> = {
@@ -165,28 +171,61 @@ export function ProbationStreaksBoard({
         <Stat label={labels.paused} value={board.counts.paused} tone="rose" />
       </div>
 
-      <div className="inline-flex flex-wrap gap-1 rounded-xl border border-border bg-muted/30 p-1">
-        {(
-          [
-            ['all', labels.filterAll],
-            ['approaching', labels.filterApproaching],
-            ['due', labels.filterDue],
-          ] as const
-        ).map(([key, label]) => (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex flex-wrap gap-1 rounded-xl border border-border bg-muted/30 p-1">
+          {(
+            [
+              ['all', labels.filterAll],
+              ['approaching', labels.filterApproaching],
+              ['due', labels.filterDue],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilter(key)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                filter === key
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {board.counts.onProbation > 0 ? (
           <button
-            key={key}
             type="button"
-            onClick={() => setFilter(key)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-              filter === key
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            }`}
+            disabled={pending}
+            onClick={() => {
+              if (!window.confirm(labels.clearAllConfirm)) return
+              startTransition(() => {
+                void clearAllProbationCreators(projectId ?? null).then(() =>
+                  router.refresh(),
+                )
+              })
+            }}
+            className="h-9 rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
           >
-            {label}
+            {labels.clearAll}
           </button>
-        ))}
+        ) : null}
       </div>
+
+      <p className="text-[11px] text-muted-foreground">
+        <span className="font-semibold text-sky-700 dark:text-sky-300">
+          2 · {labels.firstStreak}
+        </span>
+        {' · '}
+        <span className="font-semibold text-amber-700 dark:text-amber-300">
+          4 · {labels.secondStreak}
+        </span>
+        {' · '}
+        <span className="font-semibold text-[#9a0d18]">
+          5 · {labels.finalStreak}
+        </span>
+      </p>
 
       {rows.length === 0 ? (
         <p className="px-1 py-6 text-sm text-muted-foreground">{labels.empty}</p>
@@ -239,7 +278,13 @@ export function ProbationStreaksBoard({
                   </td>
                   <td className="px-3 py-2.5 text-xs text-muted-foreground">
                     {row.missesToNext != null && row.nextThreshold != null
-                      ? `${row.missesToNext} → ${row.nextThreshold}`
+                      ? `${row.missesToNext} → ${
+                          row.nextThreshold === 2
+                            ? labels.firstStreak
+                            : row.nextThreshold === 4
+                              ? labels.secondStreak
+                              : labels.finalStreak
+                        }`
                       : '—'}
                   </td>
                   <td className="px-3 py-2.5 text-xs tabular-nums text-muted-foreground">

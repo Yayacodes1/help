@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useRef, useState, useTransition } from 'react'
-import { Pause, Pencil, Play, Plus, Search, Trash2, X } from 'lucide-react'
+import { Pencil, Play, Plus, Search, Trash2, UserX, X } from 'lucide-react'
 import type { Project } from '@/lib/db'
 import type { CreatorTrackingRow } from '@/lib/queries'
 import type { ParticipantRole, RoleFilter } from '@/lib/participant-role'
@@ -498,16 +498,16 @@ export function CreatorsManager({
                         onClick={() => {
                           if (
                             confirm(
-                              `Pause "${c.name}"? They leave money (Yahya expenses, commission, pay due, payouts, calendar), Telegram, daily lists, and strikes. Past videos and old payments stay in analytics / archive.`,
+                              `Fire "${c.name}"? They leave money (Yahya expenses, commission, pay due, payouts, calendar), Telegram, daily lists, fitness, and strikes. Past videos and old payments stay in analytics / archive.`,
                             )
                           )
                             startTransition(() => pauseCreator(c.id))
                         }}
                         className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
-                        title="Pause — stopped working with us"
+                        title="Fire — stopped working with us"
                       >
-                        <Pause className="size-3.5" />
-                        Pause
+                        <UserX className="size-3.5" />
+                        Fire
                       </button>
                       <button
                         type="button"
@@ -540,9 +540,9 @@ export function CreatorsManager({
       {scopedPaused.length > 0 ? (
         <details className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 px-3 py-2">
           <summary className="cursor-pointer text-sm font-medium">
-            Paused ({scopedPaused.length})
+            Fired ({scopedPaused.length})
             <span className="ml-2 text-xs font-normal text-muted-foreground">
-              out of money and daily work until you resume. History stays in analytics.
+              out of money, fitness, and daily work until you bring them back. History stays in analytics.
             </span>
           </summary>
           <ul className="mt-2 flex flex-col divide-y divide-border">
@@ -560,7 +560,7 @@ export function CreatorsManager({
                     {c.name}
                   </Link>
                   <div className="text-xs text-muted-foreground">
-                    {c.role === 'reposter' ? 'Reposter' : 'Creator'} · paused since {c.paused_at} ·{' '}
+                    {c.role === 'reposter' ? 'Reposter' : 'Creator'} · fired since {c.paused_at} ·{' '}
                     {c.total_videos} total videos
                   </div>
                 </div>
@@ -570,10 +570,10 @@ export function CreatorsManager({
                     disabled={pending}
                     onClick={() => startTransition(() => resumeCreator(c.id))}
                     className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-60"
-                    title="Resume — working with us again"
+                    title="Bring back — working with us again"
                   >
                     <Play className="size-3.5" />
-                    Resume
+                    Bring back
                   </button>
                   <button
                     type="button"

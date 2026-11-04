@@ -1904,6 +1904,7 @@ export default async function AdminPage({
                 projectId={projectId}
                 labels={{
                   hint: t('fitnessHint'),
+                  streakLadder: t('fitnessStreakLadder'),
                   allProjects: t('allProjects'),
                   chooseProject: t('chooseProject'),
                   protect: t('fitnessProtect'),
@@ -1916,7 +1917,6 @@ export default async function AdminPage({
                   cut: t('fitnessCut'),
                   protected: t('fitnessProtected'),
                   onProbation: t('fitnessOnProbation'),
-                  paused: t('fitnessPaused'),
                   strength: t('fitnessStrength'),
                   strengthHint: t('fitnessStrengthHint'),
                   views: t('views'),
@@ -1924,6 +1924,7 @@ export default async function AdminPage({
                   costPer1k: t('fitnessCostPer1k'),
                   daysWithUs: t('fitnessDaysWithUs'),
                   posts: t('fitnessPosts'),
+                  allContracts: t('fitnessAllContracts'),
                   verdict: t('fitnessVerdict'),
                   empty: t('fitnessEmpty'),
                   reset: t('fitnessReset'),
@@ -1963,7 +1964,7 @@ export default async function AdminPage({
                   onProbation: t('streaksOnProbation'),
                   approaching: t('streaksApproaching'),
                   due: t('streaksDue'),
-                  paused: t('fitnessPaused'),
+                  paused: t('fitnessFired'),
                   person: t('streaksPerson'),
                   project: t('streaksProject'),
                   misses: t('streaksMisses'),
@@ -1973,6 +1974,8 @@ export default async function AdminPage({
                   started: t('streaksStarted'),
                   empty: t('streaksEmpty'),
                   clear: t('fitnessClear'),
+                  clearAll: t('streaksClearAll'),
+                  clearAllConfirm: t('streaksClearAllConfirm'),
                   copyArabic: t('streaksCopyArabic'),
                   copied: t('streaksCopied'),
                   markSent: t('streaksMarkSent'),
@@ -1986,7 +1989,10 @@ export default async function AdminPage({
                   phaseDueVerbal2: t('streaksPhaseDueVerbal2'),
                   phaseNearKick: t('streaksPhaseNearKick'),
                   phaseDueKick: t('streaksPhaseDueKick'),
-                  phasePaused: t('fitnessPaused'),
+                  phasePaused: t('fitnessFired'),
+                  firstStreak: t('streaksFirst'),
+                  secondStreak: t('streaksSecond'),
+                  finalStreak: t('streaksFinal'),
                 }}
               />
             ) : (

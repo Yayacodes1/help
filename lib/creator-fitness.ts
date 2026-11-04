@@ -84,6 +84,8 @@ export async function getCreatorFitnessBoard(opts: {
       COALESCE(v.views, 0)::bigint AS views,
       COALESCE(v.videos, 0)::int AS videos,
       COALESCE(v.post_days, 0)::int AS post_days,
+      COALESCE(life.contract_days, 0)::int AS all_contract_days,
+      COALESCE(life.post_days, 0)::int AS all_post_days,
       COALESCE(pay.paid, 0)::float AS paid
     FROM creators c
     LEFT JOIN projects p ON p.id = c.project_id
@@ -104,6 +106,32 @@ export async function getCreatorFitnessBoard(opts: {
         AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
     ) v ON true
     LEFT JOIN LATERAL (
+      SELECT
+        COALESCE(SUM(
+          GREATEST(
+            0,
+            (
+              LEAST(COALESCE(ct.end_date, ${today}::date), ${today}::date)
+              - ct.start_date
+            ) + 1
+          )
+        ), 0)::int AS contract_days,
+        (
+          SELECT COUNT(DISTINCT s.video_date)::int
+          FROM submissions s
+          WHERE s.creator_id = c.id
+            AND EXISTS (
+              SELECT 1
+              FROM contracts ct2
+              WHERE ct2.creator_id = c.id
+                AND s.video_date >= ct2.start_date
+                AND s.video_date <= LEAST(COALESCE(ct2.end_date, ${today}::date), ${today}::date)
+            )
+        ) AS post_days
+      FROM contracts ct
+      WHERE ct.creator_id = c.id
+    ) life ON true
+    LEFT JOIN LATERAL (
       SELECT COALESCE(SUM(pay.amount), 0)::float AS paid
       FROM payments pay
       WHERE pay.creator_id = c.id
@@ -111,6 +139,7 @@ export async function getCreatorFitnessBoard(opts: {
         AND pay.paid_on <= ${to}::date
     ) pay ON true
     WHERE c.role = 'creator'
+      AND c.paused_at IS NULL
       AND (${projectId}::int IS NULL OR c.project_id = ${projectId}
            OR EXISTS (
              SELECT 1 FROM submissions sx
@@ -133,6 +162,8 @@ export async function getCreatorFitnessBoard(opts: {
     views: number | string
     videos: number
     post_days: number
+    all_contract_days: number
+    all_post_days: number
     paid: number
   }>
 
@@ -211,6 +242,10 @@ export async function getCreatorFitnessBoard(opts: {
       Math.min(100, Math.max(0, (viewsPct * 0.4 + consPct * 0.25 + roiPct * 0.35) * 100)),
     )
     const consistency = Math.min(1, p.post_days / daySpan)
+    const allContractDays = Math.max(0, p.all_contract_days || 0)
+    const allPostDays = Math.max(0, p.all_post_days || 0)
+    const allConsistency =
+      allContractDays > 0 ? Math.min(1, allPostDays / allContractDays) : 0
     const tier: FitnessTier =
       p.fitness_tier === 'protected' || p.fitness_tier === 'probation' ? p.fitness_tier : null
     return {
@@ -223,6 +258,9 @@ export async function getCreatorFitnessBoard(opts: {
       postDays: p.post_days,
       daySpan,
       consistency,
+      allPostDays,
+      allContractDays,
+      allConsistency,
       strength,
       paid: p.paid,
       costPer1k: p.costPer1k,
@@ -238,7 +276,7 @@ export async function getCreatorFitnessBoard(opts: {
       }),
       tier,
       probationStartedOn: p.probation_started_on,
-      paused: p.paused_at != null,
+      fired: false,
       viewsShare: totalViews > 0 ? p.views / totalViews : 0,
     }
   })

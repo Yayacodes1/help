@@ -38,6 +38,7 @@ export function FitnessBoardPanel({
   projectId?: number | null
   labels: {
     hint: string
+    streakLadder: string
     allProjects: string
     chooseProject: string
     protect: string
@@ -50,7 +51,6 @@ export function FitnessBoardPanel({
     cut: string
     protected: string
     onProbation: string
-    paused: string
     strength: string
     strengthHint: string
     views: string
@@ -58,6 +58,7 @@ export function FitnessBoardPanel({
     costPer1k: string
     daysWithUs: string
     posts: string
+    allContracts: string
     verdict: string
     empty: string
     reset: string
@@ -110,6 +111,9 @@ export function FitnessBoardPanel({
       <div className="rounded-xl border border-border bg-card p-4">
         <p className="text-sm font-medium text-foreground">{labels.hint}</p>
         <p className="mt-1 text-xs text-muted-foreground">{labels.strengthHint}</p>
+        <p className="mt-2 text-xs font-medium text-muted-foreground">
+          {labels.streakLadder}
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -234,6 +238,7 @@ export function FitnessBoardPanel({
                 <th className="px-3 py-2 font-medium">{labels.paid}</th>
                 <th className="px-3 py-2 font-medium">{labels.costPer1k}</th>
                 <th className="px-3 py-2 font-medium">{labels.posts}</th>
+                <th className="px-3 py-2 font-medium">{labels.allContracts}</th>
                 <th className="px-3 py-2 font-medium" title={labels.strengthHint}>
                   {labels.strength}
                 </th>
@@ -261,11 +266,6 @@ export function FitnessBoardPanel({
                     >
                       {r.name}
                     </Link>
-                    {r.paused ? (
-                      <span className="ml-2 text-[10px] font-semibold uppercase text-muted-foreground">
-                        {labels.paused}
-                      </span>
-                    ) : null}
                     {r.projectName ? (
                       <div className="text-[11px] text-muted-foreground">{r.projectName}</div>
                     ) : null}
@@ -298,6 +298,16 @@ export function FitnessBoardPanel({
                     <div className="text-[10px] text-muted-foreground">
                       {r.postDays}/{r.daySpan}d
                     </div>
+                  </td>
+                  <td className="px-3 py-2 tabular-nums">
+                    {r.allContractDays > 0
+                      ? `${Math.round(r.allConsistency * 100)}%`
+                      : '—'}
+                    {r.allContractDays > 0 ? (
+                      <div className="text-[10px] text-muted-foreground">
+                        {r.allPostDays}/{r.allContractDays}d
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2">
                     <div className="font-semibold tabular-nums">{r.strength}</div>

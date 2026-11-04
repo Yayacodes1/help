@@ -547,7 +547,7 @@ export async function resumeCreator(id: number) {
   if (pausedAt && pausedAt < today) {
     await sql`
       INSERT INTO schedule_breaks (creator_id, start_date, end_date, reason, days_added)
-      VALUES (${id}, ${pausedAt}::date, ${addDays(today, -1)}::date, 'Paused', 0)
+      VALUES (${id}, ${pausedAt}::date, ${addDays(today, -1)}::date, 'Fired', 0)
     `
   }
   await sql`UPDATE creators SET paused_at = NULL WHERE id = ${id}`
@@ -2126,7 +2126,7 @@ export async function bulkProtectTopCreators(
   const byViews = [...board.rows].sort((a, b) => b.views - a.views)
   const n = Math.max(1, Math.min(50, Math.floor(topN) || 15))
   for (const row of byViews.slice(0, n)) {
-    if (row.paused) continue
+    if (row.fired) continue
     await setCreatorFitnessTier(row.creatorId, 'protected', today)
   }
   revalidatePath('/admin')
@@ -2146,7 +2146,7 @@ export async function bulkProbationBottomCreators(
   const { syncProbationMisses } = await import('@/lib/probation')
   const board = await getCreatorFitnessBoard({ from, to, projectId })
   for (const row of board.rows) {
-    if (row.paused || row.tier === 'protected') continue
+    if (row.fired || row.tier === 'protected') continue
     if (row.action !== 'cut' && row.tier !== 'probation') continue
     if (row.tier === 'probation') continue
     await setCreatorFitnessTier(row.creatorId, 'probation', today)
@@ -2168,4 +2168,35 @@ export async function markProbationNoticeMessagedAction(noticeId: number) {
     revalidatePath('/submit')
   }
   return result
+}
+
+/** Remove everyone from probation (optionally one project). Does not un-pause. */
+export async function clearAllProbationCreators(projectId?: number | null) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const pid = projectId != null && Number.isFinite(projectId) ? projectId : null
+  const ids = (await sql`
+    SELECT id FROM creators
+    WHERE role = 'creator'
+      AND fitness_tier = 'probation'
+      AND (${pid}::int IS NULL OR project_id = ${pid})
+  `) as { id: number }[]
+  if (ids.length === 0) {
+    revalidatePath('/admin')
+    return { cleared: 0 }
+  }
+  const creatorIds = ids.map((r) => r.id)
+  await sql`
+    UPDATE creators
+    SET fitness_tier = NULL,
+        probation_started_on = NULL
+    WHERE id = ANY(${creatorIds}::int[])
+  `
+  await sql`
+    DELETE FROM probation_streak_notices
+    WHERE creator_id = ANY(${creatorIds}::int[])
+  `
+  revalidatePath('/admin')
+  revalidatePath('/submit')
+  return { cleared: creatorIds.length }
 }

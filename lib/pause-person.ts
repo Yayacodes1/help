@@ -1,7 +1,7 @@
 import 'server-only'
 import { sql } from '@/lib/db'
 
-/** Stop a creator or reposter. They stay on the pause list until resumed. */
+/** Fire a creator or reposter. They stay off active work until brought back. */
 export async function pausePerson(id: number, today: string): Promise<void> {
   if (!Number.isFinite(id) || id <= 0) return
   await sql`
@@ -11,9 +11,9 @@ export async function pausePerson(id: number, today: string): Promise<void> {
 }
 
 export const PAUSED_ACCOUNT_MESSAGE =
-  'هذا الحساب موقوف. يرجع فقط لما الإدارة تستأنفه. This account is paused until an admin resumes it.'
+  'هذا الحساب مفصول. يرجع فقط لما الإدارة ترجعه. This account is fired until an admin brings them back.'
 
-/** True while the person is paused. They cannot use the site or the bots. */
+/** True while the person is fired. They cannot use the site or the bots. */
 export async function creatorIsPaused(id: number): Promise<boolean> {
   if (!Number.isFinite(id) || id <= 0) return false
   const rows = (await sql`
@@ -22,7 +22,7 @@ export async function creatorIsPaused(id: number): Promise<boolean> {
   return rows[0]?.paused_at != null
 }
 
-/** A leader's own posting account is paused, so that login stays closed too. */
+/** A leader's own posting account is fired, so that login stays closed too. */
 export async function leaderOwnAccountPaused(leaderId: number): Promise<boolean> {
   if (!Number.isFinite(leaderId) || leaderId <= 0) return false
   const rows = (await sql`

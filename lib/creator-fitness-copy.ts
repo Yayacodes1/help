@@ -24,7 +24,14 @@ export type FitnessRow = {
   videos: number
   postDays: number
   daySpan: number
+  /** Posting rate in the selected window (post days / window days). */
   consistency: number
+  /** Distinct post days that fell inside any contract. */
+  allPostDays: number
+  /** Sum of calendar days across all contracts (capped at today). */
+  allContractDays: number
+  /** Posting rate across all contracts (allPostDays / allContractDays). */
+  allConsistency: number
   /** Single strength 0–100 (views + posts + ROI). Replaces old score + قوة split. */
   strength: number
   /** SAR paid in the selected window. */
@@ -39,7 +46,8 @@ export type FitnessRow = {
   action: FitnessAction
   tier: FitnessTier
   probationStartedOn: string | null
-  paused: boolean
+  /** Always false on the board — fired people are excluded. */
+  fired: boolean
   viewsShare: number
 }
 
