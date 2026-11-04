@@ -1670,6 +1670,16 @@ export default async function AdminPage({
                   pushing: t('paymentPushing'),
                   customDays: t('paymentPushCustom'),
                   addDays: t('paymentPushAdd'),
+                  owedPresets: t('paymentCalendarOwedPresets'),
+                  next15: t('paymentCalendarNext15'),
+                  monthStartEnd: t('paymentCalendarMonthStartEnd'),
+                  todayToEnd: t('paymentCalendarTodayToEnd'),
+                  pickDays: t('paymentCalendarPickDays'),
+                  selected: t('paymentCalendarSelected'),
+                  clearSelection: t('paymentCalendarClearSelection'),
+                  paying: t('paymentCalendarPaying'),
+                  openDay: t('paymentCalendarOpenDay'),
+                  noSelection: t('paymentCalendarNoSelection'),
                   weekdays:
                     locale === 'ar'
                       ? ['اثن', 'ثل', 'ارب', 'خم', 'جم', 'سب', 'أحد']
