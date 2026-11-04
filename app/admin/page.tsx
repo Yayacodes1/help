@@ -101,7 +101,8 @@ import { OutreachAccess } from '@/components/outreach/outreach-access'
 import { getActivityForDay } from '@/lib/activity'
 import { getProjectViewsBoard } from '@/lib/project-views'
 import { ProjectViewsPanel } from '@/components/admin/project-views-panel'
-import { getCommissionBoard, getCommissionEstimate } from '@/lib/commission-data'
+import { getCommissionEstimate, getMajorityCommissionBoard } from '@/lib/commission-data'
+import { resolveCommissionWindow } from '@/lib/commission-month'
 import { CommissionBoardPanel } from '@/components/admin/commission-board'
 import {
   SPLIT_PROJECT_VALUE,
@@ -179,6 +180,8 @@ export default async function AdminPage({
     rankRole?: string
     cmFrom?: string
     cmTo?: string
+    cmMonth?: string
+    cmEarn?: string
     cmContract?: string
     vPage?: string
     vSize?: string
@@ -302,8 +305,18 @@ export default async function AdminPage({
       : roleFilter
   const rankRoleSql = roleFilterToSql(rankRole)
 
-  const cmFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.cmFrom ?? '') ? sp.cmFrom! : monthStart
-  const cmTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.cmTo ?? '') ? sp.cmTo! : monthEnd
+  const cmMonthParam =
+    sp.cmMonth && /^\d{4}-\d{2}$/.test(sp.cmMonth) ? sp.cmMonth : today.slice(0, 7)
+  const cmWindow = resolveCommissionWindow({
+    month: cmMonthParam,
+    from: sp.cmFrom,
+    to: sp.cmTo,
+    today,
+  })
+  const cmFrom = cmWindow.from
+  const cmTo = cmWindow.to
+  const cmMonth = cmWindow.month
+  const cmEarnOnly = sp.cmEarn === '1'
   const cmContractRaw = Number(sp.cmContract)
   const cmContractId =
     Number.isFinite(cmContractRaw) && cmContractRaw > 0 ? cmContractRaw : null
@@ -481,7 +494,15 @@ export default async function AdminPage({
         today,
         viewerId: session?.id ?? null,
       }),
-      getCommissionBoard({ from: cmFrom, to: cmTo, today, projectId: projectId ?? null, role: roleSql }),
+      getMajorityCommissionBoard({
+        today,
+        month: cmMonth,
+        from: cmFrom,
+        to: cmTo,
+        projectId: projectId ?? null,
+        role: roleSql === 'reposter' ? 'reposter' : 'creator',
+        earnersOnly: cmEarnOnly,
+      }),
       getCommissionEstimate({
         today,
         projectId: projectId ?? null,
@@ -1606,6 +1627,7 @@ export default async function AdminPage({
                 today={today}
                 linkRole={roleFilter}
                 projectId={projectId}
+                projects={projects}
                 estimate={commissionEstimate.estimate}
                 estimateOptions={commissionEstimate.options}
                 estimateScope={commissionEstimate.scope}
@@ -1636,6 +1658,14 @@ export default async function AdminPage({
                   payNow: t('commissionPayNow'),
                   payNowHint: t('commissionPayNowHint'),
                   units: t('commissionUnitsHit'),
+                  app: t('commissionApp'),
+                  allApps: t('allProjects'),
+                  month: t('commissionMonth'),
+                  days: t('commissionDays'),
+                  earnersOnly: t('commissionEarnersOnly'),
+                  majorityHint: t('commissionMajorityHint'),
+                  totalCommission: t('commissionTotal'),
+                  contractsInMonth: t('commissionContractsInMonth'),
                 }}
               />
             ),

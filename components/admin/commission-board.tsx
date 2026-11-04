@@ -1,6 +1,6 @@
 'use client'
 
-import { useTransition } from 'react'
+import { useMemo, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { updateCommissionSettings } from '@/app/actions/admin'
@@ -8,8 +8,10 @@ import { DateRangePresets } from '@/components/admin/date-range-presets'
 import { CommissionTermsFields } from '@/components/admin/commission-terms-fields'
 import { ScoreDot, StandingBadge } from '@/components/standing-badge'
 import { formatMoney, formatNumber } from '@/lib/format'
+import { sarToUsd } from '@/lib/fx'
 import { adminPersonHref } from '@/lib/admin-href'
-import type { CommissionBoard, CommissionEstimate, CommissionEstimateOption } from '@/lib/commission'
+import type { CommissionEstimate, CommissionEstimateOption } from '@/lib/commission'
+import type { MajorityCommissionBoard } from '@/lib/commission-data'
 import { CommissionEstimateCards } from '@/components/admin/commission-estimate'
 
 function vsLabel(vs: number | null): string {
@@ -19,20 +21,35 @@ function vsLabel(vs: number | null): string {
   return vs > 0 ? `${pct}% cheaper` : `${pct}% costlier`
 }
 
+function moneyPair(sar: number): string {
+  return `${formatMoney(sar, 'SAR')} · ${formatMoney(sarToUsd(sar), 'USD')}`
+}
+
+function monthLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number)
+  const name = new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en', {
+    month: 'short',
+    timeZone: 'UTC',
+  })
+  return `${name} ${y}`
+}
+
 export function CommissionBoardPanel({
   board,
   today,
   linkRole,
   projectId,
+  projects,
   estimate,
   estimateOptions,
   estimateScope,
   labels,
 }: {
-  board: CommissionBoard
+  board: MajorityCommissionBoard
   today: string
   linkRole?: string | null
   projectId?: number | string | null
+  projects: Array<{ id: number; name: string }>
   estimate: CommissionEstimate
   estimateOptions: CommissionEstimateOption[]
   estimateScope: 'all' | number
@@ -63,21 +80,53 @@ export function CommissionBoardPanel({
     payNow: string
     payNowHint: string
     units: string
+    app: string
+    allApps: string
+    month: string
+    days: string
+    earnersOnly: string
+    majorityHint: string
+    totalCommission: string
+    contractsInMonth: string
   }
 }) {
   const router = useRouter()
   const params = useSearchParams()
   const [pending, startTransition] = useTransition()
+  const earnersOnly = params.get('cmEarn') === '1'
 
-  function setRange(from: string, to: string) {
+  const rows = useMemo(() => {
+    if (!earnersOnly) return board.rows
+    return board.rows.filter((r) => r.commissionEarned > 0)
+  }, [board.rows, earnersOnly])
+
+  const earnedTotal = useMemo(
+    () => rows.reduce((s, r) => s + r.commissionEarned, 0),
+    [rows],
+  )
+
+  function push(patch: Record<string, string | null>) {
     const next = new URLSearchParams(params.toString())
     next.set('panel', 'commission')
-    next.set('cmFrom', from)
-    next.set('cmTo', to)
+    for (const [k, v] of Object.entries(patch)) {
+      if (v == null || v === '') next.delete(k)
+      else next.set(k, v)
+    }
     router.push(`/admin?${next.toString()}`)
   }
 
-  const top = board.leaderboard.slice(0, 3)
+  function setRange(from: string, to: string) {
+    push({
+      cmFrom: from,
+      cmTo: to,
+      cmMonth: from.slice(0, 7),
+    })
+  }
+
+  const top = (earnersOnly ? board.leaderboard.filter((r) => r.commissionEarned > 0) : board.leaderboard).slice(
+    0,
+    3,
+  )
 
   return (
     <div className="flex flex-col gap-5">
@@ -129,9 +178,102 @@ export function CommissionBoardPanel({
         }}
       />
 
-      <DateRangePresets today={today} from={board.from} to={board.to} onSelect={setRange} />
+      <div className="rounded-lg border border-border bg-card p-4">
+        <p className="text-xs text-muted-foreground">{labels.majorityHint}</p>
+
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {labels.app}
+            <select
+              value={projectId != null && String(projectId) !== '' ? String(projectId) : ''}
+              onChange={(e) =>
+                push({
+                  project: e.target.value || null,
+                })
+              }
+              className="h-9 min-w-[10rem] rounded-lg border border-input bg-background px-2 text-sm text-foreground"
+            >
+              <option value="">{labels.allApps}</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            From
+            <input
+              type="date"
+              value={board.from}
+              onChange={(e) =>
+                push({ cmFrom: e.target.value, cmMonth: e.target.value.slice(0, 7) })
+              }
+              className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            To
+            <input
+              type="date"
+              value={board.to}
+              onChange={(e) => push({ cmTo: e.target.value })}
+              className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+            />
+          </label>
+          <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-xs font-medium">
+            <input
+              type="checkbox"
+              checked={earnersOnly}
+              onChange={(e) => push({ cmEarn: e.target.checked ? '1' : null })}
+            />
+            {labels.earnersOnly}
+          </label>
+        </div>
+
+        <div className="mt-3">
+          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {labels.month}
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {board.months.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() =>
+                  push({
+                    cmMonth: m,
+                    cmFrom: `${m}-01`,
+                    cmTo: null,
+                  })
+                }
+                className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
+                  board.month === m
+                    ? 'bg-primary text-primary-foreground'
+                    : 'border border-border text-muted-foreground hover:bg-accent hover:text-foreground'
+                }`}
+              >
+                {monthLabel(m)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <DateRangePresets today={today} from={board.from} to={board.to} onSelect={setRange} />
+        </div>
+      </div>
 
       <div className="grid gap-2 sm:grid-cols-4">
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 sm:col-span-2">
+          <div className="text-lg font-semibold tabular-nums">{moneyPair(earnedTotal)}</div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            {labels.totalCommission}
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {board.contractCount} {labels.contractsInMonth} · ≥{board.majorityPct}%
+          </div>
+        </div>
         <div className="rounded-lg border border-border bg-card p-3">
           <div className="text-lg font-semibold tabular-nums">{formatNumber(board.totals.views)}</div>
           <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{labels.views}</div>
@@ -139,20 +281,6 @@ export function CommissionBoardPanel({
         <div className="rounded-lg border border-border bg-card p-3">
           <div className="text-lg font-semibold tabular-nums">{formatMoney(board.totals.paid)}</div>
           <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{labels.paid}</div>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-3">
-          <div className="text-lg font-semibold tabular-nums">
-            {formatMoney(board.totals.commissionEarned, 'SAR')}
-          </div>
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{labels.earned}</div>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-3">
-          <div className="text-lg font-semibold tabular-nums">
-            {board.totals.costPer1k != null ? formatMoney(board.totals.costPer1k) : '—'}
-          </div>
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            {labels.team} {labels.costPer1k}
-          </div>
         </div>
       </div>
 
@@ -185,7 +313,7 @@ export function CommissionBoardPanel({
                 <p className="mt-1 text-xs tabular-nums text-muted-foreground">
                   {formatNumber(row.views)} {labels.views}
                   {' · '}
-                  {row.costPer1k != null ? formatMoney(row.costPer1k) : '—'}/1k
+                  {moneyPair(row.commissionEarned)}
                 </p>
               </li>
             ))}
@@ -193,13 +321,13 @@ export function CommissionBoardPanel({
         )}
       </div>
 
-      {board.rows.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
           {labels.empty}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[780px] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-3 py-2 font-medium">{labels.rank}</th>
@@ -214,7 +342,7 @@ export function CommissionBoardPanel({
               </tr>
             </thead>
             <tbody>
-              {board.rows.map((row) => (
+              {rows.map((row) => (
                 <tr key={row.creatorId} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 tabular-nums text-muted-foreground">
                     {row.rank ?? '—'}
@@ -245,10 +373,8 @@ export function CommissionBoardPanel({
                     {row.qualifiedUnits}
                     <span className="text-muted-foreground"> / {row.units}</span>
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {row.commissionAssigned
-                      ? formatMoney(row.commissionEarned, 'SAR')
-                      : '—'}
+                  <td className="px-3 py-2 text-right text-xs tabular-nums">
+                    {row.commissionAssigned ? moneyPair(row.commissionEarned) : '—'}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatMoney(row.paid)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">

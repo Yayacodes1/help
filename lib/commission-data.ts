@@ -1,6 +1,13 @@
 import 'server-only'
 import { sql, type CommissionSettings, type Platform } from '@/lib/db'
 import type { ParticipantRole } from '@/lib/participant-role'
+import { sarToUsd } from '@/lib/fx'
+import {
+  commissionMonthOptions,
+  commissionViewsRange,
+  contractMajorityInWindow,
+  resolveCommissionWindow,
+} from '@/lib/commission-month'
 import {
   HOUSE_COMMISSION,
   buildCommissionBoard,
@@ -40,6 +47,269 @@ export async function getCommissionSettings(): Promise<CommissionTerms> {
     LIMIT 1
   `) as CommissionSettings[]
   return toTerms(rows[0])
+}
+
+export type MajorityCommissionBoard = CommissionBoard & {
+  month: string
+  majorityPct: number
+  totalUsd: number
+  earnersOnly: boolean
+  contractCount: number
+  months: string[]
+}
+
+/** Earliest contract start (for month chips). */
+export async function getCommissionMonthSpan(): Promise<{ earliest: string | null; months: string[] }> {
+  const rows = (await sql`
+    SELECT MIN(start_date)::text AS earliest FROM contracts
+  `) as { earliest: string | null }[]
+  const earliest = rows[0]?.earliest ?? null
+  const todayRow = (await sql`SELECT (NOW() AT TIME ZONE 'Asia/Riyadh')::date::text AS today`) as {
+    today: string
+  }[]
+  const today = todayRow[0]?.today ?? new Date().toISOString().slice(0, 10)
+  return { earliest, months: commissionMonthOptions(earliest, today) }
+}
+
+/**
+ * Commission for contracts that spend ≥50% of their days in the selected window.
+ * Views include spillover before the window (e.g. Sept 25 start when viewing October).
+ */
+export async function getMajorityCommissionBoard(opts: {
+  today: string
+  month?: string | null
+  from?: string | null
+  to?: string | null
+  projectId?: number | null
+  role?: ParticipantRole | null
+  earnersOnly?: boolean
+}): Promise<MajorityCommissionBoard> {
+  const settings = await getCommissionSettings()
+  const projectId = opts.projectId ?? null
+  const role = opts.role ?? 'creator'
+  const earnersOnly = opts.earnersOnly === true
+  const { month, from, to } = resolveCommissionWindow({
+    month: opts.month,
+    from: opts.from,
+    to: opts.to,
+    today: opts.today,
+  })
+  const { months } = await getCommissionMonthSpan()
+
+  const contracts = (await sql`
+    SELECT
+      c.id,
+      c.creator_id,
+      cr.name AS creator_name,
+      cr.role,
+      c.start_date::text AS start_date,
+      c.end_date::text AS end_date,
+      c.count_mode,
+      c.views_threshold,
+      c.view_commission_amount::float AS view_commission_amount,
+      c.commission_reels
+    FROM contracts c
+    JOIN creators cr ON cr.id = c.creator_id
+    WHERE cr.paused_at IS NULL
+      AND (${role}::text IS NULL OR cr.role = ${role})
+      AND c.view_commission_amount IS NOT NULL
+      AND (
+        ${projectId}::int IS NULL
+        OR cr.project_id = ${projectId}
+        OR EXISTS (
+          SELECT 1 FROM submissions sx
+          WHERE sx.creator_id = cr.id AND sx.project_id = ${projectId}
+        )
+      )
+    ORDER BY cr.name ASC, c.start_date DESC, c.id DESC
+  `) as Array<{
+    id: number
+    creator_id: number
+    creator_name: string
+    role: string
+    start_date: string
+    end_date: string | null
+    count_mode: string | null
+    views_threshold: number | null
+    view_commission_amount: number | null
+    commission_reels: number | null
+  }>
+
+  const kept = contracts.filter((c) =>
+    contractMajorityInWindow({
+      contractStart: c.start_date,
+      contractEnd: c.end_date,
+      windowStart: from,
+      windowEnd: to,
+      today: opts.today,
+    }).ok,
+  )
+
+  if (kept.length === 0) {
+    const empty = buildCommissionBoard({ from, to, settings, people: [] })
+    return {
+      ...empty,
+      month,
+      majorityPct: 50,
+      totalUsd: 0,
+      earnersOnly,
+      contractCount: 0,
+      months,
+    }
+  }
+
+  const creatorIds = [...new Set(kept.map((c) => c.creator_id))]
+  const viewBounds = kept
+    .map((c) =>
+      commissionViewsRange({
+        contractStart: c.start_date,
+        contractEnd: c.end_date,
+        windowTo: to,
+        today: opts.today,
+      }),
+    )
+    .filter(Boolean) as Array<{ from: string; to: string }>
+  const viewsFrom = viewBounds.reduce((min, b) => (b.from < min ? b.from : min), to)
+  const viewsTo = to
+
+  const [subs, pays] = await Promise.all([
+    sql`
+      SELECT s.id, s.creator_id, s.platform, s.views,
+             s.batch_id, s.batch_index, s.video_date::text AS video_date
+      FROM submissions s
+      WHERE s.creator_id = ANY(${creatorIds}::int[])
+        AND s.video_date >= ${viewsFrom}::date
+        AND s.video_date <= ${viewsTo}::date
+        AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
+    `,
+    sql`
+      SELECT p.creator_id, COALESCE(SUM(p.amount), 0)::float AS paid
+      FROM payments p
+      WHERE p.creator_id = ANY(${creatorIds}::int[])
+        AND p.paid_on >= ${from}::date
+        AND p.paid_on <= ${to}::date
+      GROUP BY p.creator_id
+    `,
+  ])
+
+  type SubRow = {
+    id: number
+    creator_id: number
+    platform: Platform
+    views: number
+    batch_id: string | null
+    batch_index: number | null
+    video_date: string
+  }
+  const allSubs = subs as SubRow[]
+  const paidBy = new Map(
+    (pays as { creator_id: number; paid: number }[]).map((p) => [p.creator_id, Number(p.paid) || 0]),
+  )
+
+  // One row per creator: merge submissions that fall on any kept contract’s view window.
+  const byCreator = new Map<
+    number,
+    {
+      name: string
+      role: string
+      contract: ContractTermsInput
+      submissions: SubmissionUnitInput[]
+    }
+  >()
+
+  for (const c of kept) {
+    const range = commissionViewsRange({
+      contractStart: c.start_date,
+      contractEnd: c.end_date,
+      windowTo: to,
+      today: opts.today,
+    })
+    if (!range) continue
+    const termsInput: ContractTermsInput = {
+      count_mode: normalizeCountMode(c.count_mode),
+      views_threshold: c.views_threshold,
+      view_commission_amount: c.view_commission_amount,
+      commission_reels: c.commission_reels,
+    }
+    const existing = byCreator.get(c.creator_id)
+    const matched = allSubs.filter(
+      (s) =>
+        s.creator_id === c.creator_id &&
+        s.video_date >= range.from &&
+        s.video_date <= range.to,
+    )
+    const mapped: SubmissionUnitInput[] = matched.map((s) => ({
+      id: s.id,
+      platform: s.platform,
+      views: Number(s.views) || 0,
+      batch_id: s.batch_id,
+      batch_index: s.batch_index,
+    }))
+    if (!existing) {
+      byCreator.set(c.creator_id, {
+        name: c.creator_name,
+        role: c.role,
+        contract: termsInput,
+        submissions: mapped,
+      })
+    } else {
+      const seen = new Set(existing.submissions.map((s) => s.id))
+      for (const s of mapped) {
+        if (!seen.has(s.id)) {
+          existing.submissions.push(s)
+          seen.add(s.id)
+        }
+      }
+      // Prefer terms with assigned commission (already filtered); keep first.
+    }
+  }
+
+  let board = buildCommissionBoard({
+    from,
+    to,
+    settings,
+    people: [...byCreator.entries()].map(([creatorId, p]) => ({
+      creatorId,
+      name: p.name,
+      role: p.role,
+      paid: paidBy.get(creatorId) ?? 0,
+      submissions: p.submissions,
+      contract: p.contract,
+    })),
+  })
+
+  if (earnersOnly) {
+    const rows = board.rows.filter((r) => r.commissionEarned > 0)
+    const leaderboard = board.leaderboard.filter((r) => r.commissionEarned > 0)
+    const views = rows.reduce((s, r) => s + r.views, 0)
+    const paid = rows.reduce((s, r) => s + r.paid, 0)
+    const commissionEarned = rows.reduce((s, r) => s + r.commissionEarned, 0)
+    const qualifiedUnits = rows.reduce((s, r) => s + r.qualifiedUnits, 0)
+    board = {
+      ...board,
+      rows,
+      leaderboard,
+      totals: {
+        people: rows.length,
+        ranked: rows.filter((r) => r.rank != null).length,
+        views,
+        paid,
+        commissionEarned,
+        qualifiedUnits,
+        costPer1k: board.totals.costPer1k,
+      },
+    }
+  }
+
+  return {
+    ...board,
+    month,
+    majorityPct: 50,
+    totalUsd: sarToUsd(board.totals.commissionEarned),
+    earnersOnly,
+    contractCount: kept.length,
+    months,
+  }
 }
 
 export async function getCommissionBoard(opts: {

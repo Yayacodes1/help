@@ -5,6 +5,10 @@ export function usdToSar(usd: number): number {
   return Math.round(usd * SAR_PER_USD * 100) / 100
 }
 
+export function sarToUsd(sar: number): number {
+  return Math.round(((Number(sar) || 0) / SAR_PER_USD) * 100) / 100
+}
+
 export function formatUsdSar(usd: number): { usd: number; sar: number } {
   const n = Number(usd) || 0
   return { usd: n, sar: usdToSar(n) }
