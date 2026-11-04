@@ -1947,7 +1947,7 @@ export default async function AdminPage({
             id: 'streaks',
             title: t('streaksTitle'),
             summary: streakBoard
-              ? `${streakBoard.counts.due} ${t('streaksDue').toLowerCase()} · ${streakBoard.counts.approaching} ${t('streaksApproaching').toLowerCase()}`
+              ? `${streakBoard.counts.first} ${t('streaksFirst').toLowerCase()} · ${streakBoard.counts.second} ${t('streaksSecond').toLowerCase()} · ${streakBoard.counts.final} ${t('streaksFinal').toLowerCase()}`
               : streakBoardError ?? '—',
             hint: t('streaksHint'),
             children: streakBoardError ? (
@@ -1961,10 +1961,6 @@ export default async function AdminPage({
                   hint: t('streaksHint'),
                   allProjects: t('allProjects'),
                   chooseProject: t('chooseProject'),
-                  onProbation: t('streaksOnProbation'),
-                  approaching: t('streaksApproaching'),
-                  due: t('streaksDue'),
-                  paused: t('fitnessFired'),
                   person: t('streaksPerson'),
                   project: t('streaksProject'),
                   misses: t('streaksMisses'),
@@ -1980,8 +1976,6 @@ export default async function AdminPage({
                   copied: t('streaksCopied'),
                   markSent: t('streaksMarkSent'),
                   filterAll: t('streaksFilterAll'),
-                  filterApproaching: t('streaksFilterApproaching'),
-                  filterDue: t('streaksFilterDue'),
                   phaseClean: t('streaksPhaseClean'),
                   phaseNearVerbal1: t('streaksPhaseNearVerbal1'),
                   phaseDueVerbal1: t('streaksPhaseDueVerbal1'),

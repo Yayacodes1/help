@@ -12,6 +12,7 @@ import { adminPersonHref } from '@/lib/admin-href'
 import { PanelProjectFilter } from '@/components/admin/panel-project-filter'
 import {
   buildProbationStreakMessage,
+  streakBucketFromMisses,
   type ProbationStreakBoard,
   type ProbationStreakPhase,
   type ProbationStreakRow,
@@ -21,10 +22,6 @@ type Labels = {
   hint: string
   allProjects: string
   chooseProject: string
-  onProbation: string
-  approaching: string
-  due: string
-  paused: string
   person: string
   project: string
   misses: string
@@ -40,8 +37,6 @@ type Labels = {
   copied: string
   markSent: string
   filterAll: string
-  filterApproaching: string
-  filterDue: string
   phaseClean: string
   phaseNearVerbal1: string
   phaseDueVerbal1: string
@@ -94,25 +89,12 @@ export function ProbationStreaksBoard({
   const pathname = usePathname()
   const params = useSearchParams()
   const [pending, startTransition] = useTransition()
-  const [filter, setFilter] = useState<'all' | 'approaching' | 'due'>('all')
+  const [filter, setFilter] = useState<'all' | 1 | 2 | 3>('all')
   const [copiedId, setCopiedId] = useState<number | null>(null)
 
   const rows = useMemo(() => {
-    if (filter === 'approaching') {
-      return board.rows.filter((r) =>
-        r.phase === 'near_verbal1' ||
-        r.phase === 'near_verbal2' ||
-        r.phase === 'near_kick',
-      )
-    }
-    if (filter === 'due') {
-      return board.rows.filter((r) =>
-        r.phase === 'due_verbal1' ||
-        r.phase === 'due_verbal2' ||
-        r.phase === 'due_kick',
-      )
-    }
-    return board.rows
+    if (filter === 'all') return board.rows
+    return board.rows.filter((r) => streakBucketFromMisses(r.missCount) === filter)
   }, [board.rows, filter])
 
   function keepPanel(patch?: Record<string, string | null>) {
@@ -135,7 +117,10 @@ export function ProbationStreaksBoard({
       creatorId: row.creatorId,
       name: row.name,
       level: row.pendingLevel,
-      unlockedOn: row.missDates[row.pendingLevel === 1 ? 1 : row.pendingLevel === 2 ? 3 : 4] ?? board.today,
+      unlockedOn:
+        row.missDates[
+          row.pendingLevel === 1 ? 2 : row.pendingLevel === 2 ? 5 : 9
+        ] ?? board.today,
       missDates: row.missDates.slice(-2),
       messagedAt: null,
       missCount: row.missCount,
@@ -164,11 +149,10 @@ export function ProbationStreaksBoard({
         }}
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label={labels.onProbation} value={board.counts.onProbation} />
-        <Stat label={labels.approaching} value={board.counts.approaching} tone="sky" />
-        <Stat label={labels.due} value={board.counts.due} tone="amber" />
-        <Stat label={labels.paused} value={board.counts.paused} tone="rose" />
+      <div className="grid grid-cols-3 gap-3">
+        <Stat label={labels.firstStreak} value={board.counts.first} tone="sky" />
+        <Stat label={labels.secondStreak} value={board.counts.second} tone="amber" />
+        <Stat label={labels.finalStreak} value={board.counts.final} tone="rose" />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -176,12 +160,13 @@ export function ProbationStreaksBoard({
           {(
             [
               ['all', labels.filterAll],
-              ['approaching', labels.filterApproaching],
-              ['due', labels.filterDue],
+              [1, labels.firstStreak],
+              [2, labels.secondStreak],
+              [3, labels.finalStreak],
             ] as const
           ).map(([key, label]) => (
             <button
-              key={key}
+              key={String(key)}
               type="button"
               onClick={() => setFilter(key)}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
@@ -194,7 +179,7 @@ export function ProbationStreaksBoard({
             </button>
           ))}
         </div>
-        {board.counts.onProbation > 0 ? (
+        {board.counts.total > 0 ? (
           <button
             type="button"
             disabled={pending}

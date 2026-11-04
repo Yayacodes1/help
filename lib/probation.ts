@@ -6,6 +6,7 @@ import { pausePerson } from '@/lib/pause-person'
 import {
   PROBATION_LEVEL_THRESHOLDS,
   buildProbationStreakMessage,
+  streakBucketFromMisses,
   type ProbationLevel,
   type ProbationNotice,
   type ProbationStreakBoard,
@@ -16,6 +17,7 @@ import {
 export {
   PROBATION_LEVEL_THRESHOLDS,
   buildProbationStreakMessage,
+  streakBucketFromMisses,
   type ProbationLevel,
   type ProbationNotice,
   type ProbationStreakBoard,
@@ -481,18 +483,10 @@ export async function getProbationStreakBoard(opts: {
     projectId,
     rows,
     counts: {
-      onProbation: rows.filter((r) => !r.paused).length,
-      approaching: rows.filter((r) =>
-        r.phase === 'near_verbal1' ||
-        r.phase === 'near_verbal2' ||
-        r.phase === 'near_kick',
-      ).length,
-      due: rows.filter((r) =>
-        r.phase === 'due_verbal1' ||
-        r.phase === 'due_verbal2' ||
-        r.phase === 'due_kick',
-      ).length,
-      paused: rows.filter((r) => r.paused).length,
+      first: rows.filter((r) => !r.paused && streakBucketFromMisses(r.missCount) === 1).length,
+      second: rows.filter((r) => !r.paused && streakBucketFromMisses(r.missCount) === 2).length,
+      final: rows.filter((r) => !r.paused && streakBucketFromMisses(r.missCount) === 3).length,
+      total: rows.filter((r) => !r.paused).length,
     },
   }
 }

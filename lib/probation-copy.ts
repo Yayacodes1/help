@@ -51,11 +51,20 @@ export type ProbationStreakBoard = {
   projectId: number | null
   rows: ProbationStreakRow[]
   counts: {
-    onProbation: number
-    approaching: number
-    due: number
-    paused: number
+    first: number
+    second: number
+    final: number
+    /** Active people still on the list (not fired). Used for Clear all. */
+    total: number
   }
+}
+
+/** Which streak bucket a row is in from miss days (0 = not on a streak yet). */
+export function streakBucketFromMisses(missCount: number): 0 | ProbationLevel {
+  if (missCount >= PROBATION_LEVEL_THRESHOLDS[3]) return 3
+  if (missCount >= PROBATION_LEVEL_THRESHOLDS[2]) return 2
+  if (missCount >= PROBATION_LEVEL_THRESHOLDS[1]) return 1
+  return 0
 }
 
 export function buildProbationStreakMessage(notice: ProbationNotice): string {
