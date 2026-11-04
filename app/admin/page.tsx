@@ -91,8 +91,10 @@ import { getPendingContractReviews } from '@/lib/contract-reviews'
 import { getReposterStrikeBoard, syncReposterStrikes } from '@/lib/strikes'
 import { getCreatorFitnessBoard } from '@/lib/creator-fitness'
 import { getProbationStreakBoard, syncProbationMisses } from '@/lib/probation'
+import { getAdminConsistencyBoard } from '@/lib/admin-consistency'
 import { FitnessBoardPanel } from '@/components/admin/fitness-board'
 import { ProbationStreaksBoard } from '@/components/admin/probation-streaks-board'
+import { AdminConsistencyBoardPanel } from '@/components/admin/consistency-board'
 import { getAttendanceForDay } from '@/lib/attendance'
 import { formatPlanCompare, getLeaderBoard, getLeaderDirectory, loadLeaderLinks, withLeaderFields } from '@/lib/leaders'
 import { LeadersBoard } from '@/components/admin/leaders-board'
@@ -578,6 +580,8 @@ export default async function AdminPage({
   let fitnessBoardError: string | null = null
   let streakBoard: Awaited<ReturnType<typeof getProbationStreakBoard>> | null = null
   let streakBoardError: string | null = null
+  let consistencyBoard: Awaited<ReturnType<typeof getAdminConsistencyBoard>> | null = null
+  let consistencyBoardError: string | null = null
   if (tab === 'people') {
     try {
       companyStructure = await getCompanyStructure()
@@ -605,6 +609,18 @@ export default async function AdminPage({
       console.error('[admin] probation streaks', err)
       streakBoard = null
       streakBoardError = t('streaksLoadError')
+    }
+    if (sp.panel === 'consistency') {
+      try {
+        consistencyBoard = await getAdminConsistencyBoard({
+          projectId,
+          role: roleSql,
+        })
+      } catch (err) {
+        console.error('[admin] consistency board', err)
+        consistencyBoard = null
+        consistencyBoardError = t('consistencyLoadError')
+      }
     }
   }
   const twodayData = tab === 'twoday' ? { requests: await listBreakRequests({ limit: 80 }) } : null
@@ -1891,6 +1907,47 @@ export default async function AdminPage({
           },
           ] : []),
           ...(tab === 'people' ? [
+          {
+            id: 'consistency',
+            title: t('consistency'),
+            summary: consistencyBoard
+              ? `${consistencyBoard.rows.filter((r) => r.hitRate < 0.67).length} ${t('consistencyBelowTarget')} · ${consistencyBoard.rows.length} ${t('people')}`
+              : consistencyBoardError ?? '—',
+            hint: t('consistencyHint'),
+            children: consistencyBoardError ? (
+              <p className="text-sm text-destructive">{consistencyBoardError}</p>
+            ) : consistencyBoard ? (
+              <AdminConsistencyBoardPanel
+                board={consistencyBoard}
+                projects={projects}
+                projectId={projectId}
+                labels={{
+                  hint: t('consistencyHint'),
+                  empty: t('consistencyEmpty'),
+                  search: t('rankingSearch'),
+                  people: t('people'),
+                  hitRate: t('hitRate'),
+                  currentStreak: t('currentStreak'),
+                  bestStreak: t('bestStreak'),
+                  missed: t('leaderMissed'),
+                  partial: t('leaderPartial'),
+                  lastDays: t('leaderLastDays'),
+                  posted: t('leaderPosted'),
+                  break: t('leaderBreak'),
+                  off: t('leaderOff'),
+                  noContract: t('noContractSet'),
+                  allProjects: t('allProjects'),
+                  chooseProject: t('chooseProject'),
+                  creators: t('creatorRole'),
+                  reposters: t('reposterRole'),
+                  belowTarget: t('consistencyBelowTarget'),
+                  target: t('consistencyTarget'),
+                }}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('loadingPage')}</p>
+            ),
+          },
           {
             id: 'fitness',
             title: t('fitnessTitle'),
