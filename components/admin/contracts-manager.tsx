@@ -46,14 +46,17 @@ function TapOpenSection({
   title,
   summary,
   hint,
+  defaultOpen = false,
   children,
 }: {
   title: string
   summary: string
   hint?: string
+  /** Open on first view so every contract is visible at once. */
+  defaultOpen?: boolean
   children: ReactNode
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   return (
     <div className="rounded-lg border border-border bg-card">
       <button
@@ -885,10 +888,11 @@ export function ContractsManager({
 
       <TapOpenSection
         title="All contracts"
+        defaultOpen
         summary={
           comparisons.length === 0
             ? 'None yet'
-            : `${comparisons.length} period${comparisons.length === 1 ? '' : 's'}`
+            : `${comparisons.length} period${comparisons.length === 1 ? '' : 's'} · all open below`
         }
         hint={
           current
