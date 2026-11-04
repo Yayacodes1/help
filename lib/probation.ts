@@ -305,11 +305,13 @@ function phaseFor(opts: {
   if (opts.pendingLevel === 2) return 'due_verbal2'
   if (opts.pendingLevel === 1) return 'due_verbal1'
   const c = opts.missCount
-  if (c >= PROBATION_LEVEL_THRESHOLDS[3]) return 'due_kick'
-  if (c === 4) return 'near_kick'
-  if (c === 3) return 'near_verbal2'
-  if (c === 2) return 'near_verbal2'
-  if (c === 1) return 'near_verbal1'
+  const t1 = PROBATION_LEVEL_THRESHOLDS[1]
+  const t2 = PROBATION_LEVEL_THRESHOLDS[2]
+  const t3 = PROBATION_LEVEL_THRESHOLDS[3]
+  if (c >= t3) return 'due_kick'
+  if (c > t2 && c < t3) return 'near_kick'
+  if (c > t1 && c < t2) return 'near_verbal2'
+  if (c >= 1 && c < t1) return 'near_verbal1'
   return 'clean'
 }
 
@@ -514,12 +516,12 @@ export function probationStreakListText(notices: ProbationNotice[], today: strin
     return (
       `⚠️ CREATOR STREAKS · ${today}\n` +
       `No creators waiting for a streak message.\n` +
-      `They only appear after 2 / 4 / 5 missed posting days → first / second / final streak.`
+      `They only appear after 3 / 6 / 10 missed posting days → first / second / final streak.`
     )
   }
   const lines = [
     `⚠️ CREATOR STREAKS · ${today}`,
-    `Tap a name for first / second / final streak Arabic. They leave this list until the next streak.`,
+    `Tap a name for first / second / final streak Arabic (3 → 6 → 10). They leave this list until the next streak.`,
     '',
   ]
   for (const n of notices) {
@@ -528,4 +530,104 @@ export function probationStreakListText(notices: ProbationNotice[], today: strin
     lines.push(`• ${n.name} — ${label} (${n.missCount} miss days)`)
   }
   return lines.join('\n')
+}
+
+/** Snapshot for submit page / Telegram: miss days + highest unlocked streak level. */
+export async function getCreatorProbationSnapshot(
+  creatorId: number,
+  today: string,
+): Promise<{
+  onProbation: boolean
+  missCount: number
+  missDates: string[]
+  streakLevel: ProbationLevel | 0
+  pendingLevel: ProbationLevel | null
+  nextThreshold: number | null
+  maxMisses: number
+} | null> {
+  await syncProbationMisses({ today, creatorId })
+
+  const people = (await sql`
+    SELECT
+      c.id,
+      c.fitness_tier,
+      c.probation_started_on::text AS probation_started_on,
+      c.paused_at::text AS paused_at
+    FROM creators c
+    WHERE c.id = ${creatorId}
+      AND c.role = 'creator'
+    LIMIT 1
+  `) as Array<{
+    id: number
+    fitness_tier: string | null
+    probation_started_on: string | null
+    paused_at: string | null
+  }>
+  const person = people[0]
+  if (!person) return null
+
+  const onProbation =
+    person.fitness_tier === 'probation' && person.probation_started_on != null
+  if (!onProbation) {
+    return {
+      onProbation: false,
+      missCount: 0,
+      missDates: [],
+      streakLevel: 0,
+      pendingLevel: null,
+      nextThreshold: PROBATION_LEVEL_THRESHOLDS[1],
+      maxMisses: PROBATION_LEVEL_THRESHOLDS[3],
+    }
+  }
+
+  const lastCompleted = lastCompletedOperationalDay(today)
+  const start = person.probation_started_on!
+  const strikeRows = (await sql`
+    SELECT strike_date::text AS d
+    FROM creator_strikes
+    WHERE creator_id = ${creatorId}
+      AND strike_date >= ${start}::date
+      AND strike_date <= ${lastCompleted}::date
+      AND status = 'active'
+    ORDER BY strike_date ASC
+  `) as { d: string }[]
+  const missDates = strikeRows.map((r) => r.d)
+  const missCount = missDates.length
+
+  const notices = (await sql`
+    SELECT level, messaged_at::text AS messaged_at
+    FROM probation_streak_notices
+    WHERE creator_id = ${creatorId}
+    ORDER BY level ASC
+  `) as Array<{ level: number; messaged_at: string | null }>
+
+  let pendingLevel: ProbationLevel | null = null
+  let lastMessagedLevel: ProbationLevel | 0 = 0
+  for (const n of notices) {
+    const level = (n.level === 2 || n.level === 3 ? n.level : 1) as ProbationLevel
+    if (n.messaged_at) lastMessagedLevel = Math.max(lastMessagedLevel, level) as ProbationLevel
+    else if (pendingLevel == null) pendingLevel = level
+  }
+
+  const unlocked = levelForMissCount(missCount)
+  const streakLevel = (Math.max(lastMessagedLevel, unlocked ?? 0) || 0) as ProbationLevel | 0
+
+  const nextThreshold =
+    missCount < PROBATION_LEVEL_THRESHOLDS[1]
+      ? PROBATION_LEVEL_THRESHOLDS[1]
+      : missCount < PROBATION_LEVEL_THRESHOLDS[2]
+        ? PROBATION_LEVEL_THRESHOLDS[2]
+        : missCount < PROBATION_LEVEL_THRESHOLDS[3]
+          ? PROBATION_LEVEL_THRESHOLDS[3]
+          : null
+
+  return {
+    onProbation: true,
+    missCount,
+    missDates,
+    streakLevel,
+    pendingLevel,
+    nextThreshold,
+    maxMisses: PROBATION_LEVEL_THRESHOLDS[3],
+  }
 }

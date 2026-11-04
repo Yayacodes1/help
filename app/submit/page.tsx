@@ -168,6 +168,12 @@ export default async function SubmitPage({
   const { creatorIsOnProbation } = await import('@/lib/creator-fitness')
   const onProbation =
     creator.role === 'creator' ? await creatorIsOnProbation(creator.id).catch(() => false) : false
+  const checkIn =
+    creator.role === 'creator'
+      ? await import('@/lib/telegram-creator-notes')
+          .then((m) => m.getCreatorCheckInStats(creator.id))
+          .catch(() => null)
+      : null
   const date = onProbation ? today : isValidDate(dateParam) ? dateParam : today
   const isToday = date === today
   const submitMode = modeParam === 'ideas' ? 'ideas' : 'post'
@@ -442,6 +448,55 @@ export default async function SubmitPage({
               hint: t('strikesHint'),
             }}
           />
+        ) : null}
+
+        {creator.role === 'creator' && checkIn ? (
+          <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-foreground">
+              {t('submitConsistencyTitle')}
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">{t('submitConsistencyHint')}</p>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div>
+                <div className="text-lg font-semibold tabular-nums">
+                  {checkIn.daysWithUs}
+                </div>
+                <div className="text-[11px] text-muted-foreground">{t('submitDaysWithUs')}</div>
+              </div>
+              <div>
+                <div className="text-lg font-semibold tabular-nums">
+                  {checkIn.windowConsistencyPct}%
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {t('submitWindowConsistency')}
+                </div>
+              </div>
+              <div>
+                <div className="text-lg font-semibold tabular-nums">
+                  {checkIn.missDays}
+                  {checkIn.onProbation ? (
+                    <span className="text-sm font-normal text-muted-foreground"> / 10</span>
+                  ) : null}
+                </div>
+                <div className="text-[11px] text-muted-foreground">{t('submitMissDays')}</div>
+              </div>
+              <div>
+                <div className="text-lg font-semibold">
+                  {checkIn.streakLevel === 1
+                    ? t('submitStreakFirst')
+                    : checkIn.streakLevel === 2
+                      ? t('submitStreakSecond')
+                      : checkIn.streakLevel === 3
+                        ? t('submitStreakFinal')
+                        : t('submitStreakNone')}
+                </div>
+                <div className="text-[11px] text-muted-foreground">{t('submitStreakLevel')}</div>
+              </div>
+            </div>
+            <p className="mt-3 text-[11px] font-medium text-muted-foreground">
+              {t('submitConsistencyTarget')}
+            </p>
+          </section>
         ) : null}
 
         {creator.role === 'creator' ? (

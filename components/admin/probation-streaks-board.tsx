@@ -215,16 +215,18 @@ export function ProbationStreaksBoard({
 
       <p className="text-[11px] text-muted-foreground">
         <span className="font-semibold text-sky-700 dark:text-sky-300">
-          2 · {labels.firstStreak}
+          3 · {labels.firstStreak}
         </span>
         {' · '}
         <span className="font-semibold text-amber-700 dark:text-amber-300">
-          4 · {labels.secondStreak}
+          6 · {labels.secondStreak}
         </span>
         {' · '}
         <span className="font-semibold text-[#9a0d18]">
-          5 · {labels.finalStreak}
+          10 · {labels.finalStreak}
         </span>
+        {' · '}
+        ≥67%
       </p>
 
       {rows.length === 0 ? (
@@ -264,7 +266,7 @@ export function ProbationStreaksBoard({
                   </td>
                   <td className="px-3 py-2.5 tabular-nums font-semibold">
                     {row.missCount}
-                    <span className="font-normal text-muted-foreground"> / 5</span>
+                    <span className="font-normal text-muted-foreground"> / 10</span>
                   </td>
                   <td className="px-3 py-2.5">
                     <MissBar count={row.missCount} />
@@ -279,9 +281,9 @@ export function ProbationStreaksBoard({
                   <td className="px-3 py-2.5 text-xs text-muted-foreground">
                     {row.missesToNext != null && row.nextThreshold != null
                       ? `${row.missesToNext} → ${
-                          row.nextThreshold === 2
+                          row.nextThreshold === 3
                             ? labels.firstStreak
-                            : row.nextThreshold === 4
+                            : row.nextThreshold === 6
                               ? labels.secondStreak
                               : labels.finalStreak
                         }`
@@ -377,17 +379,17 @@ function Stat({
 }
 
 function MissBar({ count }: { count: number }) {
-  const filled = Math.max(0, Math.min(5, count))
+  const filled = Math.max(0, Math.min(10, count))
   return (
-    <div className="flex items-center gap-1" aria-label={`${filled} of 5 miss days`}>
-      {Array.from({ length: 5 }, (_, i) => (
+    <div className="flex items-center gap-0.5" aria-label={`${filled} of 10 miss days`}>
+      {Array.from({ length: 10 }, (_, i) => (
         <span
           key={i}
-          className={`h-2 w-4 rounded-sm ${
+          className={`h-2 w-2.5 rounded-sm ${
             i < filled
-              ? i >= 4
+              ? i >= 9
                 ? 'bg-[#9a0d18]'
-                : i >= 3
+                : i >= 5
                   ? 'bg-amber-500'
                   : 'bg-sky-600'
               : 'bg-muted'

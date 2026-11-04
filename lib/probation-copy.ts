@@ -1,7 +1,12 @@
 /** Client-safe probation streak copy + shared types (no DB). */
 
-export const PROBATION_LEVEL_THRESHOLDS = { 1: 2, 2: 4, 3: 5 } as const
+/** First at 3 misses, second at +3 (=6), final at +4 (=10). */
+export const PROBATION_LEVEL_THRESHOLDS = { 1: 3, 2: 6, 3: 10 } as const
 export type ProbationLevel = 1 | 2 | 3
+
+/** Monthly consistency target: miss ≤10 days ≈ stay ≥67% in a 30-day window. */
+export const CONSISTENCY_TARGET_PCT = 67
+export const CONSISTENCY_MAX_MISS_DAYS_PER_MONTH = 10
 
 export type ProbationNotice = {
   id: number
@@ -62,27 +67,95 @@ export function buildProbationStreakMessage(notice: ProbationNotice): string {
   if (notice.level === 1) {
     return [
       `مرحباً ${notice.name}،`,
-      `هذا الستريك الأول (First streak).`,
+      `هذا الستريك الأول (First streak) — بعد 3 أيام بدون نشر.`,
       `لم تنشر في الأيام: ${days}.`,
-      `متبقي لديك ستريكان: الثاني ثم الستريك الأخير. بعد الستريك الأخير سنتوقف عن العمل معك.`,
-      `يرجى الالتزام بالنشر يومياً ورفع الروابط في نفس اليوم على الموقع.`,
+      `هدفنا: لا تفوّت أكثر من 10 أيام في الشهر، وابقَ التزامك ≥ 67%.`,
+      `متبقي لديك ستريكان: الثاني (عند 6 أيام غياب) ثم الأخير (عند 10). بعد الأخير نتوقف عن العمل معك.`,
+      `انشر يومياً وارفع الروابط في نفس اليوم من صفحة الرفع — ومنها تتابع نسبة التزامك وأيام الغياب والستريكات.`,
     ].join('\n')
   }
   if (notice.level === 2) {
     return [
       `مرحباً ${notice.name}،`,
-      `هذا الستريك الثاني (Second streak).`,
+      `هذا الستريك الثاني (Second streak) — بعد 6 أيام بدون نشر.`,
       `الأيام بدون نشر: ${days}.`,
-      `متبقي لديك الستريك الأخير فقط. الستريك الأخير = إيقاف التعاون.`,
-      `انشر اليوم وارفع الرابط على الموقع فوراً.`,
+      `متبقي لديك الستريك الأخير فقط (عند 10 أيام غياب) = إيقاف التعاون.`,
+      `ابقَ ≥ 67% ولا تفوّت أكثر من 10 أيام في الشهر.`,
+      `انشر اليوم وارفع الرابط من صفحة الرفع — هناك ترى التزامك والستريكات وأيام الغياب.`,
     ].join('\n')
   }
   return [
     `مرحباً ${notice.name}،`,
-    `هذا الستريك الأخير (Final streak).`,
+    `هذا الستريك الأخير (Final streak) — بعد 10 أيام بدون نشر.`,
     `بسبب تكرار عدم النشر في الموعد، سنتوقف عن العمل معك اعتباراً من اليوم.`,
     days ? `آخر أيام بدون نشر: ${days}.` : '',
   ]
     .filter(Boolean)
+    .join('\n')
+}
+
+export function streakLabel(level: ProbationLevel | 0): string {
+  if (level <= 0) return 'none'
+  if (level === 1) return 'first streak'
+  if (level === 2) return 'second streak'
+  return 'final streak'
+}
+
+export function buildCreatorWelcomeMessage(name: string): string {
+  return [
+    `مرحباً ${name}، أهلاً بك في فريقنا 👋`,
+    ``,
+    `نظام العمل عندنا بسيط:`,
+    `• انشر يومياً وارفع روابط فيديوهاتك في نفس اليوم من صفحة الرفع على الموقع.`,
+    `• هدف الالتزام: لا تفوّت أكثر من 10 أيام في الشهر، وابقَ نسبة التزامك ≥ 67%.`,
+    `• تحت المراقبة: الستريك الأول بعد 3 أيام غياب، الثاني بعد 6، والأخير بعد 10 — وبعد الأخير نتوقف عن التعاون.`,
+    ``,
+    `من صفحة رفع الفيديوهات تقدر تشوف في أي وقت:`,
+    `• نسبة التزامك`,
+    `• كم يوم اشتغلت معنا`,
+    `• كم يوم غياب وكم ستريك (إن وُجد)`,
+    ``,
+    `بالتوفيق — ننتظر نشرك اليوم ✨`,
+  ].join('\n')
+}
+
+export function buildCreatorConsistencyMessage(opts: {
+  name: string
+  daysWithUs: number
+  windowConsistencyPct: number
+  allConsistencyPct: number | null
+  missDays: number
+  streakLevel: ProbationLevel | 0
+  onProbation: boolean
+}): string {
+  const streak =
+    opts.streakLevel <= 0
+      ? 'لا يوجد ستريك حالياً'
+      : opts.streakLevel === 1
+        ? 'الستريك الأول'
+        : opts.streakLevel === 2
+          ? 'الستريك الثاني'
+          : 'الستريك الأخير'
+  const allLine =
+    opts.allConsistencyPct != null
+      ? `• التزام كل العقود: ${opts.allConsistencyPct}%`
+      : null
+  return [
+    `مرحباً ${opts.name}،`,
+    ``,
+    `هذا ملخص التزامك معنا:`,
+    `• مدة العمل معنا: ${opts.daysWithUs} يوم`,
+    `• التزام آخر 30 يوم: ${opts.windowConsistencyPct}%`,
+    allLine,
+    opts.onProbation
+      ? `• تحت المراقبة: ${opts.missDays} يوم غياب · ${streak}`
+      : `• أيام الغياب (مراقبة): ${opts.missDays} · ${streak}`,
+    ``,
+    `الهدف: لا تفوّت أكثر من 10 أيام في الشهر، وابقَ ≥ 67% التزام.`,
+    `السلّم تحت المراقبة: أول ستريك عند 3 غياب، ثاني عند 6، أخير عند 10.`,
+    ``,
+    `تابع نسبة التزامك وأيام الغياب والستريكات من صفحة رفع الفيديوهات على الموقع.`,
+  ]
+    .filter((line): line is string => line != null)
     .join('\n')
 }

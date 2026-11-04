@@ -39,11 +39,15 @@ type ReportRequest = {
   flavor?: 'default' | 'today' | 'progress'
 }
 
+type CreatorNoteKind = 'fit' | 'welcome'
+
 type Request_ =
   | ReportRequest
   | { menu: 'groups' | 'squad' | 'update'; mode: ReportMode; squad?: ReportSquad }
   | { probation: 'list' }
   | { probation: 'send'; noticeId: number }
+  | { note: 'pick'; kind: CreatorNoteKind; page?: number }
+  | { note: 'send'; kind: CreatorNoteKind; creatorId: number }
   | 'help'
   | null
 
@@ -51,7 +55,9 @@ const HELP =
   `${BUTTON_GUIDE}\n` +
   '📊 Type /update to pick Previous day, Today, or So far today.\n' +
   '📅 /yesterday — previous day · /today — the day we\'re in · /now — so far today.\n' +
-  '⚠️ /streaks — creator probation first / second / final streak queue.\n' +
+  '⚠️ /streaks — creator probation first / second / final streak queue (3 → 6 → 10).\n' +
+  '📈 /fitness — pick a creator for a consistency check-in message (copy-paste).\n' +
+  '👋 /welcome — pick a creator for the new-creator system intro (copy-paste).\n' +
   '👑 Type /groups to pick Alpha, Beta, Charlie, Delta, or Ungrouped.\n\n' +
   'Automatic summary: 5:00 PM Riyadh (so far today) and 12:00 AM Riyadh (previous day final).'
 
@@ -102,6 +108,12 @@ function parseText(text: string): Request_ {
   if (['streaks', 'pstreaks', 'creator_streaks', 'probation'].includes(cmd)) {
     return { probation: 'list' }
   }
+  if (['fitness', 'consistency', 'checkin', 'التزام'].includes(cmd)) {
+    return { note: 'pick', kind: 'fit', page: 0 }
+  }
+  if (['welcome', 'onboard', 'newcreator', 'ترحيب'].includes(cmd)) {
+    return { note: 'pick', kind: 'welcome', page: 0 }
+  }
   if (['start', 'help'].includes(cmd)) return 'help'
   return null
 }
@@ -150,6 +162,16 @@ function parseButton(data: string | undefined): Request_ {
     const noticeId = Number(a)
     if (Number.isFinite(noticeId) && noticeId > 0) return { probation: 'send', noticeId }
   }
+  if (kind === 'fit' || kind === 'welcome') {
+    const creatorId = Number(a)
+    if (Number.isFinite(creatorId) && creatorId > 0) {
+      return { note: 'send', kind, creatorId }
+    }
+  }
+  if (kind === 'fitpage' || kind === 'welcomepage') {
+    const page = Math.max(0, Number(a) || 0)
+    return { note: 'pick', kind: kind === 'fitpage' ? 'fit' : 'welcome', page }
+  }
   return null
 }
 
@@ -174,15 +196,19 @@ export async function POST(req: Request) {
           ? request.probation === 'list'
             ? 'Loading streaks…'
             : 'Building streak message…'
-          : 'menu' in request
-            ? request.menu === 'groups'
-              ? 'Pick a group…'
-              : request.menu === 'update'
-                ? 'Pick an update…'
-                : 'Update, list, or reminders…'
-            : request.view === 'messages'
-              ? 'Building the messages…'
-              : 'Building…'
+          : 'note' in request
+            ? request.note === 'pick'
+              ? 'Loading creators…'
+              : 'Building message…'
+            : 'menu' in request
+              ? request.menu === 'groups'
+                ? 'Pick a group…'
+                : request.menu === 'update'
+                  ? 'Pick an update…'
+                  : 'Update, list, or reminders…'
+              : request.view === 'messages'
+                ? 'Building the messages…'
+                : 'Building…'
         : undefined
     await answerCallbackQuery(update.callback_query.id, tapNote)
   } else if (update.message?.text) {
@@ -191,6 +217,60 @@ export async function POST(req: Request) {
 
   if (request === 'help') {
     await sendTelegramMessage(HELP, { chatId, replyMarkup: updateMenuButtons() })
+  } else if (request && 'note' in request) {
+    const noteReq = request
+    after(async () => {
+      try {
+        const {
+          listCreatorsForTelegramNotes,
+          creatorNotesPickerButtons,
+          consistencyPickerPrompt,
+          welcomePickerPrompt,
+          buildConsistencyNoteForCreator,
+          buildWelcomeNoteForCreator,
+        } = await import('@/lib/telegram-creator-notes')
+        const people = await listCreatorsForTelegramNotes()
+
+        if (noteReq.note === 'pick') {
+          const page = noteReq.page ?? 0
+          const prompt =
+            noteReq.kind === 'fit'
+              ? consistencyPickerPrompt(people.length)
+              : welcomePickerPrompt(people.length)
+          await sendTelegramMessage(prompt, {
+            chatId,
+            replyMarkup: creatorNotesPickerButtons(people, noteReq.kind, page),
+          })
+          return
+        }
+
+        const body =
+          noteReq.kind === 'fit'
+            ? await buildConsistencyNoteForCreator(noteReq.creatorId)
+            : await buildWelcomeNoteForCreator(noteReq.creatorId)
+        if (!body) {
+          await sendTelegramMessage('Creator not found.', {
+            chatId,
+            replyMarkup: creatorNotesPickerButtons(people, noteReq.kind, 0),
+          })
+          return
+        }
+        const title = noteReq.kind === 'fit' ? 'Consistency check-in' : 'New creator intro'
+        await sendTelegramMessage(
+          `<b>${title}</b>\n\n<pre>${escapeHtml(body)}</pre>\n\n<i>Copy the message above, then send it to them.</i>`,
+          {
+            chatId,
+            parseMode: 'HTML',
+            replyMarkup: creatorNotesPickerButtons(people, noteReq.kind, 0),
+          },
+        )
+      } catch (e) {
+        await sendTelegramMessage(
+          `Could not build creator note: ${e instanceof Error ? e.message.slice(0, 300) : 'unknown error'}`,
+          { chatId },
+        )
+      }
+    })
   } else if (request && 'probation' in request) {
     const probationReq = request
     after(async () => {
