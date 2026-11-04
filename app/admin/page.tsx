@@ -1892,7 +1892,7 @@ export default async function AdminPage({
             id: 'fitness',
             title: t('fitnessTitle'),
             summary: fitnessBoard
-              ? `${fitnessBoard.rows.filter((r) => r.action === 'cut').length} ${t('fitnessCut').toLowerCase()} · ${Math.round(fitnessBoard.top15Share * 100)}% top 15`
+              ? `${fitnessBoard.rows.filter((r) => r.tier === 'probation').length} ${t('fitnessOnProbation').toLowerCase()} · ${Math.round(fitnessBoard.top15Share * 100)}% top 15`
               : fitnessBoardError ?? '—',
             hint: t('fitnessHint'),
             children: fitnessBoardError ? (
@@ -1912,9 +1912,6 @@ export default async function AdminPage({
                   clear: t('fitnessClear'),
                   protectTop15: t('fitnessProtectTop15'),
                   probationCuts: t('fitnessProbationCuts'),
-                  keep: t('fitnessKeep'),
-                  watch: t('fitnessWatch'),
-                  cut: t('fitnessCut'),
                   protected: t('fitnessProtected'),
                   onProbation: t('fitnessOnProbation'),
                   strength: t('fitnessStrength'),
@@ -1925,13 +1922,13 @@ export default async function AdminPage({
                   daysWithUs: t('fitnessDaysWithUs'),
                   posts: t('fitnessPosts'),
                   allContracts: t('fitnessAllContracts'),
-                  verdict: t('fitnessVerdict'),
                   empty: t('fitnessEmpty'),
                   reset: t('fitnessReset'),
                   sort: t('fitnessSort'),
-                  sortCutFirst: t('fitnessSortCutFirst'),
                   sortWorstRoi: t('fitnessSortWorstRoi'),
                   sortBestRoi: t('fitnessSortBestRoi'),
+                  sortWeakest: t('fitnessSortWeakest'),
+                  sortStrongest: t('fitnessSortStrongest'),
                   sortViewsHigh: t('fitnessSortViewsHigh'),
                   sortViewsLow: t('fitnessSortViewsLow'),
                   sortNewest: t('fitnessSortNewest'),

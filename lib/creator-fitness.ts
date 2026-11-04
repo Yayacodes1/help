@@ -2,15 +2,9 @@ import 'server-only'
 import { sql } from '@/lib/db'
 import { addDays } from '@/lib/campaign'
 import { getServerToday } from '@/lib/queries'
-import type {
-  FitnessAction,
-  FitnessBoard,
-  FitnessRow,
-  FitnessTier,
-} from '@/lib/creator-fitness-copy'
+import type { FitnessBoard, FitnessRow, FitnessTier } from '@/lib/creator-fitness-copy'
 
 export type {
-  FitnessAction,
   FitnessBoard,
   FitnessRow,
   FitnessSort,
@@ -30,32 +24,6 @@ function percentileRank(orderedBestFirst: number[], id: number, ids: number[]): 
   const idx = orderedBestFirst.indexOf(id)
   if (idx < 0) return 0
   return 1 - idx / n
-}
-
-function actionFrom(opts: {
-  strength: number
-  tier: FitnessTier
-  viewsRank: number
-  costPer1k: number | null
-  medianCost: number | null
-}): FitnessAction {
-  if (opts.tier === 'protected') return 'keep'
-  if (opts.tier === 'probation') return 'cut'
-  // Top 15 by views with solid strength → keep
-  if (opts.viewsRank <= 15 && opts.strength >= 60) return 'keep'
-  // Expensive vs team median → cut candidate
-  if (
-    opts.costPer1k != null &&
-    opts.medianCost != null &&
-    opts.medianCost > 0 &&
-    opts.costPer1k > opts.medianCost * 1.35 &&
-    opts.strength < 55
-  ) {
-    return 'cut'
-  }
-  if (opts.strength < 35) return 'cut'
-  if (opts.strength < 55) return 'watch'
-  return 'keep'
 }
 
 export async function getCreatorFitnessBoard(opts: {
@@ -192,8 +160,6 @@ export async function getCreatorFitnessBoard(opts: {
 
   const ids = normalized.map((p) => p.id)
   const byViews = [...normalized].sort((a, b) => b.views - a.views || a.name.localeCompare(b.name))
-  const viewsRank = new Map<number, number>()
-  byViews.forEach((p, i) => viewsRank.set(p.id, i + 1))
 
   const byCons = [...normalized].sort(
     (a, b) => b.post_days / daySpan - a.post_days / daySpan || b.views - a.views,
@@ -202,23 +168,10 @@ export async function getCreatorFitnessBoard(opts: {
     .filter((p) => p.viewsPerSar != null)
     .sort((a, b) => (b.viewsPerSar ?? 0) - (a.viewsPerSar ?? 0))
 
-  const costs = normalized
-    .map((p) => p.costPer1k)
-    .filter((c): c is number => c != null && Number.isFinite(c))
-    .sort((a, b) => a - b)
-  const medianCost =
-    costs.length === 0
-      ? null
-      : costs.length % 2 === 1
-        ? costs[(costs.length - 1) / 2]!
-        : (costs[costs.length / 2 - 1]! + costs[costs.length / 2]!) / 2
-
-  const n = Math.max(1, normalized.length)
   const totalViews = normalized.reduce((s, p) => s + p.views, 0)
   const top15Views = byViews.slice(0, 15).reduce((s, p) => s + p.views, 0)
 
   const rows: FitnessRow[] = normalized.map((p) => {
-    const vr = viewsRank.get(p.id) ?? n
     const viewsPct = percentileRank(
       byViews.map((x) => x.id),
       p.id,
@@ -267,13 +220,6 @@ export async function getCreatorFitnessBoard(opts: {
       viewsPerSar: p.viewsPerSar,
       daysWithUs: p.daysWithUs,
       joinedOn: p.joinedOn,
-      action: actionFrom({
-        strength,
-        tier,
-        viewsRank: vr,
-        costPer1k: p.costPer1k,
-        medianCost,
-      }),
       tier,
       probationStartedOn: p.probation_started_on,
       fired: false,
@@ -281,10 +227,7 @@ export async function getCreatorFitnessBoard(opts: {
     }
   })
 
-  rows.sort((a, b) => {
-    const order = { cut: 0, watch: 1, keep: 2 }
-    return order[a.action] - order[b.action] || a.strength - b.strength || a.views - b.views
-  })
+  rows.sort((a, b) => a.strength - b.strength || a.views - b.views)
 
   return {
     from,

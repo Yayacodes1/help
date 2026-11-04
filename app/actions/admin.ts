@@ -2145,10 +2145,12 @@ export async function bulkProbationBottomCreators(
   const { getCreatorFitnessBoard, setCreatorFitnessTier } = await import('@/lib/creator-fitness')
   const { syncProbationMisses } = await import('@/lib/probation')
   const board = await getCreatorFitnessBoard({ from, to, projectId })
-  for (const row of board.rows) {
-    if (row.fired || row.tier === 'protected') continue
-    if (row.action !== 'cut' && row.tier !== 'probation') continue
-    if (row.tier === 'probation') continue
+  // Put the weakest third (by strength) on streaks — Ahmed still fires manually.
+  const candidates = board.rows
+    .filter((row) => !row.fired && row.tier !== 'protected' && row.tier !== 'probation')
+    .sort((a, b) => a.strength - b.strength)
+  const n = Math.max(1, Math.ceil(candidates.length / 3))
+  for (const row of candidates.slice(0, n)) {
     await setCreatorFitnessTier(row.creatorId, 'probation', today)
   }
   await syncProbationMisses({ today: opToday })

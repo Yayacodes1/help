@@ -46,9 +46,6 @@ export function FitnessBoardPanel({
     clear: string
     protectTop15: string
     probationCuts: string
-    keep: string
-    watch: string
-    cut: string
     protected: string
     onProbation: string
     strength: string
@@ -59,13 +56,13 @@ export function FitnessBoardPanel({
     daysWithUs: string
     posts: string
     allContracts: string
-    verdict: string
     empty: string
     reset: string
     sort: string
-    sortCutFirst: string
     sortWorstRoi: string
     sortBestRoi: string
+    sortWeakest: string
+    sortStrongest: string
     sortViewsHigh: string
     sortViewsLow: string
     sortNewest: string
@@ -76,11 +73,11 @@ export function FitnessBoardPanel({
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
-  const [sort, setSort] = useState<FitnessSort>('cut_first')
+  const [sort, setSort] = useState<FitnessSort>('worst_roi')
   const [pending, startTransition] = useTransition()
 
   const rows = useMemo(() => sortFitnessRows(board.rows, sort), [board.rows, sort])
-  const cutCount = board.rows.filter((r) => r.action === 'cut' || r.tier === 'probation').length
+  const onStreaks = board.rows.filter((r) => r.tier === 'probation').length
 
   function push(patch: Record<string, string | null>) {
     const next = new URLSearchParams(params.toString())
@@ -94,7 +91,7 @@ export function FitnessBoardPanel({
   }
 
   function reset() {
-    setSort('cut_first')
+    setSort('worst_roi')
     const to = board.today
     const from = addDays(to, -29)
     push({ fitFrom: from, fitTo: to, project: null })
@@ -140,9 +137,9 @@ export function FitnessBoardPanel({
           </div>
         </div>
         <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3">
-          <div className="text-xl font-semibold tabular-nums">{cutCount}</div>
+          <div className="text-xl font-semibold tabular-nums">{onStreaks}</div>
           <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {labels.cut}
+            {labels.onProbation}
           </div>
         </div>
       </div>
@@ -187,9 +184,10 @@ export function FitnessBoardPanel({
             onChange={(e) => setSort(e.target.value as FitnessSort)}
             className="h-9 min-w-[11rem] rounded-lg border border-input bg-background px-2 text-sm"
           >
-            <option value="cut_first">{labels.sortCutFirst}</option>
             <option value="worst_roi">{labels.sortWorstRoi}</option>
             <option value="best_roi">{labels.sortBestRoi}</option>
+            <option value="weakest">{labels.sortWeakest}</option>
+            <option value="strongest">{labels.sortStrongest}</option>
             <option value="views_high">{labels.sortViewsHigh}</option>
             <option value="views_low">{labels.sortViewsLow}</option>
             <option value="newest">{labels.sortNewest}</option>
@@ -242,7 +240,6 @@ export function FitnessBoardPanel({
                 <th className="px-3 py-2 font-medium" title={labels.strengthHint}>
                   {labels.strength}
                 </th>
-                <th className="px-3 py-2 font-medium">{labels.verdict}</th>
                 <th className="px-3 py-2 font-medium"> </th>
               </tr>
             </thead>
@@ -251,7 +248,7 @@ export function FitnessBoardPanel({
                 <tr
                   key={r.creatorId}
                   className={`align-middle ${
-                    r.action === 'cut' || r.tier === 'probation'
+                    r.tier === 'probation'
                       ? 'bg-rose-500/5'
                       : r.tier === 'protected'
                         ? 'bg-emerald-500/5'
@@ -266,6 +263,16 @@ export function FitnessBoardPanel({
                     >
                       {r.name}
                     </Link>
+                    {r.tier === 'protected' ? (
+                      <span className="ml-2 text-[10px] font-semibold uppercase text-emerald-700 dark:text-emerald-300">
+                        {labels.protected}
+                      </span>
+                    ) : null}
+                    {r.tier === 'probation' ? (
+                      <span className="ml-2 text-[10px] font-semibold uppercase text-[#9a0d18] dark:text-rose-300">
+                        {labels.onProbation}
+                      </span>
+                    ) : null}
                     {r.projectName ? (
                       <div className="text-[11px] text-muted-foreground">{r.projectName}</div>
                     ) : null}
@@ -323,33 +330,6 @@ export function FitnessBoardPanel({
                         style={{ width: `${r.strength}%` }}
                       />
                     </div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <span
-                      className={`rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase ${
-                        r.action === 'cut'
-                          ? 'bg-rose-500/15 text-[#9a0d18] dark:text-card-foreground'
-                          : r.action === 'watch'
-                            ? 'bg-amber-500/15 text-amber-800 dark:text-amber-200'
-                            : 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-200'
-                      }`}
-                    >
-                      {r.action === 'cut'
-                        ? labels.cut
-                        : r.action === 'watch'
-                          ? labels.watch
-                          : labels.keep}
-                    </span>
-                    {r.tier === 'protected' ? (
-                      <div className="mt-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
-                        {labels.protected}
-                      </div>
-                    ) : null}
-                    {r.tier === 'probation' ? (
-                      <div className="mt-1 text-[10px] font-medium text-[#9a0d18] dark:text-rose-300">
-                        {labels.onProbation}
-                      </div>
-                    ) : null}
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">

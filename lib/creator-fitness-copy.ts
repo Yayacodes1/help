@@ -2,13 +2,11 @@
 
 export type FitnessTier = 'protected' | 'probation' | null
 
-/** Verdict for cutting fat — keep / watch / cut. */
-export type FitnessAction = 'keep' | 'watch' | 'cut'
-
 export type FitnessSort =
-  | 'cut_first'
   | 'worst_roi'
   | 'best_roi'
+  | 'weakest'
+  | 'strongest'
   | 'views_high'
   | 'views_low'
   | 'newest'
@@ -32,7 +30,7 @@ export type FitnessRow = {
   allContractDays: number
   /** Posting rate across all contracts (allPostDays / allContractDays). */
   allConsistency: number
-  /** Single strength 0–100 (views + posts + ROI). Replaces old score + قوة split. */
+  /** Single strength 0–100 (views + posts + ROI). */
   strength: number
   /** SAR paid in the selected window. */
   paid: number
@@ -43,7 +41,6 @@ export type FitnessRow = {
   /** Calendar days from first contract / join date through today. */
   daysWithUs: number
   joinedOn: string | null
-  action: FitnessAction
   tier: FitnessTier
   probationStartedOn: string | null
   /** Always false on the board — fired people are excluded. */
@@ -63,24 +60,19 @@ export type FitnessBoard = {
 
 export function sortFitnessRows(rows: FitnessRow[], sort: FitnessSort): FitnessRow[] {
   const copy = [...rows]
-  const actionOrder: Record<FitnessAction, number> = { cut: 0, watch: 1, keep: 2 }
   const cost = (r: FitnessRow) => (r.costPer1k == null ? Number.POSITIVE_INFINITY : r.costPer1k)
   const roi = (r: FitnessRow) => (r.viewsPerSar == null ? -1 : r.viewsPerSar)
 
   copy.sort((a, b) => {
     switch (sort) {
-      case 'cut_first':
-        return (
-          actionOrder[a.action] - actionOrder[b.action] ||
-          a.strength - b.strength ||
-          cost(b) - cost(a) ||
-          a.views - b.views
-        )
       case 'worst_roi':
-        // High cost/1k first (expensive views); unpaid with views sink to bottom of "worst"
         return cost(b) - cost(a) || a.views - b.views || a.name.localeCompare(b.name)
       case 'best_roi':
         return roi(b) - roi(a) || b.views - a.views || a.name.localeCompare(b.name)
+      case 'weakest':
+        return a.strength - b.strength || cost(b) - cost(a) || a.views - b.views
+      case 'strongest':
+        return b.strength - a.strength || b.views - a.views
       case 'views_high':
         return b.views - a.views || a.name.localeCompare(b.name)
       case 'views_low':

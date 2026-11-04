@@ -220,8 +220,8 @@ export const BUTTON_GUIDE =
   '✉️ Creators — a copy-ready Arabic message for each creator who is behind. Or type /messages_creators\n' +
   '✉️ Reposters — the same for reposters. Or type /messages_reposters\n' +
   '⚠️ Creator streaks — first / second / final streak list (3 → 6 → 10). Tap a name to copy. Or type /streaks\n' +
-  '📈 Consistency — pick a creator for a check-in message (days with us, %, ≥67%). Or type /fitness\n' +
-  '👋 Welcome — pick a creator for the new-creator system intro. Or type /welcome\n' +
+  '📈 Consistency — pick a creator, or /fitness Name to look them up. Copy-paste check-in.\n' +
+  '👋 Welcome — pick a new creator, or /welcome Name. Copy-paste system intro.\n' +
   '👑 Group Leader — pick Alpha / Beta / Charlie / Delta, then Update, List, Creators reminder, or Reposter reminder. Or type /groups\n' +
   '📅 Type /yesterday for the previous day. /today for the day we\'re in. /now for so far today.'
 

@@ -46,7 +46,7 @@ type Request_ =
   | { menu: 'groups' | 'squad' | 'update'; mode: ReportMode; squad?: ReportSquad }
   | { probation: 'list' }
   | { probation: 'send'; noticeId: number }
-  | { note: 'pick'; kind: CreatorNoteKind; page?: number }
+  | { note: 'pick'; kind: CreatorNoteKind; page?: number; query?: string }
   | { note: 'send'; kind: CreatorNoteKind; creatorId: number }
   | 'help'
   | null
@@ -55,9 +55,9 @@ const HELP =
   `${BUTTON_GUIDE}\n` +
   '📊 Type /update to pick Previous day, Today, or So far today.\n' +
   '📅 /yesterday — previous day · /today — the day we\'re in · /now — so far today.\n' +
-  '⚠️ /streaks — creator probation first / second / final streak queue (3 → 6 → 10).\n' +
-  '📈 /fitness — pick a creator for a consistency check-in message (copy-paste).\n' +
-  '👋 /welcome — pick a creator for the new-creator system intro (copy-paste).\n' +
+  '⚠️ /streaks — creator first / second / final streak queue (3 → 6 → 10).\n' +
+  '📈 /fitness — pick a creator (or /fitness Sara) for a consistency check-in to copy.\n' +
+  '👋 /welcome — pick a creator (or /welcome Sara) for the new-creator intro to copy.\n' +
   '👑 Type /groups to pick Alpha, Beta, Charlie, Delta, or Ungrouped.\n\n' +
   'Automatic summary: 5:00 PM Riyadh (so far today) and 12:00 AM Riyadh (previous day final).'
 
@@ -109,10 +109,10 @@ function parseText(text: string): Request_ {
     return { probation: 'list' }
   }
   if (['fitness', 'consistency', 'checkin', 'التزام'].includes(cmd)) {
-    return { note: 'pick', kind: 'fit', page: 0 }
+    return { note: 'pick', kind: 'fit', page: 0, query: rest || undefined }
   }
   if (['welcome', 'onboard', 'newcreator', 'ترحيب'].includes(cmd)) {
-    return { note: 'pick', kind: 'welcome', page: 0 }
+    return { note: 'pick', kind: 'welcome', page: 0, query: rest || undefined }
   }
   if (['start', 'help'].includes(cmd)) return 'help'
   return null
@@ -229,14 +229,45 @@ export async function POST(req: Request) {
           buildConsistencyNoteForCreator,
           buildWelcomeNoteForCreator,
         } = await import('@/lib/telegram-creator-notes')
-        const people = await listCreatorsForTelegramNotes()
+        const query = noteReq.note === 'pick' ? noteReq.query : undefined
+        const people = await listCreatorsForTelegramNotes(query)
 
         if (noteReq.note === 'pick') {
           const page = noteReq.page ?? 0
+          if (people.length === 0) {
+            await sendTelegramMessage(
+              query
+                ? `No creators matching “${query}”. Try another name, or /fitness with no name for the full list.`
+                : 'No active creators found.',
+              { chatId },
+            )
+            return
+          }
+          // Exact / single match → send the message immediately (no extra tap).
+          if (query && people.length === 1) {
+            const only = people[0]!
+            const body =
+              noteReq.kind === 'fit'
+                ? await buildConsistencyNoteForCreator(only.id)
+                : await buildWelcomeNoteForCreator(only.id)
+            if (body) {
+              const title =
+                noteReq.kind === 'fit' ? 'Consistency check-in' : 'New creator intro'
+              await sendTelegramMessage(
+                `<b>${title} · ${escapeHtml(only.name)}</b>\n\n<pre>${escapeHtml(body)}</pre>\n\n<i>Copy the message above, then send it to them.</i>`,
+                {
+                  chatId,
+                  parseMode: 'HTML',
+                  replyMarkup: creatorNotesPickerButtons(people, noteReq.kind, 0),
+                },
+              )
+              return
+            }
+          }
           const prompt =
             noteReq.kind === 'fit'
-              ? consistencyPickerPrompt(people.length)
-              : welcomePickerPrompt(people.length)
+              ? consistencyPickerPrompt(people.length, query)
+              : welcomePickerPrompt(people.length, query)
           await sendTelegramMessage(prompt, {
             chatId,
             replyMarkup: creatorNotesPickerButtons(people, noteReq.kind, page),

@@ -23,13 +23,20 @@ export type CreatorNotePerson = {
 }
 
 /** Active (not fired) creators for Telegram pickers. */
-export async function listCreatorsForTelegramNotes(): Promise<CreatorNotePerson[]> {
+export async function listCreatorsForTelegramNotes(
+  nameQuery?: string | null,
+): Promise<CreatorNotePerson[]> {
+  const q = (nameQuery ?? '').trim()
   const rows = (await sql`
     SELECT c.id, c.name, p.name AS project_name
     FROM creators c
     LEFT JOIN projects p ON p.id = c.project_id
     WHERE c.role = 'creator'
       AND c.paused_at IS NULL
+      AND (
+        ${q}::text = ''
+        OR c.name ILIKE ${'%' + q + '%'}
+      )
     ORDER BY c.name ASC
   `) as Array<{ id: number; name: string; project_name: string | null }>
   return rows.map((r) => ({
@@ -198,19 +205,23 @@ export async function buildWelcomeNoteForCreator(creatorId: number): Promise<str
   return buildCreatorWelcomeMessage(rows[0].name)
 }
 
-export function consistencyPickerPrompt(count: number): string {
+export function consistencyPickerPrompt(count: number, query?: string | null): string {
+  const q = (query ?? '').trim()
   return (
-    `📊 CONSISTENCY CHECK-IN · ${count} creators\n` +
-    `Tap a name for a copy-ready Arabic message: days with us, consistency %, target ≥67% / ≤10 miss days, streaks, and upload-page reminder.\n` +
-    `Or type /welcome for the new-creator system intro.`
+    `📊 CONSISTENCY CHECK-IN · ${count} creator${count === 1 ? '' : 's'}` +
+    (q ? ` matching “${q}”` : '') +
+    `\nTap a name for a copy-ready Arabic message (days with us, %, target ≥67%, upload page).\n` +
+    `Tip: /fitness Sara — look up by name. /welcome — new-creator intro.`
   )
 }
 
-export function welcomePickerPrompt(count: number): string {
+export function welcomePickerPrompt(count: number, query?: string | null): string {
+  const q = (query ?? '').trim()
   return (
-    `👋 NEW CREATOR INTRO · ${count} creators\n` +
-    `Tap a name for a copy-ready Arabic welcome: daily post + upload, ≥67% / ≤10 miss days, streak ladder 3 → 6 → 10, and where to track consistency.\n` +
-    `Or type /fitness for a consistency check-in.`
+    `👋 NEW CREATOR INTRO · ${count} creator${count === 1 ? '' : 's'}` +
+    (q ? ` matching “${q}”` : '') +
+    `\nTap a name for a copy-ready Arabic welcome (system + ≥67% + streaks 3→6→10).\n` +
+    `Tip: /welcome Sara — look up by name. /fitness — consistency check-in.`
   )
 }
 
