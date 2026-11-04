@@ -269,7 +269,7 @@ export default async function AdminPage({
   const fitTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.fitTo ?? '') ? sp.fitTo! : today
   const fitFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.fitFrom ?? '')
     ? sp.fitFrom!
-    : addDays(fitTo, -29)
+    : monthRange(fitTo).start
 
   const ofFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.ofFrom ?? '') ? sp.ofFrom! : monthStart
   const ofTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.ofTo ?? '') ? sp.ofTo! : monthEnd
@@ -1932,6 +1932,7 @@ export default async function AdminPage({
                   missed: t('leaderMissed'),
                   partial: t('leaderPartial'),
                   lastDays: t('leaderLastDays'),
+                  thisMonth: t('consistencyThisMonth'),
                   posted: t('leaderPosted'),
                   break: t('leaderBreak'),
                   off: t('leaderOff'),

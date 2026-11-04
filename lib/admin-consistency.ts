@@ -1,5 +1,6 @@
 import 'server-only'
 import { sql } from '@/lib/db'
+import { monthRange } from '@/lib/campaign'
 import type { DayProgress } from '@/lib/consistency'
 import { getConsistencyForCreators, getServerToday, type CreatorWithProject } from '@/lib/queries'
 import type { ParticipantRole } from '@/lib/participant-role'
@@ -22,15 +23,19 @@ export type AdminConsistencyRow = {
 
 export type AdminConsistencyBoard = {
   today: string
+  /** First day of the month being scored (inclusive). */
+  monthStart: string
   rows: AdminConsistencyRow[]
 }
 
-/** Roster consistency for admin People → Consistency (active people only). */
+/** Roster consistency for admin People → Consistency (active people only).
+ *  Hit / miss / partial counts are for the current calendar month (1st → today). */
 export async function getAdminConsistencyBoard(opts: {
   projectId?: number | null
   role?: ParticipantRole | null
 } = {}): Promise<AdminConsistencyBoard> {
   const today = await getServerToday()
+  const { start: monthStart } = monthRange(today)
   const projectId = opts.projectId ?? null
   const role = opts.role ?? null
 
@@ -68,21 +73,35 @@ export async function getAdminConsistencyBoard(opts: {
   const rows: AdminConsistencyRow[] = people.map((person) => {
     const pack = packed.get(person.id)
     const consistency = pack?.consistency
-    const scored = (consistency?.days ?? []).filter((d) => d.date <= today && d.status !== 'future')
+    const monthDays = (consistency?.days ?? []).filter(
+      (d) =>
+        d.date >= monthStart &&
+        d.date <= today &&
+        (d.status === 'hit' || d.status === 'partial' || d.status === 'miss'),
+    )
+    const hitDays = monthDays.filter((d) => d.status === 'hit').length
+    const missDays = monthDays.filter((d) => d.status === 'miss').length
+    const partialDays = monthDays.filter((d) => d.status === 'partial').length
+    const requiredDays = monthDays.length
+    const hitRate = requiredDays > 0 ? hitDays / requiredDays : 0
+    // Dots = every scored day from the 1st of this month through today.
+    const recent = (consistency?.days ?? []).filter(
+      (d) => d.date >= monthStart && d.date <= today && d.status !== 'future',
+    )
     return {
       id: person.id,
       name: person.name,
       role: person.role === 'reposter' ? 'reposter' : 'creator',
       projectName: person.project_name ?? null,
       contractName: pack?.active?.name ?? null,
-      hitRate: consistency?.hitRate ?? 0,
+      hitRate,
       currentStreak: consistency?.currentStreak ?? 0,
       bestStreak: consistency?.bestStreak ?? 0,
-      missDays: consistency?.missDays ?? 0,
-      partialDays: consistency?.partialDays ?? 0,
-      hitDays: consistency?.hitDays ?? 0,
-      requiredDays: consistency?.requiredDays ?? 0,
-      recent: scored.slice(-14),
+      missDays,
+      partialDays,
+      hitDays,
+      requiredDays,
+      recent,
     }
   })
 
@@ -92,5 +111,5 @@ export async function getAdminConsistencyBoard(opts: {
     return a.name.localeCompare(b.name)
   })
 
-  return { today, rows }
+  return { today, monthStart, rows }
 }

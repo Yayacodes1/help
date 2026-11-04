@@ -44,6 +44,7 @@ export function AdminConsistencyBoardPanel({
     missed: string
     partial: string
     lastDays: string
+    thisMonth: string
     posted: string
     break: string
     off: string
@@ -85,6 +86,8 @@ export function AdminConsistencyBoardPanel({
 
       <p className="text-sm text-muted-foreground">{labels.hint}</p>
       <p className="text-xs text-muted-foreground">
+        {labels.thisMonth}: {board.monthStart} → {board.today}
+        {' · '}
         {labels.target}
         {below > 0 ? (
           <>
@@ -137,7 +140,7 @@ export function AdminConsistencyBoardPanel({
                 <th className="px-3 py-2 text-center font-medium">
                   {labels.missed} / {labels.partial}
                 </th>
-                <th className="px-3 py-2 text-start font-medium">{labels.lastDays}</th>
+                <th className="px-3 py-2 text-start font-medium">{labels.thisMonth}</th>
               </tr>
             </thead>
             <tbody>
