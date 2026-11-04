@@ -10,7 +10,7 @@ import {
 } from '@/app/actions/admin'
 import { adminPersonHref } from '@/lib/admin-href'
 import { formatMoney, formatNumber } from '@/lib/format'
-import { addDays } from '@/lib/campaign'
+import { monthRange } from '@/lib/campaign'
 import {
   sortFitnessRows,
   type FitnessBoard,
@@ -93,7 +93,7 @@ export function FitnessBoardPanel({
   function reset() {
     setSort('worst_roi')
     const to = board.today
-    const from = addDays(to, -29)
+    const from = monthRange(to).start
     push({ fitFrom: from, fitTo: to, project: null })
   }
 

@@ -1,6 +1,6 @@
 import 'server-only'
 import { sql } from '@/lib/db'
-import { addDays } from '@/lib/campaign'
+import { monthRange } from '@/lib/campaign'
 import { getServerToday } from '@/lib/queries'
 import type { FitnessBoard, FitnessRow, FitnessTier } from '@/lib/creator-fitness-copy'
 
@@ -34,7 +34,7 @@ export async function getCreatorFitnessBoard(opts: {
   const today = await getServerToday()
   const to = opts.to && /^\d{4}-\d{2}-\d{2}$/.test(opts.to) ? opts.to : today
   const from =
-    opts.from && /^\d{4}-\d{2}-\d{2}$/.test(opts.from) ? opts.from : addDays(to, -29)
+    opts.from && /^\d{4}-\d{2}-\d{2}$/.test(opts.from) ? opts.from : monthRange(to).start
   const projectId = opts.projectId ?? null
   const daySpan = Math.max(1, dayCountInclusive(from, to))
 
@@ -246,10 +246,12 @@ export async function setCreatorFitnessTier(
   today: string,
 ): Promise<void> {
   if (tier === 'probation') {
+    // Count miss days from the 1st of this month so November starts Nov 1, not mid-month.
+    const monthStart = monthRange(today).start
     await sql`
       UPDATE creators
       SET fitness_tier = 'probation',
-          probation_started_on = ${today}::date
+          probation_started_on = ${monthStart}::date
       WHERE id = ${creatorId} AND role = 'creator'
     `
     await sql`DELETE FROM probation_streak_notices WHERE creator_id = ${creatorId}`
