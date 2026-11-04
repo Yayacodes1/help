@@ -275,12 +275,12 @@ export function CommissionBoardPanel({
         </div>
       </div>
 
-      <form
-        action={(fd) => startTransition(() => updateCommissionSettings(fd))}
-        className="rounded-lg border border-border bg-card p-4"
-      >
-        <h3 className="text-sm font-semibold">{labels.settings}</h3>
-        <div className="mt-3">
+      <details className="rounded-lg border border-border bg-card p-4">
+        <summary className="cursor-pointer text-sm font-semibold">{labels.settings}</summary>
+        <form
+          action={(fd) => startTransition(() => updateCommissionSettings(fd))}
+          className="mt-3"
+        >
           <CommissionTermsFields
             variant="house"
             countMode={board.settings.countMode}
@@ -288,15 +288,15 @@ export function CommissionBoardPanel({
             viewCommissionAmount={board.settings.commissionAmount}
             commissionReels={board.settings.reelCount}
           />
-        </div>
-        <button
-          type="submit"
-          disabled={pending}
-          className="mt-3 h-9 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
-        >
-          {labels.save}
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={pending}
+            className="mt-3 h-9 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+          >
+            {labels.save}
+          </button>
+        </form>
+      </details>
 
       <CommissionEstimateCards
         estimate={estimate}
