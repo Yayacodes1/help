@@ -312,6 +312,7 @@ export const messages = {
     commissionApp: 'App',
     commissionMonth: 'Month',
     commissionDays: 'Days',
+    commissionPickMonth: 'Choose month',
     commissionEarnersOnly: 'Only creators getting commission',
     commissionMajorityHint:
       'Contracts that spend at least 50% of their days in this range. Views from before the month (e.g. a Sept 25 start) still count. Amounts in SAR and USD (3.75).',
@@ -1037,6 +1038,7 @@ export const messages = {
     commissionApp: 'التطبيق',
     commissionMonth: 'الشهر',
     commissionDays: 'الأيام',
+    commissionPickMonth: 'اختر الشهر',
     commissionEarnersOnly: 'فقط الصنّاع الذين يحصلون على عمولة',
     commissionMajorityHint:
       'عقود يقضي ≥50٪ من أيامها في هذا النطاق. المشاهدات قبل الشهر (مثل بداية 25 سبتمبر) تُحسب أيضاً. المبالغ بالريال والدولار (3.75).',

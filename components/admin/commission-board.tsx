@@ -9,6 +9,7 @@ import { CommissionTermsFields } from '@/components/admin/commission-terms-field
 import { ScoreDot, StandingBadge } from '@/components/standing-badge'
 import { formatMoney, formatNumber } from '@/lib/format'
 import { sarToUsd } from '@/lib/fx'
+import { calendarMonthRange } from '@/lib/campaign'
 import { adminPersonHref } from '@/lib/admin-href'
 import type { CommissionEstimate, CommissionEstimateOption } from '@/lib/commission'
 import type { MajorityCommissionBoard } from '@/lib/commission-data'
@@ -28,10 +29,19 @@ function moneyPair(sar: number): string {
 function monthLabel(ym: string): string {
   const [y, m] = ym.split('-').map(Number)
   const name = new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en', {
-    month: 'short',
+    month: 'long',
     timeZone: 'UTC',
   })
   return `${name} ${y}`
+}
+
+function monthShort(ym: string): string {
+  const [y, m] = ym.split('-').map(Number)
+  const name = new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en', {
+    month: 'short',
+    timeZone: 'UTC',
+  })
+  return `${name} ${String(y).slice(2)}`
 }
 
 export function CommissionBoardPanel({
@@ -88,12 +98,26 @@ export function CommissionBoardPanel({
     majorityHint: string
     totalCommission: string
     contractsInMonth: string
+    pickMonth: string
   }
 }) {
   const router = useRouter()
   const params = useSearchParams()
   const [pending, startTransition] = useTransition()
   const earnersOnly = params.get('cmEarn') === '1'
+
+  const months = useMemo(() => {
+    if (board.months.length > 0) return board.months
+    // Fallback so chips never disappear if span query fails.
+    const out: string[] = []
+    let cur = today.slice(0, 7)
+    for (let i = 0; i < 6; i++) {
+      out.unshift(cur)
+      const [y, m] = cur.split('-').map(Number)
+      cur = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`
+    }
+    return out
+  }, [board.months, today])
 
   const rows = useMemo(() => {
     if (!earnersOnly) return board.rows
@@ -108,11 +132,22 @@ export function CommissionBoardPanel({
   function push(patch: Record<string, string | null>) {
     const next = new URLSearchParams(params.toString())
     next.set('panel', 'commission')
+    next.set('tab', 'money')
     for (const [k, v] of Object.entries(patch)) {
       if (v == null || v === '') next.delete(k)
       else next.set(k, v)
     }
     router.push(`/admin?${next.toString()}`)
+  }
+
+  function selectMonth(ym: string) {
+    const { start, end } = calendarMonthRange(ym)
+    const to = end > today ? today : end
+    push({
+      cmMonth: ym,
+      cmFrom: start,
+      cmTo: to,
+    })
   }
 
   function setRange(from: string, to: string) {
@@ -130,6 +165,116 @@ export function CommissionBoardPanel({
 
   return (
     <div className="flex flex-col gap-5">
+      {/* Month / app / days first — was buried under House deal + Estimate. */}
+      <div className="rounded-xl border-2 border-primary/40 bg-card p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-bold">{labels.pickMonth}</h3>
+          <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <span className="sr-only">{labels.month}</span>
+            <select
+              value={board.month}
+              onChange={(e) => selectMonth(e.target.value)}
+              className="h-10 min-w-[12rem] rounded-lg border border-input bg-background px-3 text-sm font-semibold text-foreground"
+            >
+              {months.map((m) => (
+                <option key={m} value={m}>
+                  {monthLabel(m)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {months.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => selectMonth(m)}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                board.month === m
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground'
+              }`}
+            >
+              {monthShort(m)}
+            </button>
+          ))}
+        </div>
+
+        <p className="mt-3 text-xs text-muted-foreground">{labels.majorityHint}</p>
+
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {labels.app}
+            <select
+              value={projectId != null && String(projectId) !== '' ? String(projectId) : ''}
+              onChange={(e) => push({ project: e.target.value || null })}
+              className="h-9 min-w-[10rem] rounded-lg border border-input bg-background px-2 text-sm text-foreground"
+            >
+              <option value="">{labels.allApps}</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {labels.days} · from
+            <input
+              type="date"
+              value={board.from}
+              onChange={(e) =>
+                push({ cmFrom: e.target.value, cmMonth: e.target.value.slice(0, 7) })
+              }
+              className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            to
+            <input
+              type="date"
+              value={board.to}
+              onChange={(e) => push({ cmTo: e.target.value })}
+              className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+            />
+          </label>
+          <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-xs font-medium">
+            <input
+              type="checkbox"
+              checked={earnersOnly}
+              onChange={(e) => push({ cmEarn: e.target.checked ? '1' : null })}
+            />
+            {labels.earnersOnly}
+          </label>
+        </div>
+
+        <div className="mt-3">
+          <DateRangePresets today={today} from={board.from} to={board.to} onSelect={setRange} />
+        </div>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-4">
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 sm:col-span-2">
+          <div className="text-lg font-semibold tabular-nums">{moneyPair(earnedTotal)}</div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            {labels.totalCommission} · {monthLabel(board.month)}
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {board.contractCount} {labels.contractsInMonth} · ≥{board.majorityPct}%
+          </div>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="text-lg font-semibold tabular-nums">{formatNumber(board.totals.views)}</div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{labels.views}</div>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="text-lg font-semibold tabular-nums">{formatMoney(board.totals.paid)}</div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{labels.paid}</div>
+        </div>
+      </div>
+
       <form
         action={(fd) => startTransition(() => updateCommissionSettings(fd))}
         className="rounded-lg border border-border bg-card p-4"
@@ -177,112 +322,6 @@ export function CommissionBoardPanel({
           units: labels.units,
         }}
       />
-
-      <div className="rounded-lg border border-border bg-card p-4">
-        <p className="text-xs text-muted-foreground">{labels.majorityHint}</p>
-
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            {labels.app}
-            <select
-              value={projectId != null && String(projectId) !== '' ? String(projectId) : ''}
-              onChange={(e) =>
-                push({
-                  project: e.target.value || null,
-                })
-              }
-              className="h-9 min-w-[10rem] rounded-lg border border-input bg-background px-2 text-sm text-foreground"
-            >
-              <option value="">{labels.allApps}</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            From
-            <input
-              type="date"
-              value={board.from}
-              onChange={(e) =>
-                push({ cmFrom: e.target.value, cmMonth: e.target.value.slice(0, 7) })
-              }
-              className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            To
-            <input
-              type="date"
-              value={board.to}
-              onChange={(e) => push({ cmTo: e.target.value })}
-              className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
-            />
-          </label>
-          <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-xs font-medium">
-            <input
-              type="checkbox"
-              checked={earnersOnly}
-              onChange={(e) => push({ cmEarn: e.target.checked ? '1' : null })}
-            />
-            {labels.earnersOnly}
-          </label>
-        </div>
-
-        <div className="mt-3">
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {labels.month}
-          </div>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {board.months.map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() =>
-                  push({
-                    cmMonth: m,
-                    cmFrom: `${m}-01`,
-                    cmTo: null,
-                  })
-                }
-                className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
-                  board.month === m
-                    ? 'bg-primary text-primary-foreground'
-                    : 'border border-border text-muted-foreground hover:bg-accent hover:text-foreground'
-                }`}
-              >
-                {monthLabel(m)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-3">
-          <DateRangePresets today={today} from={board.from} to={board.to} onSelect={setRange} />
-        </div>
-      </div>
-
-      <div className="grid gap-2 sm:grid-cols-4">
-        <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 sm:col-span-2">
-          <div className="text-lg font-semibold tabular-nums">{moneyPair(earnedTotal)}</div>
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            {labels.totalCommission}
-          </div>
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            {board.contractCount} {labels.contractsInMonth} · ≥{board.majorityPct}%
-          </div>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-3">
-          <div className="text-lg font-semibold tabular-nums">{formatNumber(board.totals.views)}</div>
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{labels.views}</div>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-3">
-          <div className="text-lg font-semibold tabular-nums">{formatMoney(board.totals.paid)}</div>
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{labels.paid}</div>
-        </div>
-      </div>
 
       <div>
         <h3 className="text-sm font-semibold">{labels.leaderboard}</h3>

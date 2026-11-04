@@ -1681,6 +1681,7 @@ export default async function AdminPage({
                   majorityHint: t('commissionMajorityHint'),
                   totalCommission: t('commissionTotal'),
                   contractsInMonth: t('commissionContractsInMonth'),
+                  pickMonth: t('commissionPickMonth'),
                 }}
               />
             ),
