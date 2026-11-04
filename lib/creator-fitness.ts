@@ -93,7 +93,7 @@ export async function getCreatorFitnessBoard(opts: {
       c.paused_at::text AS paused_at,
       c.fitness_tier,
       c.probation_started_on::text AS probation_started_on,
-      COALESCE(v.views, 0)::int AS views,
+      COALESCE(v.views, 0)::bigint AS views,
       COALESCE(v.videos, 0)::int AS videos,
       COALESCE(v.post_days, 0)::int AS post_days
     FROM creators c
@@ -127,16 +127,21 @@ export async function getCreatorFitnessBoard(opts: {
     paused_at: string | null
     fitness_tier: string | null
     probation_started_on: string | null
-    views: number
+    views: number | string
     videos: number
     post_days: number
   }>
 
-  const byViews = [...people].sort((a, b) => b.views - a.views || a.name.localeCompare(b.name))
+  const normalized = people.map((p) => ({
+    ...p,
+    views: Number(p.views) || 0,
+  }))
+
+  const byViews = [...normalized].sort((a, b) => b.views - a.views || a.name.localeCompare(b.name))
   const viewsRank = new Map<number, number>()
   byViews.forEach((p, i) => viewsRank.set(p.id, i + 1))
 
-  const byCons = [...people].sort((a, b) => {
+  const byCons = [...normalized].sort((a, b) => {
     const ca = a.post_days / daySpan
     const cb = b.post_days / daySpan
     return cb - ca || b.views - a.views || a.name.localeCompare(b.name)
@@ -144,11 +149,11 @@ export async function getCreatorFitnessBoard(opts: {
   const consRank = new Map<number, number>()
   byCons.forEach((p, i) => consRank.set(p.id, i + 1))
 
-  const n = Math.max(1, people.length)
-  const totalViews = people.reduce((s, p) => s + p.views, 0)
+  const n = Math.max(1, normalized.length)
+  const totalViews = normalized.reduce((s, p) => s + p.views, 0)
   const top15Views = byViews.slice(0, 15).reduce((s, p) => s + p.views, 0)
 
-  const rows: FitnessRow[] = people.map((p) => {
+  const rows: FitnessRow[] = normalized.map((p) => {
     const vr = viewsRank.get(p.id) ?? n
     const cr = consRank.get(p.id) ?? n
     const consistency = Math.min(1, p.post_days / daySpan)
