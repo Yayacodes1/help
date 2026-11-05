@@ -442,6 +442,98 @@ function paySummaryLine(row: ContractCompareRow, money: (n: number) => string): 
   return parts.join(' · ')
 }
 
+function ContractProgressDetail({
+  row,
+  money,
+}: {
+  row: ContractCompareRow
+  money: (n: number) => string
+}) {
+  const {
+    contract,
+    consistency,
+    videoCount,
+    postedInstagram,
+    postedTiktok,
+    targetTotal,
+    videoRate,
+    displayRate,
+    videosComplete,
+    isPast,
+    isActive,
+    manualHits,
+    halves,
+  } = row
+  return (
+    <div className="flex flex-col gap-1.5">
+      <HitBar
+        rate={displayRate}
+        label={`${contract.name}${isActive ? ' · current' : ''}${
+          videosComplete ? ' · 100% videos' : ''
+        }`}
+      />
+      <p className="text-[11px] text-muted-foreground">
+        {formatDate(contract.start_date)}
+        {' → '}
+        {contract.end_date ? formatDate(contract.end_date) : 'open'}
+        {isPast ? ' · past' : ''}
+        {' · '}
+        Instagram + TikTok
+        {' · '}
+        {manualHits
+          ? `${videoCount} videos hit`
+          : videoRate != null
+            ? `${videoCount}${targetTotal > 0 ? `/${targetTotal}` : ''} videos (${Math.round(videoRate * 100)}%)`
+            : `${consistency.hitDays}/${consistency.requiredDays} days hit · ${videoCount} videos`}
+      </p>
+      <p className="text-[11px] text-muted-foreground">
+        IG {postedInstagram}
+        {!manualHits && contract.target_instagram > 0
+          ? `/${contract.target_instagram} goal`
+          : manualHits
+            ? ' hit'
+            : ''}
+        {' · '}
+        TT {postedTiktok}
+        {!manualHits && contract.target_tiktok > 0
+          ? `/${contract.target_tiktok} goal`
+          : manualHits
+            ? ' hit'
+            : ''}
+        {' · '}
+        daily IG {contract.goal_instagram}/d · TT {contract.goal_tiktok}/d
+        {' · '}
+        {describeSchedule(scheduleFromContract(contract))}
+      </p>
+      {row.projects.length > 0 ? (
+        <p className="text-[11px] text-muted-foreground">
+          {row.projects
+            .map((p) =>
+              p.target > 0
+                ? `${p.projectName} ${p.posted}/${p.target} videos`
+                : `${p.projectName} ${p.posted} videos`,
+            )
+            .join(' · ')}
+        </p>
+      ) : null}
+      <p className="text-[11px] font-medium text-foreground">{paySummaryLine(row, money)}</p>
+      {halves.length === 2 ? (
+        <p className="text-[11px] text-muted-foreground">
+          1st half: {halves[0].videoCount} videos
+          {halves[0].paidAmount > 0.009
+            ? ` · paid ${money(halves[0].paidAmount)}`
+            : ` · due ${money(halves[0].dueAmount)}`}
+          {' · '}
+          2nd half: {halves[1].videoCount} videos
+          {halves[1].paidAmount > 0.009
+            ? ` · paid ${money(halves[1].paidAmount)}`
+            : ` · due ${money(halves[1].dueAmount)}`}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 function MarkPaidButton({
   creatorId,
   today,
@@ -744,101 +836,39 @@ export function ContractsManager({
         </div>
       )}
 
-      {comparisons.length > 0 && (
+      {comparisons.length > 0 ? (
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="text-sm font-semibold">Progress by contract</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Current shows progress toward goals. Past shows what she hit. Paid amounts need Mark paid.
+            Current contract in full. Past periods stay as progress bars in this same tab.
           </p>
-          <div className="mt-4 flex flex-col gap-3">
-            {comparisons.map((row) => {
-              const {
-                contract,
-                consistency,
-                videoCount,
-                postedInstagram,
-                postedTiktok,
-                targetTotal,
-                videoRate,
-                displayRate,
-                videosComplete,
-                isPast,
-                isActive,
-                manualHits,
-                halves,
-              } = row
-              return (
-                <div key={contract.id} className="flex flex-col gap-1.5">
-                  <HitBar
-                    rate={displayRate}
-                    label={`${contract.name}${isActive ? ' · current' : ''}${
-                      videosComplete ? ' · 100% videos' : ''
-                    }`}
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    {formatDate(contract.start_date)}
-                    {' → '}
-                    {contract.end_date ? formatDate(contract.end_date) : 'open'}
-                    {isPast ? ' · past' : ''}
-                    {' · '}
-                    Instagram + TikTok
-                    {' · '}
-                    {manualHits
-                      ? `${videoCount} videos hit`
-                      : videoRate != null
-                        ? `${videoCount}${targetTotal > 0 ? `/${targetTotal}` : ''} videos (${Math.round(videoRate * 100)}%)`
-                        : `${consistency.hitDays}/${consistency.requiredDays} days hit · ${videoCount} videos`}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    IG {postedInstagram}
-                    {!manualHits && contract.target_instagram > 0
-                      ? `/${contract.target_instagram} goal`
-                      : manualHits
-                        ? ' hit'
-                        : ''}
-                    {' · '}
-                    TT {postedTiktok}
-                    {!manualHits && contract.target_tiktok > 0
-                      ? `/${contract.target_tiktok} goal`
-                      : manualHits
-                        ? ' hit'
-                        : ''}
-                    {' · '}
-                    daily IG {contract.goal_instagram}/d · TT {contract.goal_tiktok}/d
-                    {' · '}
-                    {describeSchedule(scheduleFromContract(contract))}
-                  </p>
-                  {row.projects.length > 0 ? (
-                    <p className="text-[11px] text-muted-foreground">
-                      {row.projects
-                        .map((p) =>
-                          p.target > 0
-                            ? `${p.projectName} ${p.posted}/${p.target} videos`
-                            : `${p.projectName} ${p.posted} videos`,
-                        )
-                        .join(' · ')}
-                    </p>
-                  ) : null}
-                  <p className="text-[11px] font-medium text-foreground">{paySummaryLine(row, money)}</p>
-                  {halves.length === 2 ? (
-                    <p className="text-[11px] text-muted-foreground">
-                      1st half: {halves[0].videoCount} videos
-                      {halves[0].paidAmount > 0.009
-                        ? ` · paid ${money(halves[0].paidAmount)}`
-                        : ` · due ${money(halves[0].dueAmount)}`}
-                      {' · '}
-                      2nd half: {halves[1].videoCount} videos
-                      {halves[1].paidAmount > 0.009
-                        ? ` · paid ${money(halves[1].paidAmount)}`
-                        : ` · due ${money(halves[1].dueAmount)}`}
-                    </p>
-                  ) : null}
-                </div>
-              )
-            })}
+          <div className="mt-4 flex flex-col gap-4">
+            {current ? (
+              <ContractProgressDetail row={current} money={money} />
+            ) : (
+              <p className="text-sm text-muted-foreground">No current contract — past progress below.</p>
+            )}
+            {comparisons.filter((r) => !r.isActive).length > 0 ? (
+              <div className="flex flex-col gap-2 border-t border-border pt-3">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Past · {comparisons.filter((r) => !r.isActive).length}
+                </p>
+                {comparisons
+                  .filter((r) => !r.isActive)
+                  .map((row) => (
+                    <HitBar
+                      key={row.contract.id}
+                      rate={row.displayRate}
+                      label={`${row.contract.name}${
+                        row.videosComplete ? ' · 100% videos' : ''
+                      } · ${paySummaryLine(row, money)}`}
+                    />
+                  ))}
+              </div>
+            ) : null}
           </div>
         </div>
-      )}
+      ) : null}
 
       <TapOpenSection
         title="Start new / current contract"
@@ -893,11 +923,11 @@ export function ContractsManager({
 
       <TapOpenSection
         title="All contracts"
-        defaultOpen
+        defaultOpen={false}
         summary={
           comparisons.length === 0
             ? 'None yet'
-            : `${comparisons.length} period${comparisons.length === 1 ? '' : 's'} · tap one to open`
+            : `${comparisons.length} period${comparisons.length === 1 ? '' : 's'} · tap to open, then tap a period`
         }
         hint={
           current
