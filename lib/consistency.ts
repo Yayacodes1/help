@@ -120,6 +120,18 @@ export function buildConsistency(options: {
   const days: DayProgress[] = dates.map((date) => {
     const counts = countsByDate[date] ?? { instagram: 0, tiktok: 0 }
     if (breaks.has(date)) {
+      const posted = counts.instagram > 0 || counts.tiktok > 0
+      // Break/rest stays blue when empty; posting on a break day turns it green (hit).
+      if (posted) {
+        return {
+          date,
+          instagram: counts.instagram,
+          tiktok: counts.tiktok,
+          goalInstagram,
+          goalTiktok,
+          status: 'hit' as const,
+        }
+      }
       return {
         date,
         instagram: counts.instagram,

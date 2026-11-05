@@ -145,7 +145,7 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   ]
   const ownHint =
     ownPriorDays.length > 0
-      ? `\n\n💡 فيديوهاتك محفوظة ليوم ${ownPriorDays.join('، ')} — اختره من «اختر اليوم» لتراها. Your videos are saved for ${ownPriorDays.join(', ')} — pick that day below to see them.`
+      ? `\n\n💡 فيديوهاتك محفوظة ليوم ${ownPriorDays.join('، ')} — غيّر تاريخ النشر أعلاه لتراها. Your videos are saved for ${ownPriorDays.join(', ')} — change the post date above to see them.`
       : ''
   const blockedNote =
     blocked.length > 0

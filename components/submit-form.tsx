@@ -83,6 +83,8 @@ export function SubmitForm({
   videoDate,
   defaultTime,
   brandProjects = [],
+  dateLocked = false,
+  maxDate,
 }: {
   username: string
   fields: PlatformField[]
@@ -91,6 +93,9 @@ export function SubmitForm({
   videoDate: string
   defaultTime: string
   brandProjects?: BrandProject[]
+  /** Probation: date is fixed to today. */
+  dateLocked?: boolean
+  maxDate?: string
 }) {
   const router = useRouter()
   const params = useSearchParams()
@@ -106,6 +111,15 @@ export function SubmitForm({
   const [autoPicked, setAutoPicked] = useState<string | null>(null)
   const submittedLock = useRef(false)
   const projectName = projects.find((p) => String(p.id) === projectId)?.name ?? null
+
+  function syncDateInUrl(nextDate: string) {
+    if (!nextDate || dateLocked) return
+    if (nextDate === (params.get('date') ?? '')) return
+    const next = new URLSearchParams(params.toString())
+    next.set('date', nextDate)
+    next.delete('vPage')
+    router.push(`?${next.toString()}`, { scroll: false })
+  }
 
   function onLinksChange(text: string) {
     const found = handlesInLinks(text)
@@ -265,12 +279,13 @@ export function SubmitForm({
             <Clock className="h-3.5 w-3.5" />
             <span>{labels.postWhenHint}</span>
           </div>
-          {now && riyadh ? (
+          {now && riyadh && !dateLocked ? (
             <button
               type="button"
               onClick={() => {
                 setPostDate(riyadh.date)
                 setPostTime(riyadh.time)
+                syncDateInUrl(riyadh.date)
               }}
               className="h-7 rounded-full border border-border bg-card px-3 text-[11px] font-semibold text-foreground hover:bg-secondary"
             >
@@ -296,15 +311,29 @@ export function SubmitForm({
         <div className="mt-2 grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-foreground">{labels.postDate}</span>
-            <input
-              type="date"
-              name="video_date"
-              required
-              autoComplete="off"
-              value={postDate}
-              onChange={(e) => setPostDate(e.target.value)}
-              className="h-11 rounded-xl border border-border bg-card px-3 text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring"
-            />
+            {dateLocked ? (
+              <>
+                <input type="hidden" name="video_date" value={postDate} />
+                <span className="flex h-11 items-center rounded-xl border border-border bg-muted/40 px-3 text-sm font-medium tabular-nums">
+                  {postDate}
+                </span>
+              </>
+            ) : (
+              <input
+                type="date"
+                name="video_date"
+                required
+                autoComplete="off"
+                value={postDate}
+                max={maxDate}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setPostDate(next)
+                  syncDateInUrl(next)
+                }}
+                className="h-11 rounded-xl border border-border bg-card px-3 text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring"
+              />
+            )}
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-foreground">{labels.postTime}</span>
@@ -319,6 +348,11 @@ export function SubmitForm({
             />
           </label>
         </div>
+        {dateLocked ? (
+          <p className="mt-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {labels.postWhenHint}
+          </p>
+        ) : null}
         {riyadh && postDate && postDate !== riyadh.date ? (
           <p dir="rtl" className="mt-2 rounded-lg bg-amber-500/15 px-3 py-2 text-right text-xs font-medium text-amber-800 dark:text-amber-300">
             ⚠️ أنت تنشر ليوم {postDate} وليس اليوم ({riyadh.date}). You are posting for {postDate}, not today.

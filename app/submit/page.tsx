@@ -3,7 +3,6 @@ import { after } from 'next/server'
 import { LogOut, Send } from 'lucide-react'
 import { SubmitForm } from '@/components/submit-form'
 import { TodayVideos } from '@/components/today-videos'
-import { DateSelect } from '@/components/date-select'
 import { CreatorStats } from '@/components/creator-stats'
 import { UsernameGate } from '@/components/username-gate'
 import { PanelBoard } from '@/components/admin/panel-board'
@@ -714,6 +713,8 @@ export default async function SubmitPage({
                   videoDate={date}
                   defaultTime={defaultTime}
                   brandProjects={brandProjects}
+                  dateLocked={onProbation}
+                  maxDate={today}
                   labels={{
                     pasteLinks: t('pasteLinks'),
                     pasteHint: t('pasteLinksHint'),
@@ -726,36 +727,21 @@ export default async function SubmitPage({
                     autoProject: t('autoProject'),
                     postDate: t('postDate'),
                     postTime: t('postTime'),
-                    postWhenHint: t('submitTimeHint'),
+                    postWhenHint: onProbation ? t('probationDateLocked') : t('submitTimeHint'),
                   }}
                 />
               </section>
 
-              <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-semibold text-foreground">{t('chooseDay')}</h2>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {onProbation ? t('probationDateLocked') : t('chooseDayHint')}
-                    </p>
-                  </div>
-                  {onProbation ? (
-                    <span className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm font-medium tabular-nums">
-                      {date}
-                    </span>
-                  ) : (
-                    <DateSelect date={date} />
-                  )}
+              <section className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h2 className="text-sm font-semibold text-foreground">{t('todaysVideos')}</h2>
+                  <p className="text-xs tabular-nums text-muted-foreground">{formatDate(date)}</p>
                 </div>
                 {!isToday && !onProbation ? (
                   <p className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground">
                     {t('addingPast')}
                   </p>
                 ) : null}
-              </section>
-
-              <section className="flex flex-col gap-3">
-                <h2 className="text-sm font-semibold text-foreground">{t('todaysVideos')}</h2>
                 <TodayVideos
                   username={username}
                   submissions={submissions}

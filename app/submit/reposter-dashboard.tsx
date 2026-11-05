@@ -564,6 +564,7 @@ export async function ReposterDashboard({
             videoDate={date}
             defaultTime={defaultTime}
             brandProjects={brandProjects}
+            maxDate={today}
             labels={{
               pasteLinks: t('pasteLinks'),
               pasteHint: t('pasteLinksHint'),

@@ -82,6 +82,35 @@ test('break days skip and keep the streak', () => {
   assert.equal(summary.currentStreak, 3)
 })
 
+test('posting on a break day turns it green (hit)', () => {
+  const summary = buildConsistency({
+    start: '2026-10-20',
+    end: '2026-10-22',
+    today: '2026-10-22',
+    goalInstagram: 1,
+    goalTiktok: 0,
+    countsByDate: counts({
+      '2026-10-20': { instagram: 1 },
+      '2026-10-21': { instagram: 1 },
+    }),
+    breakDates: ['2026-10-21'],
+  })
+  const breakDay = summary.days.find((d) => d.date === '2026-10-21')
+  assert.equal(breakDay?.status, 'hit')
+  const emptyBreak = buildConsistency({
+    start: '2026-10-20',
+    end: '2026-10-22',
+    today: '2026-10-22',
+    goalInstagram: 1,
+    goalTiktok: 0,
+    countsByDate: counts({
+      '2026-10-20': { instagram: 1 },
+    }),
+    breakDates: ['2026-10-21'],
+  })
+  assert.equal(emptyBreak.days.find((d) => d.date === '2026-10-21')?.status, 'break')
+})
+
 test('carry continues an unbroken streak across a new window', () => {
   const summary = buildConsistency({
     start: '2026-10-23',
