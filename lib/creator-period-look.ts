@@ -5,19 +5,25 @@ import { shiftYearMonth } from '@/lib/biweekly'
 import type { ConsistencySummary } from '@/lib/consistency'
 import { scheduleFromContract } from '@/lib/posting-schedule'
 import {
+  contractPlatforms,
   getActiveContract,
   getConsistencyForWindow,
   getCreatorById,
   getServerToday,
   goalsForContract,
 } from '@/lib/queries'
+import type { PlatformsMode } from '@/lib/platforms-mode'
 import type { ParticipantRole } from '@/lib/participant-role'
+import { getAdminTalkMarksForDay } from '@/lib/admin-talk-marks'
 
 export type CreatorPeriodPerson = {
   id: number
   name: string
   role: ParticipantRole
+  projectId: number | null
   projectName: string | null
+  /** Marked “Talk to them today” for the operational day. */
+  talkToday: boolean
 }
 
 export type CreatorPeriodLook = {
@@ -27,7 +33,17 @@ export type CreatorPeriodLook = {
   creator: Creator & { project_name: string | null }
   contract: Contract | null
   consistency: ConsistencySummary
+  /** Daily goals for the contract covering the end of the range. */
+  goalInstagram: number
+  goalTiktok: number
+  platforms: PlatformsMode
   videos: number
+  videosInstagram: number
+  videosTiktok: number
+  /** Sum of daily goals over scored days in the range. */
+  expectedVideos: number
+  expectedInstagram: number
+  expectedTiktok: number
   views: number
   viewsInstagram: number
   viewsTiktok: number
@@ -46,28 +62,47 @@ export function defaultCreatorPeriodRange(today: string): { from: string; to: st
 export async function listCreatorsForPeriodLook(opts: {
   projectId?: number | null
   role?: ParticipantRole | null
+  /** Day used for “Talk to them today” marks (defaults to server today). */
+  talkDay?: string | null
 } = {}): Promise<CreatorPeriodPerson[]> {
   const projectId = opts.projectId ?? null
   const role = opts.role ?? null
-  const rows = (await sql`
-    SELECT c.id, c.name, c.role, p.name AS project_name
-    FROM creators c
-    LEFT JOIN projects p ON p.id = c.project_id
-    WHERE c.paused_at IS NULL
-      AND c.role IN ('creator', 'reposter')
-      AND (${role}::text IS NULL OR c.role = ${role})
-      AND (
-        ${projectId}::int IS NULL
-        OR c.project_id = ${projectId}
-        OR c.project_id IS NULL
-      )
-    ORDER BY c.name ASC
-  `) as Array<{ id: number; name: string; role: string; project_name: string | null }>
+  const talkDay =
+    opts.talkDay && /^\d{4}-\d{2}-\d{2}$/.test(opts.talkDay)
+      ? opts.talkDay
+      : await getServerToday()
+  const [rows, talkMarks] = await Promise.all([
+    sql`
+      SELECT c.id, c.name, c.role, c.project_id, p.name AS project_name
+      FROM creators c
+      LEFT JOIN projects p ON p.id = c.project_id
+      WHERE c.paused_at IS NULL
+        AND c.role IN ('creator', 'reposter')
+        AND (${role}::text IS NULL OR c.role = ${role})
+        AND (
+          ${projectId}::int IS NULL
+          OR c.project_id = ${projectId}
+          OR c.project_id IS NULL
+        )
+      ORDER BY c.name ASC
+    ` as unknown as Promise<
+      Array<{
+        id: number
+        name: string
+        role: string
+        project_id: number | null
+        project_name: string | null
+      }>
+    >,
+    getAdminTalkMarksForDay(talkDay),
+  ])
   return rows.map((row) => ({
     id: Number(row.id),
     name: String(row.name),
     role: row.role === 'reposter' ? 'reposter' : 'creator',
+    projectId: row.project_id != null ? Number(row.project_id) : null,
     projectName: row.project_name ?? null,
+    talkToday: talkMarks.has(Number(row.id)),
   }))
 }
 
@@ -95,6 +130,7 @@ export async function getCreatorPeriodLook(opts: {
   // Goals/schedule as of the end of the selected window (past months use that day’s contract).
   const contract = await getActiveContract(creator.id, to)
   const goals = goalsForContract(creator, contract)
+  const platforms = contractPlatforms(creator, contract)
   const schedule = scheduleFromContract(contract)
 
   const [consistency, agg] = await Promise.all([
@@ -110,6 +146,8 @@ export async function getCreatorPeriodLook(opts: {
     sql`
       SELECT
         COUNT(s.id)::int AS videos,
+        COALESCE(SUM(CASE WHEN s.platform = 'instagram' THEN 1 ELSE 0 END), 0)::int AS videos_instagram,
+        COALESCE(SUM(CASE WHEN s.platform = 'tiktok' THEN 1 ELSE 0 END), 0)::int AS videos_tiktok,
         COALESCE(SUM(s.views), 0)::int AS views,
         COALESCE(SUM(CASE WHEN s.platform = 'instagram' THEN s.views ELSE 0 END), 0)::int AS views_instagram,
         COALESCE(SUM(CASE WHEN s.platform = 'tiktok' THEN s.views ELSE 0 END), 0)::int AS views_tiktok,
@@ -121,6 +159,8 @@ export async function getCreatorPeriodLook(opts: {
     ` as unknown as Promise<
       {
         videos: number
+        videos_instagram: number
+        videos_tiktok: number
         views: number
         views_instagram: number
         views_tiktok: number
@@ -130,13 +170,21 @@ export async function getCreatorPeriodLook(opts: {
   ])
 
   const row = agg[0]
-  const daysRequired = consistency.days.filter(
+  const requiredDays = consistency.days.filter(
     (d) =>
       d.date >= from &&
       d.date <= to &&
       d.date <= today &&
       (d.status === 'hit' || d.status === 'partial' || d.status === 'miss'),
-  ).length
+  )
+  const daysRequired = requiredDays.length
+  let expectedInstagram = 0
+  let expectedTiktok = 0
+  for (const d of requiredDays) {
+    expectedInstagram += Math.max(0, d.goalInstagram)
+    expectedTiktok += Math.max(0, d.goalTiktok)
+  }
+  const expectedVideos = expectedInstagram + expectedTiktok
 
   return {
     today,
@@ -144,6 +192,9 @@ export async function getCreatorPeriodLook(opts: {
     to,
     creator: { ...creator, project_name: projectName },
     contract,
+    goalInstagram: goals.goalInstagram,
+    goalTiktok: goals.goalTiktok,
+    platforms,
     consistency: {
       ...consistency,
       // Clip calendar to the selected window only.
@@ -166,6 +217,11 @@ export async function getCreatorPeriodLook(opts: {
           : 0,
     },
     videos: row?.videos ?? 0,
+    videosInstagram: row?.videos_instagram ?? 0,
+    videosTiktok: row?.videos_tiktok ?? 0,
+    expectedVideos,
+    expectedInstagram,
+    expectedTiktok,
     views: row?.views ?? 0,
     viewsInstagram: row?.views_instagram ?? 0,
     viewsTiktok: row?.views_tiktok ?? 0,

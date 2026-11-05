@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Search } from 'lucide-react'
+import { setAdminTalkToday } from '@/app/actions/admin'
 import { ConsistencyCalendar } from '@/components/admin/consistency-calendar'
 import { adminPersonHref } from '@/lib/admin-href'
 import { shiftYearMonth } from '@/lib/biweekly'
@@ -16,12 +17,16 @@ function pct(rate: number): string {
   return `${Math.round(rate * 100)}%`
 }
 
+type ProjectOption = { id: number; name: string }
+
 export function CreatorPeriodLookPanel({
   people,
   look,
   selectedId,
   defaultFrom,
   defaultTo,
+  today,
+  projects,
   labels,
 }: {
   people: CreatorPeriodPerson[]
@@ -29,6 +34,8 @@ export function CreatorPeriodLookPanel({
   selectedId: number | null
   defaultFrom: string
   defaultTo: string
+  today: string
+  projects: ProjectOption[]
   labels: {
     hint: string
     pickPerson: string
@@ -51,6 +58,20 @@ export function CreatorPeriodLookPanel({
     contract: string
     noContract: string
     openPerson: string
+    dailyGoal: string
+    platforms: string
+    platformsBoth: string
+    platformsIg: string
+    platformsTt: string
+    postedIg: string
+    postedTt: string
+    perDay: string
+    talkToday: string
+    talkUndo: string
+    allProjects: string
+    filterProject: string
+    expected: string
+    postedOfExpected: string
   }
 }) {
   const router = useRouter()
@@ -62,15 +83,21 @@ export function CreatorPeriodLookPanel({
   )
   const [to, setTo] = useState(look?.to ?? params.get('lookTo') ?? defaultTo)
 
+  const lookProjectRaw = params.get('lookProject')
+  const lookProjectId =
+    lookProjectRaw && /^\d+$/.test(lookProjectRaw) ? Number(lookProjectRaw) : null
+
   const filteredPeople = useMemo(() => {
     const needle = q.trim().toLowerCase()
-    if (!needle) return people
-    return people.filter(
-      (p) =>
+    return people.filter((p) => {
+      if (lookProjectId != null && p.projectId !== lookProjectId) return false
+      if (!needle) return true
+      return (
         p.name.toLowerCase().includes(needle) ||
-        (p.projectName?.toLowerCase().includes(needle) ?? false),
-    )
-  }, [people, q])
+        (p.projectName?.toLowerCase().includes(needle) ?? false)
+      )
+    })
+  }, [people, q, lookProjectId])
 
   function push(patch: Record<string, string | null>) {
     const next = new URLSearchParams(params.toString())
@@ -93,11 +120,10 @@ export function CreatorPeriodLookPanel({
     })
   }
 
-  const today = look?.today ?? new Date().toISOString().slice(0, 10)
-  const thisMonth = monthRange(today)
-  const lastMonthKey = shiftYearMonth(today.slice(0, 7), -1)
+  const day = look?.today ?? today
+  const thisMonth = monthRange(day)
+  const lastMonthKey = shiftYearMonth(day.slice(0, 7), -1)
   const lastMonthStart = `${lastMonthKey}-01`
-  // Last day of last month, or today if somehow future.
   const [ly, lm] = lastMonthKey.split('-').map(Number)
   const lastMonthEnd = new Date(Date.UTC(ly, lm, 0)).toISOString().slice(0, 10)
 
@@ -107,6 +133,28 @@ export function CreatorPeriodLookPanel({
 
       <div className="grid gap-3 lg:grid-cols-[minmax(14rem,18rem)_1fr]">
         <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-3">
+          <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {labels.filterProject}
+            <select
+              value={lookProjectId != null ? String(lookProjectId) : ''}
+              onChange={(e) =>
+                push({
+                  lookProject: e.target.value || null,
+                  lookId: selectedId != null ? String(selectedId) : null,
+                  lookFrom: from || null,
+                  lookTo: to || null,
+                })
+              }
+              className="h-9 rounded-lg border border-input bg-background px-2 text-sm font-normal normal-case tracking-normal text-foreground"
+            >
+              <option value="">{labels.allProjects}</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -126,7 +174,32 @@ export function CreatorPeriodLookPanel({
               filteredPeople.map((person) => {
                 const on = person.id === selectedId
                 return (
-                  <li key={person.id}>
+                  <li key={person.id} className="flex items-stretch gap-0">
+                    <form
+                      action={setAdminTalkToday}
+                      className="flex shrink-0 items-center border-e border-border px-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input type="hidden" name="creator_id" value={person.id} />
+                      <input type="hidden" name="day" value={day} />
+                      <input
+                        type="hidden"
+                        name="talk"
+                        value={person.talkToday ? '0' : '1'}
+                      />
+                      <button
+                        type="submit"
+                        aria-pressed={person.talkToday}
+                        title={person.talkToday ? labels.talkUndo : labels.talkToday}
+                        className={`inline-flex size-7 items-center justify-center rounded-md border text-sm font-semibold ${
+                          person.talkToday
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border bg-background text-muted-foreground hover:border-primary/40'
+                        }`}
+                      >
+                        {person.talkToday ? '✓' : '○'}
+                      </button>
+                    </form>
                     <button
                       type="button"
                       onClick={() =>
@@ -136,11 +209,11 @@ export function CreatorPeriodLookPanel({
                           lookTo: to || null,
                         })
                       }
-                      className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-accent/50 ${
+                      className={`flex min-w-0 flex-1 flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-accent/50 ${
                         on ? 'bg-primary/10 font-semibold' : ''
                       }`}
                     >
-                      <span>{person.name}</span>
+                      <span className="truncate">{person.name}</span>
                       <span className="flex flex-wrap items-center gap-1.5 text-[10px] font-normal text-muted-foreground">
                         {person.role === 'reposter' ? 'Reposter' : 'Creator'}
                         {person.projectName ? (
@@ -148,6 +221,11 @@ export function CreatorPeriodLookPanel({
                             className={`rounded border px-1 py-0.5 ${projectToneClass(person.projectName)}`}
                           >
                             {person.projectName}
+                          </span>
+                        ) : null}
+                        {person.talkToday ? (
+                          <span className="rounded border border-primary/30 bg-primary/10 px-1 py-0.5 text-primary">
+                            {labels.talkToday}
                           </span>
                         ) : null}
                       </span>
@@ -195,7 +273,7 @@ export function CreatorPeriodLookPanel({
             </button>
             <button
               type="button"
-              onClick={() => applyRange(lastMonthStart, lastMonthEnd > today ? today : lastMonthEnd)}
+              onClick={() => applyRange(lastMonthStart, lastMonthEnd > day ? day : lastMonthEnd)}
               className="h-9 rounded-lg border border-border bg-background px-3 text-sm hover:bg-accent"
             >
               {labels.lastMonth}
@@ -222,6 +300,20 @@ export function CreatorPeriodLookPanel({
                       labels.noContract
                     )}
                   </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {labels.platforms}:{' '}
+                    {look.platforms === 'instagram'
+                      ? labels.platformsIg
+                      : look.platforms === 'tiktok'
+                        ? labels.platformsTt
+                        : labels.platformsBoth}
+                    {' · '}
+                    {labels.dailyGoal}:{' '}
+                    {look.goalInstagram > 0 ? `IG ${look.goalInstagram}/${labels.perDay}` : null}
+                    {look.goalInstagram > 0 && look.goalTiktok > 0 ? ' · ' : null}
+                    {look.goalTiktok > 0 ? `TT ${look.goalTiktok}/${labels.perDay}` : null}
+                    {look.goalInstagram <= 0 && look.goalTiktok <= 0 ? '—' : null}
+                  </p>
                 </div>
                 <Link
                   href={adminPersonHref(look.creator.id, {
@@ -234,16 +326,39 @@ export function CreatorPeriodLookPanel({
                 </Link>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 <div className="rounded-lg border border-border bg-card p-3">
-                  <div className="text-xl font-semibold tabular-nums">{look.daysPosted}</div>
-                  <div className="mt-1 text-[11px] text-muted-foreground">{labels.daysPosted}</div>
+                  <div
+                    className={`text-xl font-semibold tabular-nums ${
+                      look.expectedVideos > 0 && look.videos < look.expectedVideos
+                        ? 'text-[#9a0d18] dark:text-rose-300'
+                        : look.expectedVideos > 0
+                          ? 'text-[#0f7a3d] dark:text-emerald-300'
+                          : ''
+                    }`}
+                  >
+                    {formatNumber(look.videos)}
+                    <span className="text-base font-medium text-muted-foreground">
+                      {' '}
+                      / {formatNumber(look.expectedVideos)}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    {labels.postedOfExpected}
+                    <span className="mt-0.5 block tabular-nums opacity-80">
+                      IG {formatNumber(look.videosInstagram)}/{formatNumber(look.expectedInstagram)} · TT{' '}
+                      {formatNumber(look.videosTiktok)}/{formatNumber(look.expectedTiktok)}
+                    </span>
+                  </div>
                 </div>
                 <div className="rounded-lg border border-border bg-card p-3">
-                  <div className="text-xl font-semibold tabular-nums">
-                    {formatNumber(look.videos)}
+                  <div className="text-xl font-semibold tabular-nums">{look.daysPosted}</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    {labels.daysPosted}
+                    <span className="mt-0.5 block opacity-80">
+                      {labels.expected}: {look.daysRequired}
+                    </span>
                   </div>
-                  <div className="mt-1 text-[11px] text-muted-foreground">{labels.videos}</div>
                 </div>
                 <div className="rounded-lg border border-border bg-card p-3">
                   <div className="text-xl font-semibold tabular-nums">

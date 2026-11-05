@@ -1961,6 +1961,8 @@ export default async function AdminPage({
                 selectedId={lookCreatorId}
                 defaultFrom={lookFrom}
                 defaultTo={lookTo}
+                today={today}
+                projects={projects.map((p) => ({ id: p.id, name: p.name }))}
                 labels={{
                   hint: t('lookHint'),
                   pickPerson: t('lookPickPerson'),
@@ -1983,6 +1985,20 @@ export default async function AdminPage({
                   contract: t('contractLabel'),
                   noContract: t('noContractSet'),
                   openPerson: t('lookOpenPerson'),
+                  dailyGoal: t('lookDailyGoal'),
+                  platforms: t('platforms'),
+                  platformsBoth: t('platformsBoth'),
+                  platformsIg: t('platformsInstagram'),
+                  platformsTt: t('platformsTiktok'),
+                  postedIg: t('lookPostedIg'),
+                  postedTt: t('lookPostedTt'),
+                  perDay: t('lookPerDay'),
+                  talkToday: t('lookTalkToday'),
+                  talkUndo: t('lookTalkUndo'),
+                  allProjects: t('lookAllProjects'),
+                  filterProject: t('lookFilterProject'),
+                  expected: t('lookExpected'),
+                  postedOfExpected: t('lookPostedOfExpected'),
                 }}
               />
             ),

@@ -2202,3 +2202,15 @@ export async function clearAllProbationCreators(projectId?: number | null) {
   revalidatePath('/submit')
   return { cleared: creatorIds.length }
 }
+
+/** Person period: mark (or clear) “Talk to them today” for a creator. */
+export async function setAdminTalkToday(formData: FormData) {
+  await requireAdmin()
+  const creatorId = Math.floor(Number(formData.get('creator_id')))
+  const day = (formData.get('day') ?? '').toString()
+  if (!(creatorId > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return
+  const talk = (formData.get('talk') ?? '').toString() === '1'
+  const { setAdminTalkMark } = await import('@/lib/admin-talk-marks')
+  await setAdminTalkMark(creatorId, day, talk)
+  revalidatePath('/admin')
+}
