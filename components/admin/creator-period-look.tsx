@@ -80,7 +80,7 @@ export function CreatorPeriodLookPanel({
       if (v == null || v === '') next.delete(k)
       else next.set(k, v)
     }
-    router.push(`${pathname}?${next.toString()}`)
+    router.push(`${pathname}?${next.toString()}`, { scroll: false })
   }
 
   function applyRange(nextFrom: string, nextTo: string) {
