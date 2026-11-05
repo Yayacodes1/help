@@ -198,7 +198,15 @@ export async function getProjectById(id: number): Promise<Project | null> {
 export async function getSubmissionsForCreator(
   creatorId: number,
   opts: { limit?: number; offset?: number; from?: string | null; to?: string | null } = {},
-): Promise<Array<Submission & { project_name: string | null }>> {
+): Promise<
+  Array<
+    Submission & {
+      project_name: string | null
+      contract_id: number | null
+      contract_name: string | null
+    }
+  >
+> {
   const limit = Math.min(Math.max(Math.floor(opts.limit ?? VIDEO_PAGE_SIZE), 1), 200)
   const offset = Math.max(Math.floor(opts.offset ?? 0), 0)
   const from = opts.from && /^\d{4}-\d{2}-\d{2}$/.test(opts.from) ? opts.from : null
@@ -206,15 +214,32 @@ export async function getSubmissionsForCreator(
   return (await sql`
     SELECT s.id, s.creator_id, s.project_id, s.platform, s.url, s.video_date::text AS video_date,
            s.views, s.views_error, s.created_at, s.submitted_at, s.platform_posted_at, s.batch_id, s.batch_index,
-           p.name AS project_name
+           p.name AS project_name,
+           ct.id AS contract_id,
+           ct.name AS contract_name
     FROM submissions s
     LEFT JOIN projects p ON p.id = s.project_id
+    LEFT JOIN LATERAL (
+      SELECT c.id, c.name
+      FROM contracts c
+      WHERE c.creator_id = s.creator_id
+        AND s.video_date >= c.start_date
+        AND (c.end_date IS NULL OR s.video_date <= c.end_date)
+      ORDER BY c.start_date DESC, c.id DESC
+      LIMIT 1
+    ) ct ON true
     WHERE s.creator_id = ${creatorId}
       AND (${from}::date IS NULL OR s.video_date >= ${from}::date)
       AND (${to}::date IS NULL OR s.video_date <= ${to}::date)
     ORDER BY s.video_date DESC, s.created_at DESC, s.id DESC
     LIMIT ${limit} OFFSET ${offset}
-  `) as Array<Submission & { project_name: string | null }>
+  `) as Array<
+    Submission & {
+      project_name: string | null
+      contract_id: number | null
+      contract_name: string | null
+    }
+  >
 }
 
 export async function countSubmissionsForCreator(creatorId: number): Promise<number> {
@@ -262,6 +287,8 @@ export type AdminSubmissionRow = Submission & {
   creator_name: string
   creator_role: ParticipantRole
   project_name: string | null
+  contract_id?: number | null
+  contract_name?: string | null
 }
 
 export type AdminFilters = {
@@ -345,10 +372,21 @@ export async function getAdminSubmissions(filters: AdminFilters = {}): Promise<A
       s.batch_index,
       c.name AS creator_name,
       c.role AS creator_role,
-      p.name AS project_name
+      p.name AS project_name,
+      ct.id AS contract_id,
+      ct.name AS contract_name
     FROM submissions s
     JOIN creators c ON c.id = s.creator_id
     LEFT JOIN projects p ON p.id = s.project_id
+    LEFT JOIN LATERAL (
+      SELECT x.id, x.name
+      FROM contracts x
+      WHERE x.creator_id = s.creator_id
+        AND s.video_date >= x.start_date
+        AND (x.end_date IS NULL OR s.video_date <= x.end_date)
+      ORDER BY x.start_date DESC, x.id DESC
+      LIMIT 1
+    ) ct ON true
     WHERE (${projectId}::int IS NULL OR s.project_id = ${projectId})
       AND (${role}::text IS NULL OR c.role = ${role})
       AND (${creatorId}::int IS NULL OR s.creator_id = ${creatorId})

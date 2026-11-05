@@ -24,11 +24,14 @@ export function SubmissionsTable({
   pagerPanel = 'videos',
   showCreator = true,
   showProject = true,
+  showContract = false,
   editableViews = true,
   allowManageVideos = false,
   editableProject = false,
   projects = [],
   noProjectLabel = 'No project',
+  noContractLabel = 'No contract',
+  contractLabel = 'Contract',
   linkRole,
   projectId,
   linkFrom,
@@ -42,6 +45,8 @@ export function SubmissionsTable({
     creator_name?: string
     project_id?: number | null
     project_name?: string | null
+    contract_id?: number | null
+    contract_name?: string | null
     video_date: string
     created_at?: string | null
     submitted_at?: string | null
@@ -55,12 +60,15 @@ export function SubmissionsTable({
   emptyLabel?: string
   showCreator?: boolean
   showProject?: boolean
+  showContract?: boolean
   editableViews?: boolean
   /** Show replace + delete even when views are read-only. */
   allowManageVideos?: boolean
   editableProject?: boolean
   projects?: Pick<Project, 'id' | 'name'>[]
   noProjectLabel?: string
+  noContractLabel?: string
+  contractLabel?: string
   linkRole?: string | null
   projectId?: number | string | null
   linkFrom?: string | null
@@ -96,6 +104,7 @@ export function SubmissionsTable({
           <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
             {showCreator && <th className="px-4 py-3 font-medium">Creator</th>}
             {showProject && <th className="px-4 py-3 font-medium">Project</th>}
+            {showContract && <th className="px-4 py-3 font-medium">{contractLabel}</th>}
             <th className="px-4 py-3 font-medium">Posting for</th>
             <th className="px-4 py-3 font-medium">Submitted</th>
             <th className="px-4 py-3 font-medium">Platform</th>
@@ -151,6 +160,17 @@ export function SubmissionsTable({
                       </span>
                     ) : (
                       '—'
+                    )}
+                  </td>
+                )}
+                {showContract && (
+                  <td className="max-w-[10rem] px-4 py-3 text-muted-foreground">
+                    {'contract_name' in s && s.contract_name ? (
+                      <span className="line-clamp-2 text-sm font-medium text-foreground" title={s.contract_name}>
+                        {s.contract_name}
+                      </span>
+                    ) : (
+                      <span className="text-xs">{noContractLabel}</span>
                     )}
                   </td>
                 )}

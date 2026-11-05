@@ -1495,6 +1495,9 @@ export default async function AdminPage({
                           linkRole={side.role}
                           projectId={projectId}
                           linkFrom="videos"
+                          showContract
+                          contractLabel={t('contractLabel')}
+                          noContractLabel={t('noContractSet')}
                           editableProject
                           projects={projects}
                           noProjectLabel={t('noProject')}
@@ -1513,6 +1516,9 @@ export default async function AdminPage({
                     linkRole={roleFilter}
                     projectId={projectId}
                     linkFrom="videos"
+                    showContract
+                    contractLabel={t('contractLabel')}
+                    noContractLabel={t('noContractSet')}
                     editableProject
                     projects={projects}
                     noProjectLabel={t('noProject')}

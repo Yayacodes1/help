@@ -424,6 +424,8 @@ export default async function CreatorDetailPage({
                   refreshThisVideo: t('refreshThisVideo'),
                   allProjects: t('allProjects'),
                   pickProject: t('pickProject'),
+                  contract: t('contractLabel'),
+                  noContract: t('noContractSet'),
                 }}
               />
             ),

@@ -17,6 +17,8 @@ type Submission = {
   creator_name?: string
   project_id?: number | null
   project_name?: string | null
+  contract_id?: number | null
+  contract_name?: string | null
   video_date: string
   created_at?: string | null
   submitted_at?: string | null
@@ -60,6 +62,8 @@ export function CreatorVideosPanel({
     refreshThisVideo: string
     allProjects: string
     pickProject: string
+    contract: string
+    noContract: string
   }
 }) {
   const [platform, setPlatform] = useState<PlatformFilter>('both')
@@ -213,6 +217,9 @@ export function CreatorVideosPanel({
         emptyLabel={filtered.length === 0 && submissions.length > 0 ? labels.noMatch : emptyLabel}
         showCreator={false}
         showProject={true}
+        showContract
+        contractLabel={labels.contract}
+        noContractLabel={labels.noContract}
         editableViews={false}
         allowManageVideos
         editableProject
