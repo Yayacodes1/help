@@ -46,6 +46,7 @@ import { emptyActivityCounts } from '@/lib/activity-kinds'
 import { addDays } from '@/lib/campaign'
 import { ActivityCountsLine } from '@/components/activity-toggles'
 import { RestoreStreaksButton } from '@/components/admin/restore-streaks-button'
+import { FirePersonButton } from '@/components/admin/fire-person-button'
 import { videoPaging } from '@/lib/video-page'
 
 export const dynamic = 'force-dynamic'
@@ -177,6 +178,18 @@ export default async function CreatorDetailPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <FirePersonButton
+            creatorId={creator.id}
+            name={creator.name}
+            fired={creator.paused_at != null}
+            redirectTo={creator.paused_at ? null : backHref}
+            labels={{
+              fire: t('firePerson'),
+              fireConfirm: t('firePersonConfirm'),
+              bringBack: t('bringBackPerson'),
+              firedBadge: t('fitnessFired'),
+            }}
+          />
           <RestoreStreaksButton
             creatorIds={[creator.id]}
             compact

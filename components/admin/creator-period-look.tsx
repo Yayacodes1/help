@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Search } from 'lucide-react'
 import { setAdminTalkToday } from '@/app/actions/admin'
 import { ConsistencyCalendar } from '@/components/admin/consistency-calendar'
+import { FirePersonButton } from '@/components/admin/fire-person-button'
 import { adminPersonHref } from '@/lib/admin-href'
 import { shiftYearMonth } from '@/lib/biweekly'
 import { monthRange } from '@/lib/campaign'
@@ -72,6 +73,10 @@ export function CreatorPeriodLookPanel({
     filterProject: string
     expected: string
     postedOfExpected: string
+    fire: string
+    fireConfirm: string
+    bringBack: string
+    firedBadge: string
   }
 }) {
   const router = useRouter()
@@ -90,7 +95,14 @@ export function CreatorPeriodLookPanel({
   const filteredPeople = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return people.filter((p) => {
-      if (lookProjectId != null && p.projectId !== lookProjectId) return false
+      // Dual-project people (e.g. Miqat home + Notek Instagram) stay when either is selected.
+      if (
+        lookProjectId != null &&
+        p.role !== 'reposter' &&
+        !(p.projectIds?.includes(lookProjectId) ?? p.projectId === lookProjectId)
+      ) {
+        return false
+      }
       if (!needle) return true
       return (
         p.name.toLowerCase().includes(needle) ||
@@ -315,15 +327,29 @@ export function CreatorPeriodLookPanel({
                     {look.goalInstagram <= 0 && look.goalTiktok <= 0 ? '—' : null}
                   </p>
                 </div>
-                <Link
-                  href={adminPersonHref(look.creator.id, {
-                    panel: 'consistency',
-                    from: 'look',
-                  })}
-                  className="text-sm font-medium underline-offset-4 hover:underline"
-                >
-                  {labels.openPerson}
-                </Link>
+                <div className="flex flex-wrap items-center gap-2">
+                  <FirePersonButton
+                    creatorId={look.creator.id}
+                    name={look.creator.name}
+                    fired={look.creator.paused_at != null}
+                    size="sm"
+                    labels={{
+                      fire: labels.fire,
+                      fireConfirm: labels.fireConfirm,
+                      bringBack: labels.bringBack,
+                      firedBadge: labels.firedBadge,
+                    }}
+                  />
+                  <Link
+                    href={adminPersonHref(look.creator.id, {
+                      panel: 'consistency',
+                      from: 'look',
+                    })}
+                    className="text-sm font-medium underline-offset-4 hover:underline"
+                  >
+                    {labels.openPerson}
+                  </Link>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">

@@ -126,6 +126,10 @@ export const messages = {
     lookFilterProject: 'Project',
     lookExpected: 'Expected',
     lookPostedOfExpected: 'Posted / expected',
+    firePerson: 'Fire',
+    firePersonConfirm:
+      'Fire "{name}"? They leave money, Telegram, daily lists, fitness, and strikes. Past videos and old payments stay.',
+    bringBackPerson: 'Bring back',
     contracts: 'Contracts',
     contractLabel: 'Contract',
     profile: 'Profile',
@@ -950,6 +954,10 @@ export const messages = {
     lookFilterProject: 'المشروع',
     lookExpected: 'المطلوب',
     lookPostedOfExpected: 'المنشور / المطلوب',
+    firePerson: 'فصل',
+    firePersonConfirm:
+      'فصل "{name}"؟ يخرج من المال والتيليجرام والقوائم اليومية واللياقة والستريكات. الفيديوهات والدفعات القديمة تبقى.',
+    bringBackPerson: 'إرجاع',
     contracts: 'العقود',
     contractLabel: 'العقد',
     profile: 'الملف',

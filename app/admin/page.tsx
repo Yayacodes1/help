@@ -638,8 +638,10 @@ export default async function AdminPage({
     }
     if (sp.panel === 'look') {
       try {
+        // Load everyone for Person period; the panel filters by project itself so
+        // dual-brand people (Miqat + Notek handles) still show under either project.
         lookPeople = await listCreatorsForPeriodLook({
-          projectId,
+          projectId: null,
           role: roleSql,
         })
         if (lookCreatorId != null) {
@@ -1999,6 +2001,10 @@ export default async function AdminPage({
                   filterProject: t('lookFilterProject'),
                   expected: t('lookExpected'),
                   postedOfExpected: t('lookPostedOfExpected'),
+                  fire: t('firePerson'),
+                  fireConfirm: t('firePersonConfirm'),
+                  bringBack: t('bringBackPerson'),
+                  firedBadge: t('fitnessFired'),
                 }}
               />
             ),

@@ -15,6 +15,7 @@ import {
 import type { PlatformsMode } from '@/lib/platforms-mode'
 import type { ParticipantRole } from '@/lib/participant-role'
 import { getAdminTalkMarksForDay } from '@/lib/admin-talk-marks'
+import { isMiyqatProjectName, isNotekProjectName } from '@/lib/project-scope'
 
 export type CreatorPeriodPerson = {
   id: number
@@ -22,6 +23,11 @@ export type CreatorPeriodPerson = {
   role: ParticipantRole
   projectId: number | null
   projectName: string | null
+  /**
+   * Every project this person belongs to: home project, brand handles
+   * (Notek / Miqat), and any project they have posted under.
+   */
+  projectIds: number[]
   /** Marked “Talk to them today” for the operational day. */
   talkToday: boolean
 }
@@ -71,19 +77,27 @@ export async function listCreatorsForPeriodLook(opts: {
     opts.talkDay && /^\d{4}-\d{2}-\d{2}$/.test(opts.talkDay)
       ? opts.talkDay
       : await getServerToday()
-  const [rows, talkMarks] = await Promise.all([
+
+  const [projectRows, rows, talkMarks, submissionProjects] = await Promise.all([
+    sql`SELECT id, name FROM projects` as unknown as Promise<
+      Array<{ id: number; name: string }>
+    >,
     sql`
-      SELECT c.id, c.name, c.role, c.project_id, p.name AS project_name
+      SELECT
+        c.id,
+        c.name,
+        c.role,
+        c.project_id,
+        p.name AS project_name,
+        c.notek_tiktok_username,
+        c.notek_instagram_username,
+        c.miqat_tiktok_username,
+        c.miqat_instagram_username
       FROM creators c
       LEFT JOIN projects p ON p.id = c.project_id
       WHERE c.paused_at IS NULL
         AND c.role IN ('creator', 'reposter')
         AND (${role}::text IS NULL OR c.role = ${role})
-        AND (
-          ${projectId}::int IS NULL
-          OR c.project_id = ${projectId}
-          OR c.project_id IS NULL
-        )
       ORDER BY c.name ASC
     ` as unknown as Promise<
       Array<{
@@ -92,18 +106,70 @@ export async function listCreatorsForPeriodLook(opts: {
         role: string
         project_id: number | null
         project_name: string | null
+        notek_tiktok_username: string | null
+        notek_instagram_username: string | null
+        miqat_tiktok_username: string | null
+        miqat_instagram_username: string | null
       }>
     >,
     getAdminTalkMarksForDay(talkDay),
+    sql`
+      SELECT DISTINCT creator_id, project_id
+      FROM submissions
+      WHERE project_id IS NOT NULL
+    ` as unknown as Promise<Array<{ creator_id: number; project_id: number }>>,
   ])
-  return rows.map((row) => ({
-    id: Number(row.id),
-    name: String(row.name),
-    role: row.role === 'reposter' ? 'reposter' : 'creator',
-    projectId: row.project_id != null ? Number(row.project_id) : null,
-    projectName: row.project_name ?? null,
-    talkToday: talkMarks.has(Number(row.id)),
-  }))
+
+  const notekId =
+    projectRows.find((p) => isNotekProjectName(p.name))?.id ?? null
+  const miqatId =
+    projectRows.find((p) => isMiyqatProjectName(p.name))?.id ?? null
+
+  const postedByCreator = new Map<number, Set<number>>()
+  for (const row of submissionProjects) {
+    const cid = Number(row.creator_id)
+    const pid = Number(row.project_id)
+    if (!Number.isFinite(cid) || !Number.isFinite(pid)) continue
+    const set = postedByCreator.get(cid) ?? new Set<number>()
+    set.add(pid)
+    postedByCreator.set(cid, set)
+  }
+
+  const people: CreatorPeriodPerson[] = []
+  for (const row of rows) {
+    const id = Number(row.id)
+    const homeId = row.project_id != null ? Number(row.project_id) : null
+    const ids = new Set<number>()
+    if (homeId != null && Number.isFinite(homeId)) ids.add(homeId)
+    for (const pid of postedByCreator.get(id) ?? []) ids.add(pid)
+    const hasNotekHandle = Boolean(
+      row.notek_tiktok_username?.trim() || row.notek_instagram_username?.trim(),
+    )
+    const hasMiqatHandle = Boolean(
+      row.miqat_tiktok_username?.trim() || row.miqat_instagram_username?.trim(),
+    )
+    if (hasNotekHandle && notekId != null) ids.add(notekId)
+    if (hasMiqatHandle && miqatId != null) ids.add(miqatId)
+    // Unassigned people appear under every project filter (same as Manage).
+    if (homeId == null) {
+      for (const p of projectRows) ids.add(Number(p.id))
+    }
+
+    if (projectId != null && !ids.has(projectId) && row.role !== 'reposter') {
+      continue
+    }
+
+    people.push({
+      id,
+      name: String(row.name),
+      role: row.role === 'reposter' ? 'reposter' : 'creator',
+      projectId: homeId,
+      projectName: row.project_name ?? null,
+      projectIds: [...ids],
+      talkToday: talkMarks.has(id),
+    })
+  }
+  return people
 }
 
 export async function getCreatorPeriodLook(opts: {
