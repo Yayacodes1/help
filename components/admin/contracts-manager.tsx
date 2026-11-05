@@ -46,13 +46,15 @@ function TapOpenSection({
   title,
   summary,
   hint,
+  badge,
+  /** Closed by default — tap the header to open. */
   defaultOpen = false,
   children,
 }: {
   title: string
   summary: string
   hint?: string
-  /** Open on first view so every contract is visible at once. */
+  badge?: ReactNode
   defaultOpen?: boolean
   children: ReactNode
 }) {
@@ -68,7 +70,10 @@ function TapOpenSection({
         }`}
       >
         <div className="min-w-0">
-          <div className="text-sm font-semibold tracking-tight">{title}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-semibold tracking-tight">{title}</div>
+            {badge}
+          </div>
           <div className="mt-1 text-sm tabular-nums text-foreground">{summary}</div>
           {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
         </div>
@@ -892,7 +897,7 @@ export function ContractsManager({
         summary={
           comparisons.length === 0
             ? 'None yet'
-            : `${comparisons.length} period${comparisons.length === 1 ? '' : 's'} · all open below`
+            : `${comparisons.length} period${comparisons.length === 1 ? '' : 's'} · tap one to open`
         }
         hint={
           current
@@ -945,7 +950,7 @@ export function ContractsManager({
             </button>
           </form>
         ) : (
-          <ul className="flex flex-col divide-y divide-border">
+          <ul className="flex flex-col gap-3">
             {[...(current ? [current] : []), ...comparisons.filter((r) => r !== current)].map(
               (row) => {
                 const {
@@ -957,46 +962,54 @@ export function ContractsManager({
                   balance,
                 } = row
                 const pastVariant = isPast && !isActive
+                const moneySummary = [
+                  `Terms ${expectedTotal != null ? money(expectedTotal) : '—'}`,
+                  `Paid ${money(paidAmount)}`,
+                  balance > 0.009
+                    ? `still due ${money(balance)}`
+                    : paidAmount > 0.009
+                      ? 'settled'
+                      : null,
+                  contract.view_commission_amount == null && !isPast
+                    ? 'view commission not set'
+                    : null,
+                  isActive && !isPast ? 'can Mark paid anytime' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
                 return (
-                  <li id={`contract-${contract.id}`} key={contract.id} className="scroll-mt-24 py-3 first:pt-0 last:pb-0">
+                  <li id={`contract-${contract.id}`} key={contract.id} className="scroll-mt-24 list-none">
+                    <TapOpenSection
+                      title={contract.name}
+                      summary={moneySummary}
+                      defaultOpen={false}
+                      badge={
+                        isActive ? (
+                          <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
+                            current
+                          </span>
+                        ) : pastVariant ? (
+                          <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-secondary-foreground">
+                            past
+                          </span>
+                        ) : null
+                      }
+                    >
                     <form
                       action={(fd) =>
                         startTransition(() => updateContract(contract.id, creatorId, fd))
                       }
                       className="grid gap-2"
                     >
-                      <div className="flex flex-wrap items-center gap-2">
+                      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                        Name
                         <input
                           name="name"
                           required
                           defaultValue={contract.name}
-                          className={`${inputClass} min-w-40 flex-1`}
+                          className={`${inputClass} min-w-40`}
                         />
-                        {isActive && (
-                          <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
-                            current
-                          </span>
-                        )}
-                        {pastVariant && (
-                          <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-secondary-foreground">
-                            past
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Terms {expectedTotal != null ? money(expectedTotal) : '—'}
-                        {' · '}
-                        Paid {money(paidAmount)}
-                        {balance > 0.009
-                          ? ` · still due ${money(balance)}`
-                          : paidAmount > 0.009
-                            ? ' · settled'
-                            : ''}
-                        {contract.view_commission_amount == null && !isPast
-                          ? ' · view commission not set'
-                          : ''}
-                        {isActive && !isPast ? ' · can Mark paid anytime' : ''}
-                      </p>
+                      </label>
                       <FormSection
                         title="Scheduled"
                         hint="Platforms and the date window for this period."
@@ -1128,6 +1141,7 @@ export function ContractsManager({
                         Tip: set a last day about a month out to unlock 1st / 2nd half Mark paid.
                       </p>
                     ) : null}
+                    </TapOpenSection>
                   </li>
                 )
               },
