@@ -4,6 +4,7 @@ export const ADMIN_TABS = {
   analytics: ['analytics', 'ranking', 'projectviews', 'topvideos', 'miqatcontest'],
   money: ['yahya', 'marketing', 'payouts', 'calendar', 'commission', 'paydue', 'payments', 'archive', 'outflow'],
   people: [
+    'look',
     'consistency',
     'fitness',
     'streaks',

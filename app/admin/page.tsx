@@ -92,9 +92,15 @@ import { getReposterStrikeBoard, syncReposterStrikes } from '@/lib/strikes'
 import { getCreatorFitnessBoard } from '@/lib/creator-fitness'
 import { getProbationStreakBoard, syncProbationMisses } from '@/lib/probation'
 import { getAdminConsistencyBoard } from '@/lib/admin-consistency'
+import {
+  defaultCreatorPeriodRange,
+  getCreatorPeriodLook,
+  listCreatorsForPeriodLook,
+} from '@/lib/creator-period-look'
 import { FitnessBoardPanel } from '@/components/admin/fitness-board'
 import { ProbationStreaksBoard } from '@/components/admin/probation-streaks-board'
 import { AdminConsistencyBoardPanel } from '@/components/admin/consistency-board'
+import { CreatorPeriodLookPanel } from '@/components/admin/creator-period-look'
 import { getAttendanceForDay } from '@/lib/attendance'
 import { formatPlanCompare, getLeaderBoard, getLeaderDirectory, loadLeaderLinks, withLeaderFields } from '@/lib/leaders'
 import { LeadersBoard } from '@/components/admin/leaders-board'
@@ -582,6 +588,14 @@ export default async function AdminPage({
   let streakBoardError: string | null = null
   let consistencyBoard: Awaited<ReturnType<typeof getAdminConsistencyBoard>> | null = null
   let consistencyBoardError: string | null = null
+  let lookPeople: Awaited<ReturnType<typeof listCreatorsForPeriodLook>> = []
+  let lookData: Awaited<ReturnType<typeof getCreatorPeriodLook>> | null = null
+  let lookError: string | null = null
+  const lookDefaults = defaultCreatorPeriodRange(today)
+  const lookFrom = /^\d{4}-\d{2}-\d{2}$/.test(sp.lookFrom ?? '') ? sp.lookFrom! : lookDefaults.from
+  const lookTo = /^\d{4}-\d{2}-\d{2}$/.test(sp.lookTo ?? '') ? sp.lookTo! : lookDefaults.to
+  const lookId = Number(sp.lookId)
+  const lookCreatorId = Number.isFinite(lookId) && lookId > 0 ? lookId : null
   if (tab === 'people') {
     try {
       companyStructure = await getCompanyStructure()
@@ -620,6 +634,24 @@ export default async function AdminPage({
         console.error('[admin] consistency board', err)
         consistencyBoard = null
         consistencyBoardError = t('consistencyLoadError')
+      }
+    }
+    if (sp.panel === 'look') {
+      try {
+        lookPeople = await listCreatorsForPeriodLook({
+          projectId,
+          role: roleSql,
+        })
+        if (lookCreatorId != null) {
+          lookData = await getCreatorPeriodLook({
+            creatorId: lookCreatorId,
+            from: lookFrom,
+            to: lookTo,
+          })
+        }
+      } catch (err) {
+        console.error('[admin] person period look', err)
+        lookError = t('lookLoadError')
       }
     }
   }
@@ -1913,6 +1945,48 @@ export default async function AdminPage({
           },
           ] : []),
           ...(tab === 'people' ? [
+          {
+            id: 'look',
+            title: t('lookTitle'),
+            summary: lookData
+              ? `${lookData.creator.name} · ${Math.round(lookData.consistency.hitRate * 100)}%`
+              : lookError ?? '—',
+            hint: t('lookHint'),
+            children: lookError ? (
+              <p className="text-sm text-destructive">{lookError}</p>
+            ) : (
+              <CreatorPeriodLookPanel
+                people={lookPeople}
+                look={lookData}
+                selectedId={lookCreatorId}
+                defaultFrom={lookFrom}
+                defaultTo={lookTo}
+                labels={{
+                  hint: t('lookHint'),
+                  pickPerson: t('lookPickPerson'),
+                  search: t('rankingSearch'),
+                  from: t('from'),
+                  to: t('to'),
+                  apply: t('apply'),
+                  thisMonth: t('rankingThisMonth'),
+                  lastMonth: t('rankingLastMonth'),
+                  empty: t('lookEmpty'),
+                  pickHint: t('lookPickHint'),
+                  daysPosted: t('lookDaysPosted'),
+                  videos: t('videosWord'),
+                  views: t('views'),
+                  consistency: t('consistency'),
+                  hitRate: t('hitRate'),
+                  missed: t('leaderMissed'),
+                  partial: t('leaderPartial'),
+                  calendar: t('lookCalendar'),
+                  contract: t('contractLabel'),
+                  noContract: t('noContractSet'),
+                  openPerson: t('lookOpenPerson'),
+                }}
+              />
+            ),
+          },
           {
             id: 'consistency',
             title: t('consistency'),

@@ -26,6 +26,7 @@ const ADMIN_PANELS = new Set([
   'fitness',
   'streaks',
   'consistency',
+  'look',
 ])
 
 export function adminReturnPanel(from?: string | null): string {
