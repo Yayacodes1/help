@@ -803,6 +803,13 @@ export const messages = {
     submitStreakSecond: 'Second streak',
     submitStreakFinal: 'Final streak',
     submitConsistencyTarget: 'Target ≥67% · ≤10 miss days / month · probation 3 → 6 → 10',
+    submitContractTitle: 'Your current contract',
+    submitContractBonus: 'Views bonus so far',
+    submitContractPosted: 'Videos posted',
+    submitContractLeft: 'Videos left',
+    submitContractProgress: 'Progress',
+    submitContractBonusRate: 'Every {views} views → {amount}',
+    submitContractBonusUnset: 'Views bonus rate not set on this contract yet.',
   },
   ar: {
     appName: 'تسليم المحتوى',
@@ -1594,6 +1601,13 @@ export const messages = {
     submitStreakSecond: 'الستريك الثاني',
     submitStreakFinal: 'الستريك الأخير',
     submitConsistencyTarget: 'الهدف ≥67% · ≤10 غياب / شهر · المراقبة 3 → 6 → 10',
+    submitContractTitle: 'عقدك الحالي',
+    submitContractBonus: 'بونص المشاهدات حتى الآن',
+    submitContractPosted: 'فيديوهات نزلت',
+    submitContractLeft: 'فيديوهات باقية',
+    submitContractProgress: 'التقدم',
+    submitContractBonusRate: 'كل {views} مشاهدة → {amount}',
+    submitContractBonusUnset: 'معدل بونص المشاهدات غير مضبوط على هذا العقد بعد.',
   },
 } as const
 

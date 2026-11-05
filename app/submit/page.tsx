@@ -33,7 +33,7 @@ import { PLATFORMS } from '@/lib/db'
 import { goalFor } from '@/lib/platforms'
 import type { BrandProject } from '@/components/submit-form'
 import { describeSchedule, scheduleFromContract } from '@/lib/posting-schedule'
-import { formatDate, formatMoney, payCurrency } from '@/lib/format'
+import { formatDate, formatMoney, formatNumber, payCurrency } from '@/lib/format'
 import { getLocale } from '@/lib/locale'
 import { createT } from '@/lib/i18n'
 import { getLeaderSession } from '@/lib/leader-auth'
@@ -45,6 +45,7 @@ import { creatorIsPaused } from '@/lib/pause-person'
 import { VideoIdeasPanel } from '@/components/video-ideas-panel'
 import { MyVideosPanel } from '@/components/my-videos-panel'
 import { getTopVideos } from '@/lib/analytics'
+import { getCreatorCommissionSheets } from '@/lib/commission-data'
 import { addDays } from '@/lib/campaign'
 import { SubmitModeToggle } from '@/components/submit-mode-toggle'
 
@@ -236,20 +237,30 @@ export default async function SubmitPage({
     strikeSummary,
     myPayments,
     loadedPaidTotal,
+    commissionPack,
   ] = await Promise.all([
     getCreatorCountsByPlatformOnDate(creator.id, date),
     getSubmissionsForCreatorOnDate(creator.id, date),
     getCreatorStats(creator.id),
     getCreatorConsistency(creator, today),
     getActiveContract(creator.id, today),
-    panel === 'contract' ? getContractComparisons(creator, today) : Promise.resolve([]),
+    creator.role === 'creator' || panel === 'contract'
+      ? getContractComparisons(creator, today)
+      : Promise.resolve([]),
     creator.role === 'reposter'
       ? getCreatorStrikeSummary(creator.id, opToday).catch(() => null)
       : Promise.resolve(null),
     panel === 'payments' ? getPaymentsForCreator(creator.id) : Promise.resolve([]),
     getCreatorPaidTotal(creator.id),
+    creator.role === 'creator'
+      ? getCreatorCommissionSheets(creator.id, today).catch(() => null)
+      : Promise.resolve(null),
   ])
   const paidTotal = loadedPaidTotal
+  const activeCommissionSheet =
+    commissionPack?.sheets.find((s) => s.isActive) ??
+    (active ? commissionPack?.sheets.find((s) => s.id === active.id) : null) ??
+    null
 
   const ideasDays = ideasPeriod === '60' ? 60 : 30
   const ideasLimitN = [5, 10, 15, 20].includes(Number(ideasLimit)) ? Number(ideasLimit) : 10
@@ -287,7 +298,21 @@ export default async function SubmitPage({
     todayCount: counts[platform],
   }))
 
-  const activeCompare = comparisons.find((c) => c.isActive)
+  const activeCompare = comparisons.find((c) => c.isActive) ?? null
+  const contractVideosPosted = activeCompare?.videoCount ?? 0
+  const contractVideosTarget = activeCompare?.targetTotal ?? 0
+  const contractVideosLeft =
+    contractVideosTarget > 0 ? Math.max(0, contractVideosTarget - contractVideosPosted) : null
+  const contractBonusSar = activeCommissionSheet?.earnedSar ?? 0
+  const contractBonusRate =
+    activeCommissionSheet?.commissionAmount != null &&
+    activeCommissionSheet.viewsThreshold != null &&
+    activeCommissionSheet.viewsThreshold > 0
+      ? {
+          amount: activeCommissionSheet.commissionAmount,
+          threshold: activeCommissionSheet.viewsThreshold,
+        }
+      : null
   const displayStats = {
     ...stats,
     current_streak: consistency.currentStreak,
@@ -531,6 +556,85 @@ export default async function SubmitPage({
             <p className="mt-3 text-[11px] font-medium text-muted-foreground">
               {t('submitConsistencyTarget')}
             </p>
+          </section>
+        ) : null}
+
+        {creator.role === 'creator' && active ? (
+          <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-foreground">
+              {t('submitContractTitle')}
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {active.name}
+              {' · '}
+              {formatDate(active.start_date)}
+              {active.end_date ? ` → ${formatDate(active.end_date)}` : ` → ${t('openEnded')}`}
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div>
+                <div className="text-lg font-semibold tabular-nums text-[#0f7a3d] dark:text-emerald-300">
+                  {formatMoney(contractBonusSar, 'SAR')}
+                </div>
+                <div className="text-[11px] text-muted-foreground">{t('submitContractBonus')}</div>
+              </div>
+              <div>
+                <div className="text-lg font-semibold tabular-nums">
+                  {formatNumber(contractVideosPosted)}
+                  {contractVideosTarget > 0 ? (
+                    <span className="text-sm font-normal text-muted-foreground">
+                      {' '}
+                      / {formatNumber(contractVideosTarget)}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="text-[11px] text-muted-foreground">{t('submitContractPosted')}</div>
+              </div>
+              <div>
+                <div className="text-lg font-semibold tabular-nums">
+                  {contractVideosLeft != null ? formatNumber(contractVideosLeft) : '—'}
+                </div>
+                <div className="text-[11px] text-muted-foreground">{t('submitContractLeft')}</div>
+              </div>
+              <div>
+                <div className="text-lg font-semibold tabular-nums">
+                  {activeCompare
+                    ? `${Math.round((activeCompare.displayRate ?? 0) * 100)}%`
+                    : '—'}
+                </div>
+                <div className="text-[11px] text-muted-foreground">{t('submitContractProgress')}</div>
+              </div>
+            </div>
+            {(activeCompare &&
+              (active.target_instagram > 0 || active.target_tiktok > 0)) ||
+            contractBonusRate ? (
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                {activeCompare && active.target_instagram > 0 ? (
+                  <span>
+                    {t('instagram')}: {formatNumber(activeCompare.postedInstagram)} /{' '}
+                    {formatNumber(active.target_instagram)}
+                  </span>
+                ) : null}
+                {activeCompare && active.target_tiktok > 0 ? (
+                  <span>
+                    {t('tiktok')}: {formatNumber(activeCompare.postedTiktok)} /{' '}
+                    {formatNumber(active.target_tiktok)}
+                  </span>
+                ) : null}
+                {contractBonusRate ? (
+                  <span>
+                    {t('submitContractBonusRate')
+                      .replace('{views}', formatNumber(contractBonusRate.threshold))
+                      .replace('{amount}', formatMoney(contractBonusRate.amount, 'SAR'))}
+                  </span>
+                ) : (
+                  <span>{t('submitContractBonusUnset')}</span>
+                )}
+              </div>
+            ) : (
+              <p className="mt-3 text-[11px] text-muted-foreground">
+                {t('submitContractBonusUnset')}
+              </p>
+            )}
           </section>
         ) : null}
 
