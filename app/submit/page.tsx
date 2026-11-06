@@ -204,14 +204,23 @@ export default async function SubmitPage({
       : null,
   ].filter((b): b is BrandProject => b != null && b.handles.length > 0)
 
-  // Projects this creator can pull ideas from (home + brands they have handles for).
+  // Projects this creator belongs to (home + brands they have handles for).
   const ideaProjectMap = new Map<number, string>()
   if (homeProject) ideaProjectMap.set(homeProject.id, homeProject.name)
   for (const b of brandProjects) {
     const p = projects.find((x) => x.id === b.projectId)
     if (p) ideaProjectMap.set(p.id, p.name)
   }
+  // No home + no handles → still allow posting to every project (admin will assign later).
+  if (ideaProjectMap.size === 0) {
+    for (const p of projects) ideaProjectMap.set(p.id, p.name)
+  }
   const ideaProjectOptions = [...ideaProjectMap.entries()].map(([id, name]) => ({ id, name }))
+  const submitProjectOptions = ideaProjectOptions
+  const defaultSubmitProjectId =
+    creator.project_id != null && ideaProjectMap.has(creator.project_id)
+      ? creator.project_id
+      : submitProjectOptions[0]?.id ?? null
   const ideasMultiProject = ideaProjectOptions.length > 1
   const ideasLockedProjectId = ideasMultiProject
     ? null
@@ -488,7 +497,6 @@ export default async function SubmitPage({
                 }`
               : t('submitToday')}
           </p>
-          <p className="mt-1 text-xs text-[#a05a55] dark:text-muted-foreground">{t('platformsBoth')}</p>
         </header>
 
         {strikeSummary ? (
@@ -694,22 +702,19 @@ export default async function SubmitPage({
             />
           ) : (
             <>
-              <section className="flex flex-col gap-3">
-                <div className="flex items-center gap-2">
-                  <Send className="h-4 w-4 text-primary" />
-                  <h2 className="text-sm font-semibold text-foreground">{t('addLinks')}</h2>
+              <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card/40 p-4 shadow-sm">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Send className="size-4 text-primary" />
+                    <h2 className="text-sm font-semibold text-foreground">{t('addLinks')}</h2>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('submitPostHint')}</p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('platforms')}: {t('platformsBoth')}
-                  {' · '}
-                  {t('dailyGoal')}: {t('instagram')} {dailyGoals.goalInstagram}
-                  {' · '}
-                  {t('tiktok')} {dailyGoals.goalTiktok}
-                </p>
                 <SubmitForm
                   username={username}
                   fields={fields}
-                  projects={projects}
+                  projects={submitProjectOptions}
+                  defaultProjectId={defaultSubmitProjectId}
                   videoDate={date}
                   defaultTime={defaultTime}
                   brandProjects={brandProjects}
@@ -723,11 +728,16 @@ export default async function SubmitPage({
                     sending: t('sending'),
                     project: t('submitProject'),
                     projectHint: t('submitProjectHint'),
+                    projectFixed: t('submitProjectFixed'),
                     pickProject: t('pickProject'),
                     autoProject: t('autoProject'),
                     postDate: t('postDate'),
                     postTime: t('postTime'),
                     postWhenHint: onProbation ? t('probationDateLocked') : t('submitTimeHint'),
+                    dailyGoalLabel: t('submitDailyGoalLabel'),
+                    stepLinks: t('submitStepLinks'),
+                    stepWhen: t('submitStepWhen'),
+                    nowLabel: t('submitNowLabel'),
                   }}
                 />
               </section>

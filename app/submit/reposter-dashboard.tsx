@@ -560,7 +560,12 @@ export async function ReposterDashboard({
           <SubmitForm
             username={username}
             fields={fields}
-            projects={projects}
+            projects={
+              creator.project_id != null
+                ? projects.filter((p) => p.id === creator.project_id)
+                : projects
+            }
+            defaultProjectId={creator.project_id}
             videoDate={date}
             defaultTime={defaultTime}
             brandProjects={brandProjects}
@@ -573,11 +578,16 @@ export async function ReposterDashboard({
               sending: t('sending'),
               project: t('submitProject'),
               projectHint: t('submitProjectHint'),
+              projectFixed: t('submitProjectFixed'),
               pickProject: t('pickProject'),
               autoProject: t('autoProject'),
               postDate: t('postDate'),
               postTime: t('postTime'),
               postWhenHint: t('submitTimeHint'),
+              dailyGoalLabel: t('submitDailyGoalLabel'),
+              stepLinks: t('submitStepLinks'),
+              stepWhen: t('submitStepWhen'),
+              nowLabel: t('submitNowLabel'),
             }}
           />
         </div>

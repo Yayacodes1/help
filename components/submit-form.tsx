@@ -68,11 +68,16 @@ type Labels = {
   sending: string
   project: string
   projectHint: string
+  projectFixed: string
   pickProject: string
   autoProject: string
   postDate: string
   postTime: string
   postWhenHint: string
+  dailyGoalLabel: string
+  stepLinks: string
+  stepWhen: string
+  nowLabel: string
 }
 
 export function SubmitForm({
@@ -80,6 +85,7 @@ export function SubmitForm({
   fields,
   labels,
   projects,
+  defaultProjectId = null,
   videoDate,
   defaultTime,
   brandProjects = [],
@@ -89,7 +95,9 @@ export function SubmitForm({
   username: string
   fields: PlatformField[]
   labels: Labels
+  /** Projects this person can post under (usually home, or both if dual-brand). */
   projects: { id: number; name: string }[]
+  defaultProjectId?: number | null
   videoDate: string
   defaultTime: string
   brandProjects?: BrandProject[]
@@ -105,12 +113,22 @@ export function SubmitForm({
   const [postDate, setPostDate] = useState(videoDate)
   const [postTime, setPostTime] = useState(defaultTime)
   useEffect(() => setPostDate(videoDate), [videoDate])
+
+  const initialProject =
+    defaultProjectId != null && projects.some((p) => p.id === defaultProjectId)
+      ? String(defaultProjectId)
+      : projects.length === 1
+        ? String(projects[0].id)
+        : ''
+
   const action = submitVideos.bind(null, username)
   const [state, formAction, pending] = useActionState<State, FormData>(action, null)
-  const [projectId, setProjectId] = useState<string>('')
+  const [projectId, setProjectId] = useState(initialProject)
   const [autoPicked, setAutoPicked] = useState<string | null>(null)
   const submittedLock = useRef(false)
   const projectName = projects.find((p) => String(p.id) === projectId)?.name ?? null
+  const multiProject = projects.length > 1
+  const singleProject = projects.length === 1 ? projects[0] : null
 
   function syncDateInUrl(nextDate: string) {
     if (!nextDate || dateLocked) return
@@ -122,9 +140,11 @@ export function SubmitForm({
   }
 
   function onLinksChange(text: string) {
+    if (!multiProject) return
     const found = handlesInLinks(text)
     const match = brandProjects.find((b) => b.handles.some((h) => found.includes(h)))
     if (!match) return
+    if (!projects.some((p) => p.id === match.projectId)) return
     const name = projects.find((p) => p.id === match.projectId)?.name ?? null
     setProjectId(String(match.projectId))
     setAutoPicked(name)
@@ -137,7 +157,7 @@ export function SubmitForm({
   useEffect(() => {
     if (state?.ok) {
       formRef.current?.reset()
-      setProjectId('')
+      setProjectId(initialProject)
       setAutoPicked(null)
       submittedLock.current = false
       if (state.videoDate && state.videoDate !== params.get('date')) {
@@ -162,44 +182,10 @@ export function SubmitForm({
         }
         submittedLock.current = true
       }}
-      className="flex flex-col gap-5"
+      className="flex flex-col gap-4"
       aria-busy={pending}
     >
-      {projects.length === 0 ? (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          No projects are set up yet. Ask admin to add Notek and Miqat.
-        </p>
-      ) : (
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-semibold text-foreground">{labels.project}</span>
-          <span className="text-xs text-muted-foreground">{labels.projectHint}</span>
-          <select
-            name="project_id"
-            required
-            value={projectId}
-            onChange={(e) => {
-              setProjectId(e.target.value)
-              setAutoPicked(null)
-            }}
-            className="mt-1 h-11 rounded-xl border border-border bg-card px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-ring"
-          >
-            <option value="" disabled>
-              {labels.pickProject}
-            </option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          {autoPicked ? (
-            <span className="text-xs font-medium text-primary">
-              {labels.autoProject} {autoPicked}
-            </span>
-          ) : null}
-        </label>
-      )}
-
+      {/* Today's goal — one glance */}
       <div className="grid grid-cols-2 gap-2">
         {fields.map(({ platform, goal, todayCount }) => {
           const meta = PLATFORM_META[platform]
@@ -208,52 +194,108 @@ export function SubmitForm({
           return (
             <div
               key={platform}
-              className="rounded-xl border border-border bg-card px-3 py-2.5 text-right shadow-sm"
+              className={`rounded-xl border px-3 py-2.5 ${
+                met
+                  ? 'border-emerald-300/60 bg-emerald-50/80 dark:border-emerald-800 dark:bg-emerald-950/40'
+                  : 'border-border bg-card'
+              }`}
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-foreground">
-                    <Icon className="h-4 w-4" />
+                  <span className="flex size-8 items-center justify-center rounded-lg bg-secondary text-foreground">
+                    <Icon className="size-4" />
                   </span>
-                  <p className="text-sm font-semibold text-card-foreground">{meta.ar}</p>
+                  <div>
+                    <p className="text-sm font-semibold text-card-foreground">{meta.ar}</p>
+                    <p className="text-[10px] text-muted-foreground">{labels.dailyGoalLabel}</p>
+                  </div>
                 </div>
-                {goal > 0 && (
+                {goal > 0 ? (
                   <span
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums ${
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
                       met
-                        ? 'bg-primary text-primary-foreground'
+                        ? 'bg-emerald-600 text-white'
                         : 'bg-secondary text-secondary-foreground'
                     }`}
                   >
-                    {met && <CheckCircle2 className="h-3 w-3" />}
-                    {todayCount} / {goal}
+                    {met ? <CheckCircle2 className="size-3" /> : null}
+                    {todayCount}/{goal}
                   </span>
-                )}
+                ) : null}
               </div>
             </div>
           )
         })}
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-4 text-right shadow-sm transition-shadow duration-300 focus-within:shadow-md">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary text-foreground">
-            <Link2 className="h-5 w-5" />
-          </span>
-          <p className="font-semibold text-card-foreground">{labels.pasteLinks}</p>
+      {/* Project: hidden when only one; clear choice when both */}
+      {projects.length === 0 ? (
+        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          No projects are set up yet. Ask admin to add Notek and Miqat.
+        </p>
+      ) : singleProject ? (
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2.5 text-sm">
+          <input type="hidden" name="project_id" value={singleProject.id} />
+          <span className="text-muted-foreground">{labels.projectFixed}</span>
+          <span className="font-semibold text-foreground">{singleProject.name}</span>
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">{labels.pasteHint}</p>
+      ) : (
+        <fieldset className="rounded-xl border border-border bg-card p-3">
+          <legend className="px-1 text-sm font-semibold text-foreground">{labels.project}</legend>
+          <p className="mb-2 text-xs text-muted-foreground">{labels.projectHint}</p>
+          <div className="grid grid-cols-2 gap-2">
+            {projects.map((p) => {
+              const on = String(p.id) === projectId
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    setProjectId(String(p.id))
+                    setAutoPicked(null)
+                  }}
+                  className={`rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors ${
+                    on
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border bg-background hover:bg-accent'
+                  }`}
+                >
+                  {p.name}
+                </button>
+              )
+            })}
+          </div>
+          <input type="hidden" name="project_id" value={projectId} required />
+          {autoPicked ? (
+            <p className="mt-2 text-xs font-medium text-primary">
+              {labels.autoProject} {autoPicked}
+            </p>
+          ) : null}
+        </fieldset>
+      )}
+
+      {/* Links */}
+      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm focus-within:ring-2 focus-within:ring-ring/40">
+        <div className="flex items-center gap-2">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-secondary text-foreground">
+            <Link2 className="size-4" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-foreground">{labels.stepLinks}</p>
+            <p className="text-xs text-muted-foreground">{labels.pasteHint}</p>
+          </div>
+        </div>
         <textarea
           name="links"
-          rows={5}
+          rows={4}
           onChange={(e) => onLinksChange(e.target.value)}
           dir="ltr"
-          placeholder={'https://www.instagram.com/reel/…\nhttps://www.tt.site/t/…'}
-          className="mt-2 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          placeholder={'https://www.instagram.com/reel/…\nhttps://www.tiktok.com/@…/video/…'}
+          className="mt-3 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
       </div>
 
-      {state && (
+      {state ? (
         <p
           className={`flex items-start gap-2 whitespace-pre-line break-words rounded-lg px-3 py-2 text-sm [overflow-wrap:anywhere] ${
             state.ok && 'blocked' in state && state.blocked
@@ -265,19 +307,20 @@ export function SubmitForm({
           role="status"
         >
           {state.ok ? (
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
           ) : (
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <AlertCircle className="mt-0.5 size-4 shrink-0" />
           )}
           <span>{state.message}</span>
         </p>
-      )}
+      ) : null}
 
-      <div className="rounded-xl border border-border bg-secondary/40 px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <Clock className="h-3.5 w-3.5" />
-            <span>{labels.postWhenHint}</span>
+      {/* When — compact */}
+      <div className="rounded-xl border border-border bg-card px-3 py-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Clock className="size-3.5" />
+            <span>{labels.stepWhen}</span>
           </div>
           {now && riyadh && !dateLocked ? (
             <button
@@ -287,34 +330,19 @@ export function SubmitForm({
                 setPostTime(riyadh.time)
                 syncDateInUrl(riyadh.date)
               }}
-              className="h-7 rounded-full border border-border bg-card px-3 text-[11px] font-semibold text-foreground hover:bg-secondary"
+              className="h-7 rounded-lg border border-border bg-background px-2.5 text-[11px] font-semibold hover:bg-accent"
             >
-              الآن · Now
+              {labels.nowLabel}
             </button>
           ) : null}
         </div>
-        {now ? (
-          <p dir="rtl" className="mt-2 rounded-lg bg-card px-3 py-2 text-right text-sm">
-            <span className="text-muted-foreground">الوقت الآن في السعودية: </span>
-            <span className="font-semibold tabular-nums">
-              {new Intl.DateTimeFormat('ar-u-nu-latn', {
-                timeZone: RIYADH_TZ,
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-                hour: 'numeric',
-                minute: '2-digit',
-              }).format(now)}
-            </span>
-          </p>
-        ) : null}
-        <div className="mt-2 grid grid-cols-2 gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-foreground">{labels.postDate}</span>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {labels.postDate}
             {dateLocked ? (
               <>
                 <input type="hidden" name="video_date" value={postDate} />
-                <span className="flex h-11 items-center rounded-xl border border-border bg-muted/40 px-3 text-sm font-medium tabular-nums">
+                <span className="flex h-10 items-center rounded-lg border border-border bg-muted/40 px-3 text-sm font-medium tabular-nums text-foreground">
                   {postDate}
                 </span>
               </>
@@ -331,12 +359,12 @@ export function SubmitForm({
                   setPostDate(next)
                   syncDateInUrl(next)
                 }}
-                className="h-11 rounded-xl border border-border bg-card px-3 text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring"
+                className="h-10 rounded-lg border border-border bg-background px-2 text-sm tabular-nums text-foreground outline-none focus:ring-2 focus:ring-ring"
               />
             )}
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-foreground">{labels.postTime}</span>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {labels.postTime}
             <input
               type="time"
               name="post_time"
@@ -344,29 +372,31 @@ export function SubmitForm({
               step={60}
               value={postTime}
               onChange={(e) => setPostTime(e.target.value)}
-              className="h-11 rounded-xl border border-border bg-card px-3 text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring"
+              className="h-10 rounded-lg border border-border bg-background px-2 text-sm tabular-nums text-foreground outline-none focus:ring-2 focus:ring-ring"
             />
           </label>
         </div>
         {dateLocked ? (
-          <p className="mt-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            {labels.postWhenHint}
-          </p>
+          <p className="mt-2 text-[11px] text-muted-foreground">{labels.postWhenHint}</p>
         ) : null}
         {riyadh && postDate && postDate !== riyadh.date ? (
-          <p dir="rtl" className="mt-2 rounded-lg bg-amber-500/15 px-3 py-2 text-right text-xs font-medium text-amber-800 dark:text-amber-300">
-            ⚠️ أنت تنشر ليوم {postDate} وليس اليوم ({riyadh.date}). You are posting for {postDate}, not today.
+          <p className="mt-2 rounded-lg bg-amber-500/15 px-2.5 py-1.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">
+            ⚠️ {postDate} ≠ {riyadh.date}
           </p>
         ) : null}
       </div>
 
       <button
         type="submit"
-        disabled={pending}
-        className="flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-60"
+        disabled={pending || (multiProject && !projectId)}
+        className="flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-60"
       >
-        <Send className={`h-4 w-4 ${pending ? 'animate-pulse' : ''}`} />
-        {pending ? labels.sending : projectName ? `${labels.sendTo} ${projectName}` : labels.send}
+        <Send className={`size-4 ${pending ? 'animate-pulse' : ''}`} />
+        {pending
+          ? labels.sending
+          : projectName
+            ? `${labels.sendTo} ${projectName}`
+            : labels.send}
       </button>
     </form>
   )
