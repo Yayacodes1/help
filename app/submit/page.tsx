@@ -28,7 +28,7 @@ import { StrikeBanner } from '@/components/strike-banner'
 import { operationalDayFromIso } from '@/lib/operational-day'
 import { getCreatorStrikeSummary, syncReposterStrikes } from '@/lib/strikes'
 import { loginHandleFor } from '@/lib/usernames'
-import { PLATFORMS } from '@/lib/db'
+import { PLATFORMS, sql } from '@/lib/db'
 import { goalFor } from '@/lib/platforms'
 import type { BrandProject } from '@/components/submit-form'
 import { describeSchedule, scheduleFromContract } from '@/lib/posting-schedule'
@@ -204,14 +204,57 @@ export default async function SubmitPage({
       : null,
   ].filter((b): b is BrandProject => b != null && b.handles.length > 0)
 
-  // Projects this creator belongs to (home + brands they have handles for).
+  const [
+    counts,
+    submissions,
+    stats,
+    consistency,
+    active,
+    comparisons,
+    strikeSummary,
+    myPayments,
+    loadedPaidTotal,
+    commissionPack,
+    postedProjectRows,
+  ] = await Promise.all([
+    getCreatorCountsByPlatformOnDate(creator.id, date),
+    getSubmissionsForCreatorOnDate(creator.id, date),
+    getCreatorStats(creator.id),
+    getCreatorConsistency(creator, today),
+    getActiveContract(creator.id, today),
+    creator.role === 'creator' || panel === 'contract'
+      ? getContractComparisons(creator, today)
+      : Promise.resolve([]),
+    creator.role === 'reposter'
+      ? getCreatorStrikeSummary(creator.id, opToday).catch(() => null)
+      : Promise.resolve(null),
+    panel === 'payments' ? getPaymentsForCreator(creator.id) : Promise.resolve([]),
+    getCreatorPaidTotal(creator.id),
+    creator.role === 'creator'
+      ? getCreatorCommissionSheets(creator.id, today).catch(() => null)
+      : Promise.resolve(null),
+    // Distinct projects they have already posted under (dual Notek + Miqat).
+    sql`
+      SELECT DISTINCT project_id
+      FROM submissions
+      WHERE creator_id = ${creator.id}
+        AND project_id IS NOT NULL
+    ` as unknown as Promise<Array<{ project_id: number }>>,
+  ])
+
+  // Projects this creator belongs to: home + brand handles + past posts.
   const ideaProjectMap = new Map<number, string>()
   if (homeProject) ideaProjectMap.set(homeProject.id, homeProject.name)
   for (const b of brandProjects) {
     const p = projects.find((x) => x.id === b.projectId)
     if (p) ideaProjectMap.set(p.id, p.name)
   }
-  // No home + no handles → still allow posting to every project (admin will assign later).
+  for (const row of postedProjectRows) {
+    const pid = Number(row.project_id)
+    const p = projects.find((x) => x.id === pid)
+    if (p) ideaProjectMap.set(p.id, p.name)
+  }
+  // No home + no handles + no posts → still allow every project (admin will assign later).
   if (ideaProjectMap.size === 0) {
     for (const p of projects) ideaProjectMap.set(p.id, p.name)
   }
@@ -234,36 +277,6 @@ export default async function SubmitPage({
       ? ideasProjectPicked
       : ideaProjectOptions[0]?.id ?? null
     : ideasLockedProjectId
-
-  const [
-    counts,
-    submissions,
-    stats,
-    consistency,
-    active,
-    comparisons,
-    strikeSummary,
-    myPayments,
-    loadedPaidTotal,
-    commissionPack,
-  ] = await Promise.all([
-    getCreatorCountsByPlatformOnDate(creator.id, date),
-    getSubmissionsForCreatorOnDate(creator.id, date),
-    getCreatorStats(creator.id),
-    getCreatorConsistency(creator, today),
-    getActiveContract(creator.id, today),
-    creator.role === 'creator' || panel === 'contract'
-      ? getContractComparisons(creator, today)
-      : Promise.resolve([]),
-    creator.role === 'reposter'
-      ? getCreatorStrikeSummary(creator.id, opToday).catch(() => null)
-      : Promise.resolve(null),
-    panel === 'payments' ? getPaymentsForCreator(creator.id) : Promise.resolve([]),
-    getCreatorPaidTotal(creator.id),
-    creator.role === 'creator'
-      ? getCreatorCommissionSheets(creator.id, today).catch(() => null)
-      : Promise.resolve(null),
-  ])
   const paidTotal = loadedPaidTotal
   const activeCommissionSheet =
     commissionPack?.sheets.find((s) => s.isActive) ??

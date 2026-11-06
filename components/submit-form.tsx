@@ -126,6 +126,9 @@ export function SubmitForm({
   const [projectId, setProjectId] = useState(initialProject)
   const [autoPicked, setAutoPicked] = useState<string | null>(null)
   const submittedLock = useRef(false)
+  useEffect(() => {
+    setProjectId(initialProject)
+  }, [initialProject])
   const projectName = projects.find((p) => String(p.id) === projectId)?.name ?? null
   const multiProject = projects.length > 1
   const singleProject = projects.length === 1 ? projects[0] : null
