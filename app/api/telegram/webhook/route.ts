@@ -55,7 +55,7 @@ const HELP =
   `${BUTTON_GUIDE}\n` +
   '📊 Type /update to pick Previous day, Today, or So far today.\n' +
   '📅 /yesterday — previous day · /today — the day we\'re in · /now — so far today.\n' +
-  '⚠️ /streaks — creator first / second / final streak queue (3 → 6 → 10).\n' +
+  '⚠️ /streaks — miss queue from Nov 7: 1st verbal → 2nd verbal → final (tap = copy + mark sent).\n' +
   '📈 /fitness — pick a creator (or /fitness Sara) for a consistency check-in to copy.\n' +
   '👋 /welcome — pick a creator (or /welcome Sara) for the new-creator intro to copy.\n' +
   '👑 Type /groups to pick Alpha, Beta, Charlie, Delta, or Ungrouped.\n\n' +

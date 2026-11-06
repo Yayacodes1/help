@@ -1,10 +1,16 @@
-/** Client-safe probation streak copy + shared types (no DB). */
+/** Client-safe streak copy + shared types (no DB). */
 
-/** First at 3 misses, second at +3 (=6), final at +4 (=10). */
-export const PROBATION_LEVEL_THRESHOLDS = { 1: 3, 2: 6, 3: 10 } as const
+/**
+ * Consecutive miss days (from Nov 7 epoch):
+ * 1 → first verbal · 2 → second verbal · 3 → final (fire when sent).
+ */
+export const PROBATION_LEVEL_THRESHOLDS = { 1: 1, 2: 2, 3: 3 } as const
 export type ProbationLevel = 1 | 2 | 3
 
-/** Monthly consistency target: miss ≤10 days ≈ stay ≥67% in a 30-day window. */
+/** Streak counting starts on this day (inclusive). */
+export const STREAK_EPOCH_START = '2026-11-07'
+
+/** Monthly consistency target (shown in creator messages). */
 export const CONSISTENCY_TARGET_PCT = 67
 export const CONSISTENCY_MAX_MISS_DAYS_PER_MONTH = 10
 
@@ -35,6 +41,7 @@ export type ProbationStreakRow = {
   projectId: number | null
   projectName: string | null
   probationStartedOn: string
+  /** Consecutive miss days ending at last completed day. */
   missCount: number
   missDates: string[]
   nextThreshold: number | null
@@ -44,28 +51,44 @@ export type ProbationStreakRow = {
   pendingLevel: ProbationLevel | null
   lastMessagedLevel: ProbationLevel | null
   paused: boolean
+  /** No video on the operational “today”. */
+  missedToday: boolean
 }
 
 export type ProbationStreakBoard = {
   today: string
+  epochStart: string
   projectId: number | null
   rows: ProbationStreakRow[]
+  missedToday: Array<{
+    creatorId: number
+    name: string
+    projectName: string | null
+  }>
   counts: {
     first: number
     second: number
     final: number
     /** Active people still on the list (not fired). Used for Clear all. */
     total: number
+    missedToday: number
   }
 }
 
-/** Which streak bucket a row is in from miss days (0 = not on a streak yet). */
+/** Which streak bucket from consecutive miss days (0 = clean). */
 export function streakBucketFromMisses(missCount: number): 0 | ProbationLevel {
   if (missCount >= PROBATION_LEVEL_THRESHOLDS[3]) return 3
   if (missCount >= PROBATION_LEVEL_THRESHOLDS[2]) return 2
   if (missCount >= PROBATION_LEVEL_THRESHOLDS[1]) return 1
   return 0
 }
+
+const LEVELS_EXPLAIN = [
+  `نظام الستريكات (3 أيام):`,
+  `١) الستريك الأول — تنبيه شفهي بعد يوم غياب واحد.`,
+  `٢) الستريك الثاني — تنبيه شفهي بعد يومين غياب متتاليين.`,
+  `٣) الستريك الأخير — بعد 3 أيام غياب متتالية نتوقف عن العمل معك.`,
+].join('\n')
 
 export function buildProbationStreakMessage(notice: ProbationNotice): string {
   const days =
@@ -76,28 +99,39 @@ export function buildProbationStreakMessage(notice: ProbationNotice): string {
   if (notice.level === 1) {
     return [
       `مرحباً ${notice.name}،`,
-      `هذا الستريك الأول (First streak) — بعد 3 أيام بدون نشر.`,
-      `لم تنشر في الأيام: ${days}.`,
-      `هدفنا: لا تفوّت أكثر من 10 أيام في الشهر، وابقَ التزامك ≥ 67%.`,
-      `متبقي لديك ستريكان: الثاني (عند 6 أيام غياب) ثم الأخير (عند 10). بعد الأخير نتوقف عن العمل معك.`,
-      `انشر يومياً وارفع الروابط في نفس اليوم من صفحة الرفع — ومنها تتابع نسبة التزامك وأيام الغياب والستريكات.`,
-    ].join('\n')
+      ``,
+      `هذا الستريك الأول (First streak) — تنبيه شفهي بعد يوم واحد بدون نشر.`,
+      days ? `يوم الغياب: ${days}.` : '',
+      ``,
+      LEVELS_EXPLAIN,
+      ``,
+      `انشر اليوم وارفع الرابط من صفحة الرفع — ومنها تتابع التزامك والستريكات.`,
+    ]
+      .filter(Boolean)
+      .join('\n')
   }
   if (notice.level === 2) {
     return [
       `مرحباً ${notice.name}،`,
-      `هذا الستريك الثاني (Second streak) — بعد 6 أيام بدون نشر.`,
-      `الأيام بدون نشر: ${days}.`,
-      `متبقي لديك الستريك الأخير فقط (عند 10 أيام غياب) = إيقاف التعاون.`,
-      `ابقَ ≥ 67% ولا تفوّت أكثر من 10 أيام في الشهر.`,
-      `انشر اليوم وارفع الرابط من صفحة الرفع — هناك ترى التزامك والستريكات وأيام الغياب.`,
-    ].join('\n')
+      ``,
+      `هذا الستريك الثاني (Second streak) — تنبيه شفهي بعد يومين غياب متتاليين.`,
+      days ? `أيام الغياب: ${days}.` : '',
+      ``,
+      LEVELS_EXPLAIN,
+      ``,
+      `غداً إذا لم تنشر يصل الستريك الأخير. انشر اليوم من صفحة الرفع.`,
+    ]
+      .filter(Boolean)
+      .join('\n')
   }
   return [
     `مرحباً ${notice.name}،`,
-    `هذا الستريك الأخير (Final streak) — بعد 10 أيام بدون نشر.`,
-    `بسبب تكرار عدم النشر في الموعد، سنتوقف عن العمل معك اعتباراً من اليوم.`,
-    days ? `آخر أيام بدون نشر: ${days}.` : '',
+    ``,
+    `هذا الستريك الأخير (Final streak) — بعد 3 أيام غياب متتالية.`,
+    `بسبب تكرار عدم النشر، سنتوقف عن العمل معك اعتباراً من اليوم.`,
+    days ? `أيام الغياب: ${days}.` : '',
+    ``,
+    LEVELS_EXPLAIN,
   ]
     .filter(Boolean)
     .join('\n')
@@ -105,8 +139,8 @@ export function buildProbationStreakMessage(notice: ProbationNotice): string {
 
 export function streakLabel(level: ProbationLevel | 0): string {
   if (level <= 0) return 'none'
-  if (level === 1) return 'first streak'
-  if (level === 2) return 'second streak'
+  if (level === 1) return 'first streak (verbal)'
+  if (level === 2) return 'second streak (verbal)'
   return 'final streak'
 }
 
@@ -117,12 +151,10 @@ export function buildCreatorWelcomeMessage(name: string): string {
     `نظام العمل عندنا بسيط:`,
     `• انشر يومياً وارفع روابط فيديوهاتك في نفس اليوم من صفحة الرفع على الموقع.`,
     `• هدف الالتزام: لا تفوّت أكثر من 10 أيام في الشهر، وابقَ نسبة التزامك ≥ 67%.`,
-    `• تحت المراقبة: الستريك الأول بعد 3 أيام غياب، الثاني بعد 6، والأخير بعد 10 — وبعد الأخير نتوقف عن التعاون.`,
     ``,
-    `من صفحة رفع الفيديوهات تقدر تشوف في أي وقت:`,
-    `• نسبة التزامك`,
-    `• كم يوم اشتغلت معنا`,
-    `• كم يوم غياب وكم ستريك (إن وُجد)`,
+    LEVELS_EXPLAIN,
+    ``,
+    `من صفحة رفع الفيديوهات تقدر تشوف التزامك وأيام الغياب والستريكات.`,
     ``,
     `بالتوفيق — ننتظر نشرك اليوم ✨`,
   ].join('\n')
@@ -141,9 +173,9 @@ export function buildCreatorConsistencyMessage(opts: {
     opts.streakLevel <= 0
       ? 'لا يوجد ستريك حالياً'
       : opts.streakLevel === 1
-        ? 'الستريك الأول'
+        ? 'الستريك الأول (شفهي)'
         : opts.streakLevel === 2
-          ? 'الستريك الثاني'
+          ? 'الستريك الثاني (شفهي)'
           : 'الستريك الأخير'
   const allLine =
     opts.allConsistencyPct != null
@@ -156,14 +188,12 @@ export function buildCreatorConsistencyMessage(opts: {
     `• مدة العمل معنا: ${opts.daysWithUs} يوم`,
     `• التزام آخر 30 يوم: ${opts.windowConsistencyPct}%`,
     allLine,
-    opts.onProbation
-      ? `• تحت المراقبة: ${opts.missDays} يوم غياب · ${streak}`
-      : `• أيام الغياب (مراقبة): ${opts.missDays} · ${streak}`,
+    `• أيام الغياب المتتالية: ${opts.missDays} · ${streak}`,
     ``,
-    `الهدف: لا تفوّت أكثر من 10 أيام في الشهر، وابقَ ≥ 67% التزام.`,
-    `السلّم تحت المراقبة: أول ستريك عند 3 غياب، ثاني عند 6، أخير عند 10.`,
+    LEVELS_EXPLAIN,
     ``,
-    `تابع نسبة التزامك وأيام الغياب والستريكات من صفحة رفع الفيديوهات على الموقع.`,
+    `الهدف الشهري: لا تفوّت أكثر من 10 أيام، وابقَ ≥ 67% التزام.`,
+    `تابع من صفحة رفع الفيديوهات على الموقع.`,
   ]
     .filter((line): line is string => line != null)
     .join('\n')

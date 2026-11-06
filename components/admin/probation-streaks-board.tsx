@@ -6,11 +6,12 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   clearAllProbationCreators,
   markProbationNoticeMessagedAction,
-  setCreatorFitnessTierAction,
+  resetCreatorStreakAction,
 } from '@/app/actions/admin'
 import { adminPersonHref } from '@/lib/admin-href'
 import { PanelProjectFilter } from '@/components/admin/panel-project-filter'
 import {
+  PROBATION_LEVEL_THRESHOLDS,
   buildProbationStreakMessage,
   streakBucketFromMisses,
   type ProbationStreakBoard,
@@ -33,6 +34,8 @@ type Labels = {
   clear: string
   clearAll: string
   clearAllConfirm: string
+  reset: string
+  resetConfirm: string
   copyArabic: string
   copied: string
   markSent: string
@@ -48,6 +51,9 @@ type Labels = {
   firstStreak: string
   secondStreak: string
   finalStreak: string
+  missedToday: string
+  missedTodayEmpty: string
+  openPerson: string
 }
 
 const PHASE_LABEL: Record<ProbationStreakPhase, keyof Labels> = {
@@ -74,6 +80,12 @@ function phaseTone(phase: ProbationStreakPhase): string {
   return 'bg-muted text-muted-foreground'
 }
 
+function thresholdLabel(n: number, labels: Labels): string {
+  if (n === PROBATION_LEVEL_THRESHOLDS[1]) return labels.firstStreak
+  if (n === PROBATION_LEVEL_THRESHOLDS[2]) return labels.secondStreak
+  return labels.finalStreak
+}
+
 export function ProbationStreaksBoard({
   board,
   projects,
@@ -89,11 +101,12 @@ export function ProbationStreaksBoard({
   const pathname = usePathname()
   const params = useSearchParams()
   const [pending, startTransition] = useTransition()
-  const [filter, setFilter] = useState<'all' | 1 | 2 | 3>('all')
+  const [filter, setFilter] = useState<'all' | 'missed' | 1 | 2 | 3>('all')
   const [copiedId, setCopiedId] = useState<number | null>(null)
 
   const rows = useMemo(() => {
-    if (filter === 'all') return board.rows
+    if (filter === 'all') return board.rows.filter((r) => r.missCount > 0 || r.missedToday)
+    if (filter === 'missed') return board.rows.filter((r) => r.missedToday)
     return board.rows.filter((r) => streakBucketFromMisses(r.missCount) === filter)
   }, [board.rows, filter])
 
@@ -117,11 +130,8 @@ export function ProbationStreaksBoard({
       creatorId: row.creatorId,
       name: row.name,
       level: row.pendingLevel,
-      unlockedOn:
-        row.missDates[
-          row.pendingLevel === 1 ? 2 : row.pendingLevel === 2 ? 5 : 9
-        ] ?? board.today,
-      missDates: row.missDates.slice(-2),
+      unlockedOn: row.missDates[row.pendingLevel - 1] ?? board.today,
+      missDates: row.missDates.slice(-3),
       messagedAt: null,
       missCount: row.missCount,
     })
@@ -149,7 +159,41 @@ export function ProbationStreaksBoard({
         }}
       />
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-sm font-semibold text-foreground">{labels.missedToday}</h3>
+          <span className="text-2xl font-semibold tabular-nums text-amber-900 dark:text-amber-100">
+            {board.counts.missedToday}
+          </span>
+        </div>
+        {board.missedToday.length === 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">{labels.missedTodayEmpty}</p>
+        ) : (
+          <ul className="mt-3 flex flex-col divide-y divide-border/60 rounded-lg border border-border bg-card">
+            {board.missedToday.map((p) => (
+              <li
+                key={p.creatorId}
+                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+              >
+                <Link
+                  href={adminPersonHref(p.creatorId, {
+                    panel: 'streaks',
+                    projectId,
+                    from: 'streaks',
+                  })}
+                  className="font-medium hover:underline"
+                >
+                  {p.name}
+                </Link>
+                <span className="text-xs text-muted-foreground">{p.projectName ?? '—'}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label={labels.missedToday} value={board.counts.missedToday} tone="amber" />
         <Stat label={labels.firstStreak} value={board.counts.first} tone="sky" />
         <Stat label={labels.secondStreak} value={board.counts.second} tone="amber" />
         <Stat label={labels.finalStreak} value={board.counts.final} tone="rose" />
@@ -160,6 +204,7 @@ export function ProbationStreaksBoard({
           {(
             [
               ['all', labels.filterAll],
+              ['missed', labels.missedToday],
               [1, labels.firstStreak],
               [2, labels.secondStreak],
               [3, labels.finalStreak],
@@ -179,39 +224,34 @@ export function ProbationStreaksBoard({
             </button>
           ))}
         </div>
-        {board.counts.total > 0 ? (
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => {
-              if (!window.confirm(labels.clearAllConfirm)) return
-              startTransition(() => {
-                void clearAllProbationCreators(projectId ?? null).then(() =>
-                  router.refresh(),
-                )
-              })
-            }}
-            className="h-9 rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
-          >
-            {labels.clearAll}
-          </button>
-        ) : null}
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            if (!window.confirm(labels.clearAllConfirm)) return
+            startTransition(() => {
+              void clearAllProbationCreators(projectId ?? null).then(() => router.refresh())
+            })
+          }}
+          className="h-9 rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
+        >
+          {labels.clearAll}
+        </button>
       </div>
 
       <p className="text-[11px] text-muted-foreground">
+        From {board.epochStart.slice(5)} ·{' '}
         <span className="font-semibold text-sky-700 dark:text-sky-300">
-          3 · {labels.firstStreak}
+          1 · {labels.firstStreak}
         </span>
         {' · '}
         <span className="font-semibold text-amber-700 dark:text-amber-300">
-          6 · {labels.secondStreak}
+          2 · {labels.secondStreak}
         </span>
         {' · '}
         <span className="font-semibold text-[#9a0d18]">
-          10 · {labels.finalStreak}
+          3 · {labels.finalStreak}
         </span>
-        {' · '}
-        ≥67%
       </p>
 
       {rows.length === 0 ? (
@@ -227,7 +267,6 @@ export function ProbationStreaksBoard({
                 <th className="px-3 py-2 font-medium">{labels.progress}</th>
                 <th className="px-3 py-2 font-medium">{labels.status}</th>
                 <th className="px-3 py-2 font-medium">{labels.next}</th>
-                <th className="px-3 py-2 font-medium">{labels.started}</th>
                 <th className="px-3 py-2 font-medium" />
               </tr>
             </thead>
@@ -245,13 +284,18 @@ export function ProbationStreaksBoard({
                     >
                       {row.name}
                     </Link>
+                    {row.missedToday ? (
+                      <span className="ms-2 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900 dark:text-amber-100">
+                        today
+                      </span>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2.5 text-muted-foreground">
                     {row.projectName ?? '—'}
                   </td>
                   <td className="px-3 py-2.5 tabular-nums font-semibold">
                     {row.missCount}
-                    <span className="font-normal text-muted-foreground"> / 10</span>
+                    <span className="font-normal text-muted-foreground"> / 3</span>
                   </td>
                   <td className="px-3 py-2.5">
                     <MissBar count={row.missCount} />
@@ -265,17 +309,8 @@ export function ProbationStreaksBoard({
                   </td>
                   <td className="px-3 py-2.5 text-xs text-muted-foreground">
                     {row.missesToNext != null && row.nextThreshold != null
-                      ? `${row.missesToNext} → ${
-                          row.nextThreshold === 3
-                            ? labels.firstStreak
-                            : row.nextThreshold === 6
-                              ? labels.secondStreak
-                              : labels.finalStreak
-                        }`
+                      ? `${row.missesToNext} → ${thresholdLabel(row.nextThreshold, labels)}`
                       : '—'}
-                  </td>
-                  <td className="px-3 py-2.5 text-xs tabular-nums text-muted-foreground">
-                    {row.probationStartedOn.slice(5)}
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -307,23 +342,26 @@ export function ProbationStreaksBoard({
                           </button>
                         </>
                       ) : null}
-                      {!row.paused ? (
-                        <button
-                          type="button"
-                          disabled={pending}
-                          onClick={() =>
-                            startTransition(() => {
-                              void setCreatorFitnessTierAction(
-                                row.creatorId,
-                                null,
-                              ).then(() => router.refresh())
-                            })
-                          }
-                          className="h-8 rounded-lg border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-accent disabled:opacity-60"
-                        >
-                          {labels.clear}
-                        </button>
-                      ) : null}
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              labels.resetConfirm.replace('{name}', row.name),
+                            )
+                          )
+                            return
+                          startTransition(() => {
+                            void resetCreatorStreakAction(row.creatorId).then(() =>
+                              router.refresh(),
+                            )
+                          })
+                        }}
+                        className="h-8 rounded-lg border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-accent disabled:opacity-60"
+                      >
+                        {labels.reset}
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -364,17 +402,17 @@ function Stat({
 }
 
 function MissBar({ count }: { count: number }) {
-  const filled = Math.max(0, Math.min(10, count))
+  const filled = Math.max(0, Math.min(3, count))
   return (
-    <div className="flex items-center gap-0.5" aria-label={`${filled} of 10 miss days`}>
-      {Array.from({ length: 10 }, (_, i) => (
+    <div className="flex items-center gap-0.5" aria-label={`${filled} of 3 miss days`}>
+      {Array.from({ length: 3 }, (_, i) => (
         <span
           key={i}
-          className={`h-2 w-2.5 rounded-sm ${
+          className={`h-2.5 w-4 rounded-sm ${
             i < filled
-              ? i >= 9
+              ? i >= 2
                 ? 'bg-[#9a0d18]'
-                : i >= 5
+                : i >= 1
                   ? 'bg-amber-500'
                   : 'bg-sky-600'
               : 'bg-muted'

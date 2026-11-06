@@ -2172,35 +2172,27 @@ export async function markProbationNoticeMessagedAction(noticeId: number) {
   return result
 }
 
-/** Remove everyone from probation (optionally one project). Does not un-pause. */
+/** Reset streak progress for everyone (optionally one project). Does not un-pause. */
 export async function clearAllProbationCreators(projectId?: number | null) {
   await requireAdmin()
   await ensureCreatorTrackingColumns()
-  const pid = projectId != null && Number.isFinite(projectId) ? projectId : null
-  const ids = (await sql`
-    SELECT id FROM creators
-    WHERE role = 'creator'
-      AND fitness_tier = 'probation'
-      AND (${pid}::int IS NULL OR project_id = ${pid})
-  `) as { id: number }[]
-  if (ids.length === 0) {
-    revalidatePath('/admin')
-    return { cleared: 0 }
-  }
-  const creatorIds = ids.map((r) => r.id)
-  await sql`
-    UPDATE creators
-    SET fitness_tier = NULL,
-        probation_started_on = NULL
-    WHERE id = ANY(${creatorIds}::int[])
-  `
-  await sql`
-    DELETE FROM probation_streak_notices
-    WHERE creator_id = ANY(${creatorIds}::int[])
-  `
+  const { resetAllCreatorStreaks } = await import('@/lib/probation')
+  const result = await resetAllCreatorStreaks(projectId)
   revalidatePath('/admin')
   revalidatePath('/submit')
-  return { cleared: creatorIds.length }
+  return result
+}
+
+/** Reset one creator’s streak (miss days + notices from Nov 7). */
+export async function resetCreatorStreakAction(creatorId: number) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const { resetCreatorStreak } = await import('@/lib/probation')
+  const result = await resetCreatorStreak(creatorId)
+  revalidatePath('/admin')
+  revalidatePath('/submit')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  return result
 }
 
 /** Person period: mark (or clear) “Talk to them today” for a creator. */

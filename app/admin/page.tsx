@@ -2107,7 +2107,7 @@ export default async function AdminPage({
             id: 'streaks',
             title: t('streaksTitle'),
             summary: streakBoard
-              ? `${streakBoard.counts.first} ${t('streaksFirst').toLowerCase()} · ${streakBoard.counts.second} ${t('streaksSecond').toLowerCase()} · ${streakBoard.counts.final} ${t('streaksFinal').toLowerCase()}`
+              ? `${streakBoard.counts.missedToday} ${t('streaksMissedToday').toLowerCase()} · ${streakBoard.counts.first} ${t('streaksFirst').toLowerCase()} · ${streakBoard.counts.second} ${t('streaksSecond').toLowerCase()} · ${streakBoard.counts.final} ${t('streaksFinal').toLowerCase()}`
               : streakBoardError ?? '—',
             hint: t('streaksHint'),
             children: streakBoardError ? (
@@ -2132,6 +2132,8 @@ export default async function AdminPage({
                   clear: t('fitnessClear'),
                   clearAll: t('streaksClearAll'),
                   clearAllConfirm: t('streaksClearAllConfirm'),
+                  reset: t('streaksReset'),
+                  resetConfirm: t('streaksResetConfirm'),
                   copyArabic: t('streaksCopyArabic'),
                   copied: t('streaksCopied'),
                   markSent: t('streaksMarkSent'),
@@ -2147,6 +2149,9 @@ export default async function AdminPage({
                   firstStreak: t('streaksFirst'),
                   secondStreak: t('streaksSecond'),
                   finalStreak: t('streaksFinal'),
+                  missedToday: t('streaksMissedToday'),
+                  missedTodayEmpty: t('streaksMissedTodayEmpty'),
+                  openPerson: t('lookOpenPerson'),
                 }}
               />
             ) : (
