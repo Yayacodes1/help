@@ -544,6 +544,29 @@ export function buildMessageTemplates(
   })
 }
 
+/** Pack several HTML people-blocks into fewer Telegram messages (group rate limits). */
+export function packHtmlMessages(parts: string[], maxLen: number): string[] {
+  if (parts.length === 0) return []
+  const out: string[] = []
+  let buf = ''
+  for (const part of parts) {
+    const next = buf ? `${buf}\n\n————\n\n${part}` : part
+    if (next.length <= maxLen) {
+      buf = next
+      continue
+    }
+    if (buf) out.push(buf)
+    if (part.length <= maxLen) {
+      buf = part
+    } else {
+      out.push(part)
+      buf = ''
+    }
+  }
+  if (buf) out.push(buf)
+  return out
+}
+
 /**
  * `summary` (default, used by the 5 PM / 12 AM jobs): counts only + buttons.
  * `progress`: today so far with video totals (how much posted to this point).
@@ -601,6 +624,7 @@ export async function sendAttendanceReports(
   const templates = buildMessageTemplates(report, role, opToday, pool)
   const errors: Array<string | undefined> = []
   let sent = 0
+  const inGroup = String(chatId ?? process.env.TELEGRAM_CHAT_ID ?? '').startsWith('-')
 
   if (templates.length > 0) {
     const head = await sendTelegramMessage(
@@ -609,9 +633,11 @@ export async function sendAttendanceReports(
       { chatId },
     )
     errors.push(head.error)
-    // Groups allow ~20 bot messages a minute; private chats are much faster.
-    const gapMs = String(chatId ?? process.env.TELEGRAM_CHAT_ID ?? '').startsWith('-') ? 3100 : 400
-    for (const html of templates) {
+    // Groups: pack several people into each Telegram message so we stay under the
+    // ~20 msg/min limit and finish before the webhook job dies. Private: one each.
+    const packed = inGroup ? packHtmlMessages(templates, 3500) : templates
+    const gapMs = inGroup ? 1200 : 350
+    for (const html of packed) {
       await new Promise((r) => setTimeout(r, gapMs))
       const res = await sendTelegramMessage(html, { chatId, parseMode: 'HTML' })
       if (res.ok) sent++

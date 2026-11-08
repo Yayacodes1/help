@@ -219,6 +219,17 @@ export async function POST(req: Request) {
     await sendTelegramMessage(HELP, { chatId, replyMarkup: updateMenuButtons() })
   } else if (request && 'note' in request) {
     const noteReq = request
+    // Text commands need an instant ack — otherwise the group looks broken.
+    if (!update.callback_query) {
+      await sendTelegramMessage(
+        noteReq.note === 'pick'
+          ? noteReq.kind === 'fit'
+            ? '📈 Loading consistency…'
+            : '👋 Loading welcome…'
+          : 'Building message…',
+        { chatId },
+      )
+    }
     after(async () => {
       try {
         const {
@@ -304,6 +315,12 @@ export async function POST(req: Request) {
     })
   } else if (request && 'probation' in request) {
     const probationReq = request
+    if (!update.callback_query) {
+      await sendTelegramMessage(
+        probationReq.probation === 'list' ? '⚠️ Loading streaks…' : 'Building streak message…',
+        { chatId },
+      )
+    }
     after(async () => {
       try {
         const { getOperationalToday, getServerToday } = await import('@/lib/queries')
@@ -388,12 +405,26 @@ export async function POST(req: Request) {
     }
   } else if (request) {
     const { view, mode, role, squad, flavor } = request
+    if (!update.callback_query) {
+      const ack =
+        view === 'messages'
+          ? role === 'reposter'
+            ? '✉️ Building reposter messages…'
+            : '✉️ Building creator messages…'
+          : view === 'list'
+            ? '📋 Building the full list…'
+            : mode === 'final'
+              ? '📅 Building previous day…'
+              : view === 'progress'
+                ? '⏱ Building so-far today…'
+                : '📊 Building update…'
+      await sendTelegramMessage(ack, { chatId })
+    }
     // Answer Telegram now; sending many messages can take a minute and it would retry.
     after(async () => {
       try {
-        const { ensureCreatorTrackingColumns } = await import('@/lib/schema')
         const { getOperationalToday } = await import('@/lib/queries')
-        await ensureCreatorTrackingColumns()
+        // Skip ensureCreatorTrackingColumns here — it burns cold-start time on every tap.
         const result = await sendAttendanceReports(await getOperationalToday(), mode, {
           chatId,
           view,
