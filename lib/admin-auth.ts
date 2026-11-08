@@ -16,6 +16,7 @@ function accounts(): Account[] {
   if (yahya) out.push({ id: 'yahya', name: 'Yahya', role: 'owner', password: yahya })
   out.push({ id: 'ahmed', name: 'Ahmed', role: 'manager', password: 'iwillgetcashed' })
   out.push({ id: 'lula', name: 'Lula', role: 'manager', password: 'lulaisadmin' })
+  out.push({ id: 'sultan', name: 'Sultan', role: 'manager', password: 'sultanisadmin' })
   return out
 }
 

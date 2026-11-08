@@ -10,7 +10,7 @@ import { LanguageToggle } from '@/components/language-toggle'
 import { CreatorLoginFields } from '@/components/creator-login-fields'
 import { createT, type Locale } from '@/lib/i18n'
 
-type Role = 'creator' | 'reposter' | 'yahya' | 'ahmed' | 'lula' | 'leader' | 'outreach'
+type Role = 'creator' | 'reposter' | 'yahya' | 'ahmed' | 'lula' | 'sultan' | 'leader' | 'outreach'
 type CreatorState = { ok: boolean; message: string } | null
 type AdminState = { ok: boolean; message: string }
 
@@ -75,6 +75,7 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
             <option value="yahya">Yahya</option>
             <option value="ahmed">Ahmed</option>
             <option value="lula">Lula</option>
+            <option value="sultan">Sultan</option>
           </select>
         </div>
 

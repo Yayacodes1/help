@@ -2403,7 +2403,10 @@ export default async function AdminPage({
                       slots={structurePay}
                       today={opToday}
                       canEdit={
-                        session?.id === 'yahya' || session?.id === 'ahmed' || session?.id === 'lula'
+                        session?.id === 'yahya' ||
+                        session?.id === 'ahmed' ||
+                        session?.id === 'lula' ||
+                        session?.id === 'sultan'
                       }
                     />
                   ) : null,
