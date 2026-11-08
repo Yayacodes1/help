@@ -153,6 +153,12 @@ function QuotaFields({
         TT {totalLabel}
         <input type="number" min={0} name="target_tiktok" defaultValue={targetTt} className={inputClass} />
       </label>
+      {variant === 'past' ? (
+        <p className="col-span-2 text-[11px] text-muted-foreground">
+          Edit the hit totals to what they actually posted (e.g. 30). Pay amount is separate under
+          Base I paid — set that to what you sent for those videos.
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -279,7 +285,7 @@ function PayFields({
     <div className="grid gap-2">
       <p className="text-[11px] text-muted-foreground">
         {isPast
-          ? `Past contract: amounts in ${currency} are what you already paid. Saving records them as paid.`
+          ? `Past contract: type what you already paid in ${currency} — not the full plan if they only finished part of the videos (e.g. paid for 30 of 75). Saving records that amount.`
           : 'Type the amount you pay, then choose whether that number is for the whole month or each 2-week wave. Month contracts split at day 14.'}
       </p>
       <div className="grid grid-cols-2 gap-2">
@@ -574,14 +580,14 @@ function MarkPaidButton({
       <p className="w-full text-[11px] text-muted-foreground">
         {mid
           ? 'Pay anytime on this running contract (upfront or mid-period). Only Mark paid updates Total paid.'
-          : 'Record what you actually paid for this period. Only this updates Total paid.'}
+          : 'Record what you actually paid. You can type a lower amount if they only finished part of the videos (e.g. 30 of 75).'}
       </p>
       <label className="flex flex-col gap-1 text-xs text-muted-foreground">
         Paid on
         <input type="date" name="paid_on" required defaultValue={today} className={inputClass} />
       </label>
       <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        Amount
+        Amount I actually paid
         <input
           type="number"
           name="amount"
@@ -659,6 +665,61 @@ function BiweeklyHalvesPay({
   )
 }
 
+function HalfPayForm({
+  creatorId,
+  today,
+  contractId,
+  contractName,
+  half,
+  pending,
+  startTransition,
+}: {
+  creatorId: number
+  today: string
+  contractId: number
+  contractName: string
+  half: ContractHalfStatus
+  pending: boolean
+  startTransition: (fn: () => void) => void
+}) {
+  const money = useMoney()
+  const [amount, setAmount] = useState(String(half.balance))
+  const pay = Number(amount)
+  const valid = Number.isFinite(pay) && pay > 0
+  return (
+    <form
+      action={(fd) => startTransition(() => recordContractPayment(creatorId, contractId, fd))}
+      className="mt-3 flex flex-col gap-2"
+    >
+      <input type="hidden" name="paid_on" value={today} />
+      <input type="hidden" name="note" value={halfPaymentNote(half.index, contractName)} />
+      <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+        Amount I actually paid
+        <span className="font-normal">
+          Suggested {money(half.balance)}. Lower it if they only finished part of the videos.
+        </span>
+        <input
+          type="number"
+          name="amount"
+          min={0}
+          step="0.01"
+          required
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          className={inputClass}
+        />
+      </label>
+      <button
+        type="submit"
+        disabled={pending || !valid}
+        className="h-11 w-full rounded-lg bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-60"
+      >
+        Pay {valid ? money(pay) : money(half.balance)}
+      </button>
+    </form>
+  )
+}
+
 function HalfPayCard({
   creatorId,
   today,
@@ -728,27 +789,15 @@ function HalfPayCard({
       )}
 
       {half.balance > 0.009 ? (
-        <form
-          action={(fd) =>
-            startTransition(() => recordContractPayment(creatorId, contractId, fd))
-          }
-          className="mt-3"
-        >
-          <input type="hidden" name="paid_on" value={today} />
-          <input type="hidden" name="amount" value={half.balance} />
-          <input
-            type="hidden"
-            name="note"
-            value={halfPaymentNote(half.index, contractName)}
-          />
-          <button
-            type="submit"
-            disabled={pending}
-            className="h-11 w-full rounded-lg bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-60"
-          >
-            Pay {money(half.balance)}
-          </button>
-        </form>
+        <HalfPayForm
+          creatorId={creatorId}
+          today={today}
+          contractId={contractId}
+          contractName={contractName}
+          half={half}
+          pending={pending}
+          startTransition={startTransition}
+        />
       ) : null}
     </div>
   )
@@ -819,11 +868,14 @@ export function ContractsManager({
             paid
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Typed amounts on past contracts aren’t in Payments yet. Record{' '}
+            Typed <span className="text-foreground">Base I paid</span> on each past contract isn’t in
+            Payments yet. Suggested total{' '}
             <span className="font-semibold tabular-nums text-foreground">
               {money(unpaidPastTotal)}
-            </span>{' '}
-            as paid — clears Pay due and fills Total paid.
+            </span>
+            . If you paid less because they only hit part of the videos, open that past contract,
+            change <span className="text-foreground">Base I paid</span> to what you sent, Save — or
+            use Mark paid / Pay with a custom amount.
           </p>
           <button
             type="button"
