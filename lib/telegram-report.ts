@@ -3,10 +3,17 @@ import { addDays } from '@/lib/campaign'
 import { getAttendanceForDay } from '@/lib/attendance'
 import { OPERATIONAL_TZ, lastCompletedOperationalDay } from '@/lib/operational-day'
 import type { AttendancePerson, AttendanceStatus } from '@/lib/attendance-types'
-import { formatPlanCompare, getLeaderBoard, type LeaderBoard, type LeaderScore } from '@/lib/leaders'
+import {
+  EMPTY_COUNTS,
+  formatPlanCompare,
+  getLeaderBoard,
+  type LeaderBoard,
+  type LeaderScore,
+} from '@/lib/leaders'
 import {
   peopleInSquad,
   rosterForSquad,
+  squadCallbackToken,
   squadMenuTitle,
   squadRoleButtons,
   type ReportSquad,
@@ -96,10 +103,60 @@ function onPlanPct(c: Counts): number | null {
   return total > 0 ? Math.round(((c.posted + c.late) / total) * 100) : null
 }
 
-export async function buildDayReport(opToday: string, mode: ReportMode): Promise<DayReport> {
-  const { getAllProjects, getCreatorsWithProgressOnDate } = await import('@/lib/queries')
+export type DayReportProfile = 'full' | 'slim'
+
+type BuildDayReportOpts = {
+  /** full = projects + yesterday + leaders + views. slim = today attendance only (messages). */
+  profile?: DayReportProfile
+}
+
+const REPORT_CACHE_TTL_MS = 45_000
+const reportCache = new Map<string, { expires: number; value: DayReport }>()
+
+function emptyLeaders(day: string): LeaderBoard {
+  return {
+    day,
+    prevDay: addDays(day, -1),
+    all: {
+      todayPct: null,
+      yesterdayPct: null,
+      today: { ...EMPTY_COUNTS },
+      yesterday: { ...EMPTY_COUNTS },
+    },
+    leaders: [],
+    unassigned: null,
+  }
+}
+
+export async function buildDayReport(
+  opToday: string,
+  mode: ReportMode,
+  opts: BuildDayReportOpts = {},
+): Promise<DayReport> {
+  const profile: DayReportProfile = opts.profile ?? 'full'
   const day = mode === 'live' ? opToday : lastCompletedOperationalDay(opToday)
+  const cacheKey = `${mode}:${day}:${profile}`
+  const hit = reportCache.get(cacheKey)
+  if (hit && hit.expires > Date.now()) return hit.value
+
   const prevDay = addDays(day, -1)
+
+  if (profile === 'slim') {
+    const everyone = await getAttendanceForDay(day)
+    const value: DayReport = {
+      mode,
+      day,
+      groups: [],
+      everyone,
+      leaders: emptyLeaders(day),
+      generatedAt: new Date(),
+      dailyViews: null,
+    }
+    reportCache.set(cacheKey, { expires: Date.now() + REPORT_CACHE_TTL_MS, value })
+    return value
+  }
+
+  const { getAllProjects, getCreatorsWithProgressOnDate } = await import('@/lib/queries')
   const projects = await getAllProjects()
 
   const [everyone, prevEveryone, perProject] = await Promise.all([
@@ -153,7 +210,22 @@ export async function buildDayReport(opToday: string, mode: ReportMode): Promise
     dailyViews = null
   }
 
-  return { mode, day, groups, everyone, leaders, generatedAt: new Date(), dailyViews }
+  const value: DayReport = {
+    mode,
+    day,
+    groups,
+    everyone,
+    leaders,
+    generatedAt: new Date(),
+    dailyViews,
+  }
+  reportCache.set(cacheKey, { expires: Date.now() + REPORT_CACHE_TTL_MS, value })
+  // Keep slim cache warm with the same attendance for message taps.
+  reportCache.set(`${mode}:${day}:slim`, {
+    expires: Date.now() + REPORT_CACHE_TTL_MS,
+    value: { ...value, groups: [], dailyViews: null },
+  })
+  return value
 }
 
 function enDay(ymd: string): string {
@@ -217,9 +289,9 @@ export const BUTTON_GUIDE =
   'WHAT YOU CAN DO\n' +
   '📊 Type /update — pick Previous day, Today, or So far today.\n' +
   '📋 Full list — names: who posted, partial, didn\'t post (same day). Or type /list\n' +
-  '✉️ Creators — a copy-ready Arabic message for each creator who is behind. Or type /messages_creators\n' +
-  '✉️ Reposters — the same for reposters. Or type /messages_reposters\n' +
-  '⚠️ Creator streaks — first / second / final streak list (3 → 6 → 10). Tap a name to copy. Or type /streaks\n' +
+  '✉️ Creators — tap a name to copy Arabic (or Send all). Or type /messages_creators\n' +
+  '✉️ Reposters — same for reposters. Or type /messages_reposters\n' +
+  '⚠️ Creator streaks — first / second / final streak list. Tap a name to copy. Or type /streaks\n' +
   '📈 Consistency — pick a creator, or /fitness Name to look them up. Copy-paste check-in.\n' +
   '👋 Welcome — pick a new creator, or /welcome Name. Copy-paste system intro.\n' +
   '👑 Group Leader — pick Alpha / Beta / Charlie / Delta, then Update, List, Creators reminder, or Reposter reminder. Or type /groups\n' +
@@ -508,14 +580,13 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-/** One copy-ready Telegram message per person of that role who is behind (didn't post first). */
-export function buildMessageTemplates(
+/** People of that role who still need a reminder (miss / partial). */
+export function behindPeople(
   report: DayReport,
   role: ReportRole,
-  opToday: string,
   pool: AttendancePerson[] = report.everyone,
-): string[] {
-  const behind = pool
+): AttendancePerson[] {
+  return pool
     .filter((p) => {
       if (p.role !== role) return false
       if (p.status !== 'miss' && p.status !== 'partial') return false
@@ -526,7 +597,19 @@ export function buildMessageTemplates(
       }
       return true
     })
-    .sort((a, b) => (a.status === b.status ? a.name.localeCompare(b.name) : a.status === 'miss' ? -1 : 1))
+    .sort((a, b) =>
+      a.status === b.status ? a.name.localeCompare(b.name) : a.status === 'miss' ? -1 : 1,
+    )
+}
+
+/** One copy-ready Telegram message per person of that role who is behind (didn't post first). */
+export function buildMessageTemplates(
+  report: DayReport,
+  role: ReportRole,
+  opToday: string,
+  pool: AttendancePerson[] = report.everyone,
+): string[] {
+  const behind = behindPeople(report, role, pool)
   const noun = role === 'creator' ? 'Creator' : 'Reposter'
   const rows: Array<{ p: AttendancePerson; body: string }> = []
   for (const p of behind) {
@@ -542,6 +625,85 @@ export function buildMessageTemplates(
       escapeHtml(body)
     )
   })
+}
+
+export function messagePickerPrompt(
+  report: DayReport,
+  role: ReportRole,
+  behindCount: number,
+  scope = '',
+): string {
+  const noun = role === 'creator' ? 'creator' : 'reposter'
+  if (behindCount === 0) {
+    return `✉️ No ${noun} messages needed${scope} — every ${noun} is done for ${dayTitle(report)}.`
+  }
+  return (
+    `✉️ ${noun.toUpperCase()} MESSAGES${scope} · ${dayTitle(report)}\n` +
+    `${behindCount} ${noun}${behindCount === 1 ? '' : 's'} behind.\n` +
+    `Tap a name to copy the Arabic reminder (fast). Or Send all if you want every message at once.`
+  )
+}
+
+/** Streak-style: tap a name → one Arabic reminder. */
+export function messagePickerButtons(
+  people: AttendancePerson[],
+  role: ReportRole,
+  mode: ReportMode,
+  page = 0,
+  squad?: ReportSquad | null,
+) {
+  const pageSize = 20
+  const start = page * pageSize
+  const slice = people.slice(start, start + pageSize)
+  const squadKey = squad ? squadCallbackToken(squad) : '_'
+  const rows = slice.map((p) => {
+    const posted = videosPostedToday(p)
+    const mark = p.status === 'miss' || posted <= 0 ? '❌' : '⚠️'
+    return [
+      {
+        text: `${mark} ${p.name}`.slice(0, 60),
+        callback_data: `msg:${role}:${mode}:${p.id}:${squadKey}`,
+      },
+    ]
+  })
+  const nav: Array<{ text: string; callback_data: string }> = []
+  if (page > 0) {
+    nav.push({ text: '← Prev', callback_data: `msgpage:${role}:${mode}:${page - 1}:${squadKey}` })
+  }
+  if (start + pageSize < people.length) {
+    nav.push({ text: 'Next →', callback_data: `msgpage:${role}:${mode}:${page + 1}:${squadKey}` })
+  }
+  if (nav.length) rows.push(nav)
+  if (people.length > 0) {
+    rows.push([
+      {
+        text: `📤 Send all (${people.length})`,
+        callback_data: `msgall:${role}:${mode}:${squadKey}`,
+      },
+    ])
+  }
+  rows.push([{ text: '🔄 Refresh menu', callback_data: 'upd' }])
+  return { inline_keyboard: rows }
+}
+
+export function formatOneBehindMessage(
+  report: DayReport,
+  person: AttendancePerson,
+  opToday: string,
+  index?: number,
+  total?: number,
+): string | null {
+  const body = arabicTemplate(person, report, opToday)
+  if (!body) return null
+  const noun = person.role === 'creator' ? 'Creator' : 'Reposter'
+  const posted = videosPostedToday(person)
+  const state =
+    person.status === 'miss' || posted <= 0 ? "❌ didn't post" : `⚠️ needs ${missingEn(person)}`
+  const head =
+    index != null && total != null
+      ? `<b>${index}/${total} · ${escapeHtml(person.name)}</b>`
+      : `<b>${escapeHtml(person.name)}</b>`
+  return `${head} · ${noun} · ${state}\n\n<pre>${escapeHtml(body)}</pre>\n\n<i>Copy the message above, then send it to them.</i>`
 }
 
 /** Pack several HTML people-blocks into fewer Telegram messages (group rate limits). */
@@ -583,14 +745,32 @@ export async function sendAttendanceReports(
     squad?: ReportSquad
     /** How to title a live summary: today vs so-far progress. */
     flavor?: 'default' | 'today' | 'progress'
+    /** Dump every reminder as messages (default: name picker). */
+    dumpAll?: boolean
+    /** Picker page when sending the button list. */
+    page?: number
   } = {},
 ): Promise<{ ok: boolean; day: string; error?: string; skipped?: boolean; messages?: number }> {
   const { telegramConfigured, sendTelegramMessage } = await import('@/lib/telegram')
   const day = mode === 'live' ? opToday : lastCompletedOperationalDay(opToday)
   if (!telegramConfigured()) return { ok: true, day, skipped: true }
-  const { chatId, view = 'summary', role = 'creator', squad, flavor = 'default' } = opts
+  const {
+    chatId,
+    view = 'summary',
+    role = 'creator',
+    squad,
+    flavor = 'default',
+    dumpAll = false,
+    page = 0,
+  } = opts
 
-  const report = await buildDayReport(opToday, mode)
+  // Messages only need today's attendance; summary/list need the full board.
+  const profile: DayReportProfile =
+    view === 'messages' && !squad ? 'slim' : 'full'
+  // Squad filters need leaders → full profile.
+  const report = await buildDayReport(opToday, mode, {
+    profile: squad ? 'full' : profile,
+  })
   const buttons = squad ? squadRoleButtons(squad, mode) : reportButtons(mode)
   const scope = squad ? ` · ${squadMenuTitle(squad)}` : ''
 
@@ -611,13 +791,26 @@ export async function sendAttendanceReports(
     return { ok: res.ok, day: report.day, error: res.error }
   }
 
-  const pool = squad ? peopleInSquad(report.everyone, report.leaders, squad, role) : undefined
+  const pool = squad
+    ? peopleInSquad(report.everyone, report.leaders, squad, role)
+    : report.everyone.filter((p) => p.role === role)
   const noun = role === 'creator' ? 'creator' : 'reposter'
-  if (squad && (pool?.length ?? 0) === 0) {
+  if (squad && pool.length === 0) {
     const res = await sendTelegramMessage(
       `✉️ No ${noun}s in ${squadMenuTitle(squad)}.\n\n${BUTTON_GUIDE}`,
       { chatId, replyMarkup: buttons },
     )
+    return { ok: res.ok, day: report.day, error: res.error, messages: 0 }
+  }
+
+  const behind = behindPeople(report, role, pool)
+
+  // Default: fast picker (tap a name). Send all only when asked.
+  if (!dumpAll) {
+    const res = await sendTelegramMessage(messagePickerPrompt(report, role, behind.length, scope), {
+      chatId,
+      replyMarkup: messagePickerButtons(behind, role, mode, page, squad),
+    })
     return { ok: res.ok, day: report.day, error: res.error, messages: 0 }
   }
 
@@ -629,16 +822,15 @@ export async function sendAttendanceReports(
   if (templates.length > 0) {
     const head = await sendTelegramMessage(
       `✉️ ${noun.toUpperCase()} MESSAGES${scope} · ${dayTitle(report)}\n` +
-        `${templates.length} ${noun}${templates.length === 1 ? '' : 's'} behind. Copy the reminder below.`,
+        `${templates.length} ${noun}${templates.length === 1 ? '' : 's'} behind — sending now…`,
       { chatId },
     )
     errors.push(head.error)
-    // Groups: pack several people into each Telegram message so we stay under the
-    // ~20 msg/min limit and finish before the webhook job dies. Private: one each.
-    const packed = inGroup ? packHtmlMessages(templates, 3500) : templates
-    const gapMs = inGroup ? 1200 : 350
+    // Pack hard; only brief gap in groups. Retry on 429 is handled in sendTelegramMessage.
+    const packed = packHtmlMessages(templates, 3500)
+    const gapMs = inGroup ? 400 : 150
     for (const html of packed) {
-      await new Promise((r) => setTimeout(r, gapMs))
+      if (gapMs > 0) await new Promise((r) => setTimeout(r, gapMs))
       const res = await sendTelegramMessage(html, { chatId, parseMode: 'HTML' })
       if (res.ok) sent++
       else errors.push(res.error)
@@ -649,9 +841,45 @@ export async function sendAttendanceReports(
     templates.length === 0
       ? `✉️ No ${noun} messages needed${scope} — every ${noun} is done for ${dayTitle(report)}.`
       : `✅ That's all ${templates.length} ${noun} messages${scope}.`
-  const tail = await sendTelegramMessage(`${footer}\n\n${BUTTON_GUIDE}`, { chatId, replyMarkup: buttons })
+  const tail = await sendTelegramMessage(`${footer}\n\n${BUTTON_GUIDE}`, {
+    chatId,
+    replyMarkup: messagePickerButtons(behind, role, mode, 0, squad),
+  })
   errors.push(tail.error)
 
   const error = errors.filter(Boolean).join(' · ') || undefined
   return { ok: !error, day: report.day, error, messages: sent }
+}
+
+/** One person reminder from a picker tap. */
+export async function sendBehindPersonMessage(
+  opToday: string,
+  mode: ReportMode,
+  role: ReportRole,
+  creatorId: number,
+  chatId?: string | number,
+  squad?: ReportSquad | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const { telegramConfigured, sendTelegramMessage } = await import('@/lib/telegram')
+  if (!telegramConfigured()) return { ok: true }
+  const report = await buildDayReport(opToday, mode, {
+    profile: squad ? 'full' : 'slim',
+  })
+  const person = report.everyone.find((p) => p.id === creatorId && p.role === role)
+  if (!person) {
+    return sendTelegramMessage('That person was not found on this day’s list.', { chatId })
+  }
+  const pool = squad
+    ? peopleInSquad(report.everyone, report.leaders, squad, role)
+    : report.everyone.filter((p) => p.role === role)
+  const behind = behindPeople(report, role, pool)
+  const html = formatOneBehindMessage(report, person, opToday)
+  if (!html) {
+    return sendTelegramMessage('No reminder text for that person.', { chatId })
+  }
+  return sendTelegramMessage(html, {
+    chatId,
+    parseMode: 'HTML',
+    replyMarkup: messagePickerButtons(behind, role, mode, 0, squad),
+  })
 }

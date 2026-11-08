@@ -13,6 +13,7 @@ import {
   BUTTON_GUIDE,
   reportButtons,
   sendAttendanceReports,
+  sendBehindPersonMessage,
   updateMenuButtons,
   updateMenuPrompt,
   type ReportMode,
@@ -48,6 +49,14 @@ type Request_ =
   | { probation: 'send'; noticeId: number }
   | { note: 'pick'; kind: CreatorNoteKind; page?: number; query?: string }
   | { note: 'send'; kind: CreatorNoteKind; creatorId: number }
+  | {
+      messagePick: 'page' | 'one' | 'all'
+      role: ReportRole
+      mode: ReportMode
+      page?: number
+      creatorId?: number
+      squad?: ReportSquad
+    }
   | 'help'
   | null
 
@@ -157,6 +166,23 @@ function parseButton(data: string | undefined): Request_ {
     return { view: 'messages', mode: parseMode(b), role: a }
   }
   if (kind === 'msgs') return 'help'
+  if ((kind === 'msg' || kind === 'msgpage' || kind === 'msgall') && (a === 'creator' || a === 'reposter')) {
+    const mode = parseMode(b)
+    const parts = (data ?? '').split(':')
+    const squadTok = kind === 'msgall' ? parts[3] : parts[4]
+    const squad =
+      !squadTok || squadTok === '_' ? undefined : parseReportSquad(squadTok) ?? undefined
+    if (kind === 'msgall') {
+      return { messagePick: 'all', role: a, mode, squad }
+    }
+    if (kind === 'msgpage') {
+      const pageNum = Math.max(0, Number(parts[3]) || 0)
+      return { messagePick: 'page', role: a, mode, page: pageNum, squad }
+    }
+    const creatorId = Number(parts[3])
+    if (!Number.isFinite(creatorId) || creatorId <= 0) return null
+    return { messagePick: 'one', role: a, mode, creatorId, squad }
+  }
   if (kind === 'pstreaks') return { probation: 'list' }
   if (kind === 'pstreak') {
     const noticeId = Number(a)
@@ -192,23 +218,29 @@ export async function POST(req: Request) {
     request = parseButton(update.callback_query.data)
     const tapNote =
       request && request !== 'help'
-        ? 'probation' in request
-          ? request.probation === 'list'
-            ? 'Loading streaks…'
-            : 'Building streak message…'
-          : 'note' in request
-            ? request.note === 'pick'
-              ? 'Loading creators…'
-              : 'Building message…'
-            : 'menu' in request
-              ? request.menu === 'groups'
-                ? 'Pick a group…'
-                : request.menu === 'update'
-                  ? 'Pick an update…'
-                  : 'Update, list, or reminders…'
-              : request.view === 'messages'
-                ? 'Building the messages…'
-                : 'Building…'
+        ? 'messagePick' in request
+          ? request.messagePick === 'one'
+            ? 'Copy message…'
+            : request.messagePick === 'all'
+              ? 'Sending all…'
+              : 'Loading list…'
+          : 'probation' in request
+            ? request.probation === 'list'
+              ? 'Loading streaks…'
+              : 'Building streak message…'
+            : 'note' in request
+              ? request.note === 'pick'
+                ? 'Loading creators…'
+                : 'Building message…'
+              : 'menu' in request
+                ? request.menu === 'groups'
+                  ? 'Pick a group…'
+                  : request.menu === 'update'
+                    ? 'Pick an update…'
+                    : 'Update, list, or reminders…'
+                : request.view === 'messages'
+                  ? 'Loading who is behind…'
+                  : 'Building…'
         : undefined
     await answerCallbackQuery(update.callback_query.id, tapNote)
   } else if (update.message?.text) {
@@ -389,6 +421,48 @@ export async function POST(req: Request) {
         )
       }
     })
+  } else if (request && 'messagePick' in request) {
+    const pick = request
+    after(async () => {
+      try {
+        const { getOperationalToday } = await import('@/lib/queries')
+        const opToday = await getOperationalToday()
+        if (pick.messagePick === 'one' && pick.creatorId) {
+          const res = await sendBehindPersonMessage(
+            opToday,
+            pick.mode,
+            pick.role,
+            pick.creatorId,
+            chatId,
+            pick.squad,
+          )
+          if (!res.ok && res.error) {
+            await sendTelegramMessage(`Could not build message: ${res.error.slice(0, 300)}`, {
+              chatId,
+            })
+          }
+          return
+        }
+        const result = await sendAttendanceReports(opToday, pick.mode, {
+          chatId,
+          view: 'messages',
+          role: pick.role,
+          squad: pick.squad,
+          dumpAll: pick.messagePick === 'all',
+          page: pick.page ?? 0,
+        })
+        if (!result.ok && result.error) {
+          await sendTelegramMessage(`Could not send everything: ${result.error.slice(0, 500)}`, {
+            chatId,
+          })
+        }
+      } catch (e) {
+        await sendTelegramMessage(
+          `Could not build messages: ${e instanceof Error ? e.message.slice(0, 300) : 'unknown error'}`,
+          { chatId },
+        )
+      }
+    })
   } else if (request && 'menu' in request) {
     if (request.menu === 'update') {
       await sendTelegramMessage(updateMenuPrompt(), { chatId, replyMarkup: updateMenuButtons() })
@@ -409,8 +483,8 @@ export async function POST(req: Request) {
       const ack =
         view === 'messages'
           ? role === 'reposter'
-            ? '✉️ Building reposter messages…'
-            : '✉️ Building creator messages…'
+            ? '✉️ Loading who is behind (reposters)…'
+            : '✉️ Loading who is behind (creators)…'
           : view === 'list'
             ? '📋 Building the full list…'
             : mode === 'final'
