@@ -684,13 +684,15 @@ export function probationStreakListText(notices: ProbationNotice[], today: strin
       `⚠️ CREATOR STREAKS · ${today}\n` +
       `No creators waiting for a streak message.\n` +
       `From ${STREAK_EPOCH_START}: 1 miss day → first verbal · 2 → second verbal · 3 → final.\n` +
-      `Tap /streaks after people miss to load the list. Like/tap a name to copy the Arabic, then it marks sent.`
+      `Arabic copy is warm: post on scheduled days, required count, upload same day, ask us for help.\n` +
+      `Tap /streaks after people miss. Tap a name → copy Arabic → marks sent.`
     )
   }
   const lines = [
     `⚠️ CREATOR STREAKS · ${today}`,
     `From ${STREAK_EPOCH_START}: day 1 = first verbal · day 2 = second verbal · day 3 = final (fire).`,
-    `Every message explains all 3 levels. Tap a name → copy Arabic → marked sent (like).`,
+    `Arabic copy: be kind, remind them to post on schedule + upload same day, and offer help.`,
+    `Tap a name → copy Arabic → marked sent.`,
     '',
   ]
   for (const n of notices) {
