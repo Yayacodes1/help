@@ -90,8 +90,15 @@ export const BOT_COMMANDS = [
   { command: 'help', description: 'What this bot can do' },
 ]
 
-/** Points the bot at `${origin}/api/telegram/webhook` if it isn't already. */
-export async function ensureTelegramWebhook(origin?: string): Promise<{ ok: boolean; url?: string; changed?: boolean; error?: string }> {
+/** Points the bot at `${origin}/api/telegram/webhook` and refreshes the secret token. */
+export async function ensureTelegramWebhook(origin?: string): Promise<{
+  ok: boolean
+  url?: string
+  changed?: boolean
+  error?: string
+  pendingUpdateCount?: number
+  lastError?: string | null
+}> {
   const secret = telegramWebhookSecret()
   if (!secret) return { ok: false, error: 'TELEGRAM_BOT_TOKEN is not set' }
   const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim()
@@ -99,22 +106,46 @@ export async function ensureTelegramWebhook(origin?: string): Promise<{ ok: bool
   if (!base || !base.startsWith('https://')) return { ok: false, error: 'No public https URL for the webhook' }
   const url = `${base}/api/telegram/webhook`
 
-  const info = await callTelegram('getWebhookInfo', {})
-  const current = (info.result as { url?: string } | undefined)?.url
-  if (current === url) {
-    await callTelegram('setMyCommands', { commands: BOT_COMMANDS })
-    return { ok: true, url, changed: false }
-  }
-
+  // Always re-set: URL-only match used to skip this, so a rotated token left Telegram
+  // posting the old secret forever → every update got 401 and the chat looked dead.
   const set = await callTelegram('setWebhook', {
     url,
     secret_token: secret,
     allowed_updates: ['message', 'callback_query'],
-    drop_pending_updates: true,
+    drop_pending_updates: false,
   })
   if (!set.ok) return { ok: false, url, error: set.error }
   await callTelegram('setMyCommands', { commands: BOT_COMMANDS })
-  return { ok: true, url, changed: true }
+
+  const info = await callTelegram('getWebhookInfo', {})
+  const result = (info.result ?? {}) as {
+    url?: string
+    pending_update_count?: number
+    last_error_message?: string
+  }
+  return {
+    ok: true,
+    url: result.url ?? url,
+    changed: true,
+    pendingUpdateCount: result.pending_update_count ?? 0,
+    lastError: result.last_error_message ?? null,
+  }
+}
+
+/** Normalize env chat ids: trim quotes, allow comma-separated list. */
+export function telegramAllowedChatIds(): string[] {
+  const raw = process.env.TELEGRAM_CHAT_ID?.trim() ?? ''
+  if (!raw) return []
+  return raw
+    .split(/[,;\s]+/)
+    .map((part) => part.replace(/^["']|["']$/g, '').trim())
+    .filter(Boolean)
+}
+
+export function isTelegramAllowedChat(chatId: string | number | null | undefined): boolean {
+  if (chatId == null) return false
+  const wanted = String(chatId)
+  return telegramAllowedChatIds().includes(wanted)
 }
 
 function splitTelegramMessage(text: string, maxLen: number): string[] {

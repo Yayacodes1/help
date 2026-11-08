@@ -1,6 +1,11 @@
 import { NextResponse, after } from 'next/server'
 import { timingSafeEqual } from 'crypto'
-import { answerCallbackQuery, sendTelegramMessage, telegramWebhookSecret } from '@/lib/telegram'
+import {
+  answerCallbackQuery,
+  isTelegramAllowedChat,
+  sendTelegramMessage,
+  telegramWebhookSecret,
+} from '@/lib/telegram'
 import {
   groupLeaderButtons,
   groupLeaderPrompt,
@@ -189,9 +194,16 @@ export async function POST(req: Request) {
   }
   const update = (await req.json().catch(() => ({}))) as Update
   const chatId = update.callback_query?.message?.chat?.id ?? update.message?.chat?.id
-  const allowed = process.env.TELEGRAM_CHAT_ID?.trim()
-  // Private bot: ignore every chat except ours.
-  if (chatId == null || !allowed || String(chatId) !== allowed) {
+  // Private bot: ignore every chat except the configured team chat(s).
+  if (!isTelegramAllowedChat(chatId)) {
+    // If Telegram reached us but this isn't the team chat, say so — otherwise it looks broken.
+    const text = update.message?.text?.trim() ?? ''
+    if (chatId != null && /^\/(update|help|start|now|today|yesterday|list)(@\w+)?\b/i.test(text)) {
+      await sendTelegramMessage(
+        'This bot only answers in the configured team chat. Open that group and send /update there.',
+        { chatId },
+      )
+    }
     return NextResponse.json({ ok: true })
   }
 
