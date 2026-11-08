@@ -99,7 +99,17 @@ function parseText(text: string): Request_ {
     // Default: so far today — how many posted to this point.
     return { view: 'progress', mode: 'live', flavor: 'progress' }
   }
+  // Removed from the bot — still answer so the chat doesn't look dead.
+  if (
+    ['streaks', 'pstreaks', 'creator_streaks', 'probation', 'fitness', 'consistency', 'checkin', 'التزام', 'welcome', 'onboard', 'newcreator', 'ترحيب'].includes(
+      cmd,
+    )
+  ) {
+    return 'help'
+  }
   if (['start', 'help'].includes(cmd)) return 'help'
+  // Any other /command → help. Plain text stays ignored (group noise).
+  if (text.trim().startsWith('/')) return 'help'
   return null
 }
 
@@ -159,6 +169,17 @@ function parseButton(data: string | undefined): Request_ {
     if (!Number.isFinite(creatorId) || creatorId <= 0) return null
     return { messagePick: 'one', role: a, mode, creatorId, squad }
   }
+  // Old keyboards (streaks / fitness / welcome) — send help instead of silence.
+  if (
+    kind === 'pstreaks' ||
+    kind === 'pstreak' ||
+    kind === 'fit' ||
+    kind === 'welcome' ||
+    kind === 'fitpage' ||
+    kind === 'welcomepage'
+  ) {
+    return 'help'
+  }
   return null
 }
 
@@ -198,6 +219,15 @@ export async function POST(req: Request) {
     await answerCallbackQuery(update.callback_query.id, tapNote)
   } else if (update.message?.text) {
     request = parseText(update.message.text)
+  }
+
+  // Unknown button on an old message → don't leave the chat hanging.
+  if (update.callback_query && request == null) {
+    await sendTelegramMessage('That button is outdated. Type /update', {
+      chatId,
+      replyMarkup: updateMenuButtons(),
+    })
+    return NextResponse.json({ ok: true })
   }
 
   if (request === 'help') {
