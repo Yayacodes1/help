@@ -51,6 +51,20 @@ export async function applyScheduleBreak(opts: {
       ${creatorId}, ${start}, ${end}, ${reason}, ${daysAdded}, ${extendedContractId}
     )
   `
+
+  // Miss days inside the break no longer count toward streaks.
+  await sql`
+    DELETE FROM creator_strikes
+    WHERE creator_id = ${creatorId}
+      AND status = 'active'
+      AND strike_date >= ${start}::date
+      AND strike_date <= ${end}::date
+  `
+  await sql`
+    DELETE FROM probation_streak_notices
+    WHERE creator_id = ${creatorId}
+  `
+
   const { restoreCreatorStreak } = await import('@/lib/streak-restore')
   await restoreCreatorStreak(creatorId, today)
   return { days, daysAdded }

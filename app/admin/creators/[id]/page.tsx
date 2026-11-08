@@ -138,7 +138,10 @@ export default async function CreatorDetailPage({
   const activeCompare = comparisons.find((c) => c.isActive)
 
   const defaultPanel =
-    sp.panel && ['consistency', 'contracts', 'payments', 'profile', 'videos', 'strikes', 'commission'].includes(sp.panel)
+    sp.panel &&
+    ['consistency', 'contracts', 'payments', 'profile', 'videos', 'strikes', 'commission', 'break'].includes(
+      sp.panel,
+    )
       ? sp.panel
       : null
   const returnPanel = adminReturnPanel(sp.from)
@@ -345,21 +348,32 @@ export default async function CreatorDetailPage({
               ]
             : []),
           {
+            id: 'break',
+            title: t('personBreakTitle'),
+            summary:
+              breaks.length === 0
+                ? t('personBreakNone')
+                : `${breaks.length} · ${
+                    breaks.some((b) => b.start_date <= today && b.end_date >= today)
+                      ? t('personBreakActive')
+                      : t('personBreakScheduled')
+                  }`,
+            hint: t('personBreakHint'),
+            children: <BreaksManager creatorId={creator.id} today={today} breaks={breaks} />,
+          },
+          {
             id: 'contracts',
             title: t('contracts'),
             summary: comparisons.length === 0 ? t('noneYet') : `${comparisons.length} ${t('periods')}`,
             hint: active ? active.name : t('addAContract'),
             children: (
-              <div className="flex flex-col gap-4">
-                <ContractsManager
-                  currency={currency}
-                  creatorId={creator.id}
-                  today={today}
-                  comparisons={comparisons}
-                  projects={projects}
-                />
-                <BreaksManager creatorId={creator.id} today={today} breaks={breaks} />
-              </div>
+              <ContractsManager
+                currency={currency}
+                creatorId={creator.id}
+                today={today}
+                comparisons={comparisons}
+                projects={projects}
+              />
             ),
           },
           {

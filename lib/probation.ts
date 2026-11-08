@@ -555,18 +555,18 @@ export async function getProbationStreakBoard(opts: {
         : { count: 0, dates: [] as string[] }
 
     const onBreak = breakOnDay.has(person.id)
+    // On break for this day → stay off the streaks board until the break ends.
+    if (onBreak) continue
+
     const shouldPost =
       selectedDay >= STREAK_EPOCH_START &&
-      !onBreak &&
       (!schedule || !contract || isPostingDay(schedule, contract.start_date, selectedDay))
     const posted = postedOnDay.has(person.id)
-    const dayStatus: ProbationStreakRow['dayStatus'] = onBreak
-      ? 'break'
-      : !shouldPost
-        ? 'off'
-        : posted
-          ? 'posted'
-          : 'missed'
+    const dayStatus: ProbationStreakRow['dayStatus'] = !shouldPost
+      ? 'off'
+      : posted
+        ? 'posted'
+        : 'missed'
     const missedTodayFlag = dayStatus === 'missed' && selectedDay === today
     if (dayStatus === 'missed') {
       missedToday.push({
