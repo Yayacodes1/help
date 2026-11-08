@@ -11,11 +11,9 @@ import {
 import { adminPersonHref } from '@/lib/admin-href'
 import { PanelProjectFilter } from '@/components/admin/panel-project-filter'
 import {
-  PROBATION_LEVEL_THRESHOLDS,
   buildProbationStreakMessage,
-  streakBucketFromMisses,
+  type DayPostStatus,
   type ProbationStreakBoard,
-  type ProbationStreakPhase,
   type ProbationStreakRow,
 } from '@/lib/probation-copy'
 
@@ -25,13 +23,7 @@ type Labels = {
   chooseProject: string
   person: string
   project: string
-  misses: string
-  progress: string
-  status: string
-  next: string
-  started: string
   empty: string
-  clear: string
   clearAll: string
   clearAllConfirm: string
   reset: string
@@ -39,51 +31,70 @@ type Labels = {
   copyArabic: string
   copied: string
   markSent: string
-  filterAll: string
-  phaseClean: string
-  phaseNearVerbal1: string
-  phaseDueVerbal1: string
-  phaseNearVerbal2: string
-  phaseDueVerbal2: string
-  phaseNearKick: string
-  phaseDueKick: string
-  phasePaused: string
   firstStreak: string
   secondStreak: string
   finalStreak: string
-  missedToday: string
-  missedTodayEmpty: string
-  openPerson: string
+  pickDay: string
+  posted: string
+  missed: string
+  onBreak: string
+  offDay: string
+  onStreak: string
+  clean: string
+  missDays: string
+  showMissed: string
+  showPosted: string
+  showStreaks: string
+  showAll: string
 }
 
-const PHASE_LABEL: Record<ProbationStreakPhase, keyof Labels> = {
-  clean: 'phaseClean',
-  near_verbal1: 'phaseNearVerbal1',
-  due_verbal1: 'phaseDueVerbal1',
-  near_verbal2: 'phaseNearVerbal2',
-  due_verbal2: 'phaseDueVerbal2',
-  near_kick: 'phaseNearKick',
-  due_kick: 'phaseDueKick',
-  paused: 'phasePaused',
+function weekdayLabel(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat('en', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    }).format(new Date(`${iso}T12:00:00Z`))
+  } catch {
+    return iso.slice(5)
+  }
 }
 
-function phaseTone(phase: ProbationStreakPhase): string {
-  if (phase === 'due_kick' || phase === 'paused') {
-    return 'bg-rose-500/10 text-[#9a0d18] dark:text-card-foreground'
-  }
-  if (phase === 'due_verbal1' || phase === 'due_verbal2') {
-    return 'bg-amber-500/15 text-amber-900 dark:text-amber-100'
-  }
-  if (phase.startsWith('near_')) {
-    return 'bg-sky-500/10 text-sky-900 dark:text-sky-100'
-  }
-  return 'bg-muted text-muted-foreground'
+function shortDate(iso: string): string {
+  return iso.slice(5)
 }
 
-function thresholdLabel(n: number, labels: Labels): string {
-  if (n === PROBATION_LEVEL_THRESHOLDS[1]) return labels.firstStreak
-  if (n === PROBATION_LEVEL_THRESHOLDS[2]) return labels.secondStreak
-  return labels.finalStreak
+function streakBadge(level: number, labels: Labels): { text: string; className: string } {
+  if (level >= 3) {
+    return {
+      text: labels.finalStreak,
+      className: 'border-[#9a0d18]/40 bg-[#9a0d18]/10 text-[#9a0d18]',
+    }
+  }
+  if (level === 2) {
+    return {
+      text: labels.secondStreak,
+      className: 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100',
+    }
+  }
+  if (level === 1) {
+    return {
+      text: labels.firstStreak,
+      className: 'border-sky-500/40 bg-sky-500/10 text-sky-900 dark:text-sky-100',
+    }
+  }
+  return {
+    text: labels.clean,
+    className: 'border-border bg-muted/40 text-muted-foreground',
+  }
+}
+
+function dayStatusLabel(status: DayPostStatus, labels: Labels): string {
+  if (status === 'posted') return labels.posted
+  if (status === 'missed') return labels.missed
+  if (status === 'break') return labels.onBreak
+  return labels.offDay
 }
 
 export function ProbationStreaksBoard({
@@ -101,27 +112,26 @@ export function ProbationStreaksBoard({
   const pathname = usePathname()
   const params = useSearchParams()
   const [pending, startTransition] = useTransition()
-  const [filter, setFilter] = useState<'all' | 'missed' | 1 | 2 | 3>('all')
+  const [view, setView] = useState<'missed' | 'posted' | 'streaks' | 'all'>('missed')
   const [copiedId, setCopiedId] = useState<number | null>(null)
 
-  const rows = useMemo(() => {
-    if (filter === 'all') return board.rows.filter((r) => r.missCount > 0 || r.missedToday)
-    if (filter === 'missed') return board.rows.filter((r) => r.missedToday)
-    return board.rows.filter((r) => streakBucketFromMisses(r.missCount) === filter)
-  }, [board.rows, filter])
-
-  function keepPanel(patch?: Record<string, string | null>) {
+  function push(patch: Record<string, string | null>) {
     const next = new URLSearchParams(params.toString())
     next.set('panel', 'streaks')
     next.set('tab', 'people')
-    if (patch) {
-      for (const [k, v] of Object.entries(patch)) {
-        if (v == null || v === '') next.delete(k)
-        else next.set(k, v)
-      }
+    for (const [k, v] of Object.entries(patch)) {
+      if (v == null || v === '') next.delete(k)
+      else next.set(k, v)
     }
-    router.push(`${pathname}?${next.toString()}`)
+    router.push(`${pathname}?${next.toString()}`, { scroll: false })
   }
+
+  const rows = useMemo(() => {
+    if (view === 'missed') return board.rows.filter((r) => r.dayStatus === 'missed')
+    if (view === 'posted') return board.rows.filter((r) => r.dayStatus === 'posted')
+    if (view === 'streaks') return board.rows.filter((r) => r.missCount > 0)
+    return board.rows
+  }, [board.rows, view])
 
   async function copyArabic(row: ProbationStreakRow) {
     if (!row.pendingNoticeId || !row.pendingLevel) return
@@ -159,63 +169,85 @@ export function ProbationStreaksBoard({
         }}
       />
 
-      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-sm font-semibold text-foreground">{labels.missedToday}</h3>
-          <span className="text-2xl font-semibold tabular-nums text-amber-900 dark:text-amber-100">
-            {board.counts.missedToday}
-          </span>
-        </div>
-        {board.missedToday.length === 0 ? (
-          <p className="mt-2 text-xs text-muted-foreground">{labels.missedTodayEmpty}</p>
-        ) : (
-          <ul className="mt-3 flex flex-col divide-y divide-border/60 rounded-lg border border-border bg-card">
-            {board.missedToday.map((p) => (
-              <li
-                key={p.creatorId}
-                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+      {/* Day picker */}
+      <div>
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {labels.pickDay}
+        </p>
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {[...board.dayOptions].reverse().map((d) => {
+            const on = d === board.selectedDay
+            const isToday = d === board.today
+            return (
+              <button
+                key={d}
+                type="button"
+                onClick={() => push({ streakDay: d })}
+                className={`shrink-0 rounded-xl border px-3 py-2 text-left transition-colors ${
+                  on
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-card hover:bg-accent'
+                }`}
               >
-                <Link
-                  href={adminPersonHref(p.creatorId, {
-                    panel: 'streaks',
-                    projectId,
-                    from: 'streaks',
-                  })}
-                  className="font-medium hover:underline"
-                >
-                  {p.name}
-                </Link>
-                <span className="text-xs text-muted-foreground">{p.projectName ?? '—'}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+                <div className="text-xs font-semibold">{weekdayLabel(d)}</div>
+                <div className={`text-[10px] tabular-nums ${on ? 'opacity-90' : 'text-muted-foreground'}`}>
+                  {shortDate(d)}
+                  {isToday ? ' · today' : ''}
+                </div>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label={labels.missedToday} value={board.counts.missedToday} tone="amber" />
-        <Stat label={labels.firstStreak} value={board.counts.first} tone="sky" />
-        <Stat label={labels.secondStreak} value={board.counts.second} tone="amber" />
-        <Stat label={labels.finalStreak} value={board.counts.final} tone="rose" />
+      {/* Day summary */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Stat
+          label={`${labels.missed} · ${weekdayLabel(board.selectedDay)}`}
+          value={board.counts.missedOnDay}
+          tone="rose"
+          active={view === 'missed'}
+          onClick={() => setView('missed')}
+        />
+        <Stat
+          label={labels.posted}
+          value={board.counts.postedOnDay}
+          tone="emerald"
+          active={view === 'posted'}
+          onClick={() => setView('posted')}
+        />
+        <Stat
+          label={labels.onStreak}
+          value={board.counts.total}
+          tone="amber"
+          active={view === 'streaks'}
+          onClick={() => setView('streaks')}
+        />
+        <Stat
+          label={`${labels.firstStreak} / ${labels.secondStreak} / ${labels.finalStreak}`}
+          valueLabel={`${board.counts.first} · ${board.counts.second} · ${board.counts.final}`}
+          tone="sky"
+          active={view === 'all'}
+          onClick={() => setView('all')}
+        />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="inline-flex flex-wrap gap-1 rounded-xl border border-border bg-muted/30 p-1">
           {(
             [
-              ['all', labels.filterAll],
-              ['missed', labels.missedToday],
-              [1, labels.firstStreak],
-              [2, labels.secondStreak],
-              [3, labels.finalStreak],
+              ['missed', labels.showMissed],
+              ['posted', labels.showPosted],
+              ['streaks', labels.showStreaks],
+              ['all', labels.showAll],
             ] as const
           ).map(([key, label]) => (
             <button
-              key={String(key)}
+              key={key}
               type="button"
-              onClick={() => setFilter(key)}
+              onClick={() => setView(key)}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                filter === key
+                view === key
                   ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               }`}
@@ -239,136 +271,117 @@ export function ProbationStreaksBoard({
         </button>
       </div>
 
-      <p className="text-[11px] text-muted-foreground">
-        From {board.epochStart.slice(5)} ·{' '}
-        <span className="font-semibold text-sky-700 dark:text-sky-300">
-          1 · {labels.firstStreak}
-        </span>
-        {' · '}
-        <span className="font-semibold text-amber-700 dark:text-amber-300">
-          2 · {labels.secondStreak}
-        </span>
-        {' · '}
-        <span className="font-semibold text-[#9a0d18]">
-          3 · {labels.finalStreak}
-        </span>
-      </p>
-
       {rows.length === 0 ? (
-        <p className="px-1 py-6 text-sm text-muted-foreground">{labels.empty}</p>
+        <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+          {labels.empty}
+        </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">{labels.person}</th>
-                <th className="px-3 py-2 font-medium">{labels.project}</th>
-                <th className="px-3 py-2 font-medium tabular-nums">{labels.misses}</th>
-                <th className="px-3 py-2 font-medium">{labels.progress}</th>
-                <th className="px-3 py-2 font-medium">{labels.status}</th>
-                <th className="px-3 py-2 font-medium">{labels.next}</th>
-                <th className="px-3 py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.creatorId} className="border-b border-border/70 last:border-0">
-                  <td className="px-3 py-2.5 font-medium">
+        <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+          {rows.map((row) => {
+            const badge = streakBadge(row.streakLevel, labels)
+            return (
+              <li
+                key={row.creatorId}
+                className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Link
                       href={adminPersonHref(row.creatorId, {
                         panel: 'streaks',
                         projectId,
                         from: 'streaks',
                       })}
-                      className="hover:underline"
+                      className="font-semibold hover:underline"
                     >
                       {row.name}
                     </Link>
-                    {row.missedToday ? (
-                      <span className="ms-2 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900 dark:text-amber-100">
-                        today
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2.5 text-muted-foreground">
-                    {row.projectName ?? '—'}
-                  </td>
-                  <td className="px-3 py-2.5 tabular-nums font-semibold">
-                    {row.missCount}
-                    <span className="font-normal text-muted-foreground"> / 3</span>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <MissBar count={row.missCount} />
-                  </td>
-                  <td className="px-3 py-2.5">
                     <span
-                      className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium ${phaseTone(row.phase)}`}
+                      className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${
+                        row.dayStatus === 'missed'
+                          ? 'border-rose-500/40 bg-rose-500/10 text-[#9a0d18]'
+                          : row.dayStatus === 'posted'
+                            ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200'
+                            : 'border-border bg-muted/50 text-muted-foreground'
+                      }`}
                     >
-                      {labels[PHASE_LABEL[row.phase]]}
+                      {dayStatusLabel(row.dayStatus, labels)}
                     </span>
-                  </td>
-                  <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                    {row.missesToNext != null && row.nextThreshold != null
-                      ? `${row.missesToNext} → ${thresholdLabel(row.nextThreshold, labels)}`
-                      : '—'}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex flex-wrap items-center justify-end gap-1.5">
-                      {row.pendingNoticeId ? (
-                        <>
-                          <button
-                            type="button"
-                            disabled={pending}
-                            onClick={() => void copyArabic(row)}
-                            className="h-8 rounded-lg border border-border px-2.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
-                          >
-                            {copiedId === row.pendingNoticeId
-                              ? labels.copied
-                              : labels.copyArabic}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={pending}
-                            onClick={() =>
-                              startTransition(() => {
-                                void markProbationNoticeMessagedAction(
-                                  row.pendingNoticeId!,
-                                ).then(() => keepPanel())
-                              })
-                            }
-                            className="h-8 rounded-lg border border-border px-2.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
-                          >
-                            {labels.markSent}
-                          </button>
-                        </>
-                      ) : null}
+                    <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${badge.className}`}>
+                      {badge.text}
+                      {row.streakLevel > 0 ? ` · ${row.missCount}/3` : ''}
+                    </span>
+                    {row.projectName ? (
+                      <span className="text-[11px] text-muted-foreground">{row.projectName}</span>
+                    ) : null}
+                  </div>
+                  {row.allMissDates.length > 0 ? (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {labels.missDays}
+                      </span>
+                      {row.allMissDates.map((d) => (
+                        <span
+                          key={d}
+                          className={`rounded border px-1.5 py-0.5 text-[10px] tabular-nums ${
+                            d === board.selectedDay
+                              ? 'border-rose-500/50 bg-rose-500/15 font-semibold text-[#9a0d18]'
+                              : 'border-border bg-muted/40 text-muted-foreground'
+                          }`}
+                        >
+                          {shortDate(d)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                  {row.pendingNoticeId ? (
+                    <>
                       <button
                         type="button"
                         disabled={pending}
-                        onClick={() => {
-                          if (
-                            !window.confirm(
-                              labels.resetConfirm.replace('{name}', row.name),
-                            )
-                          )
-                            return
+                        onClick={() => void copyArabic(row)}
+                        className="h-8 rounded-lg border border-border px-2.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
+                      >
+                        {copiedId === row.pendingNoticeId ? labels.copied : labels.copyArabic}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() =>
                           startTransition(() => {
-                            void resetCreatorStreakAction(row.creatorId).then(() =>
+                            void markProbationNoticeMessagedAction(row.pendingNoticeId!).then(() =>
                               router.refresh(),
                             )
                           })
-                        }}
-                        className="h-8 rounded-lg border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-accent disabled:opacity-60"
+                        }
+                        className="h-8 rounded-lg border border-border px-2.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
                       >
-                        {labels.reset}
+                        {labels.markSent}
                       </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </>
+                  ) : null}
+                  {(row.missCount > 0 || row.allMissDates.length > 0) && (
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={() => {
+                        if (!window.confirm(labels.resetConfirm.replace('{name}', row.name))) return
+                        startTransition(() => {
+                          void resetCreatorStreakAction(row.creatorId).then(() => router.refresh())
+                        })
+                      }}
+                      className="h-8 rounded-lg border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-accent disabled:opacity-60"
+                    >
+                      {labels.reset}
+                    </button>
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
       )}
     </div>
   )
@@ -377,11 +390,17 @@ export function ProbationStreaksBoard({
 function Stat({
   label,
   value,
+  valueLabel,
   tone,
+  active,
+  onClick,
 }: {
   label: string
-  value: number
-  tone?: 'sky' | 'amber' | 'rose'
+  value?: number
+  valueLabel?: string
+  tone?: 'sky' | 'amber' | 'rose' | 'emerald'
+  active?: boolean
+  onClick?: () => void
 }) {
   const toneClass =
     tone === 'sky'
@@ -390,35 +409,23 @@ function Stat({
         ? 'border-amber-500/30 bg-amber-500/5'
         : tone === 'rose'
           ? 'border-rose-500/30 bg-rose-500/5'
-          : 'border-border bg-card'
+          : tone === 'emerald'
+            ? 'border-emerald-500/30 bg-emerald-500/5'
+            : 'border-border bg-card'
   return (
-    <div className={`rounded-lg border p-3 ${toneClass}`}>
-      <div className="text-xl font-semibold tabular-nums">{value}</div>
-      <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg border p-3 text-left transition-shadow ${toneClass} ${
+        active ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''
+      }`}
+    >
+      <div className="text-xl font-semibold tabular-nums">
+        {valueLabel ?? value ?? 0}
+      </div>
+      <div className="mt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </div>
-    </div>
-  )
-}
-
-function MissBar({ count }: { count: number }) {
-  const filled = Math.max(0, Math.min(3, count))
-  return (
-    <div className="flex items-center gap-0.5" aria-label={`${filled} of 3 miss days`}>
-      {Array.from({ length: 3 }, (_, i) => (
-        <span
-          key={i}
-          className={`h-2.5 w-4 rounded-sm ${
-            i < filled
-              ? i >= 2
-                ? 'bg-[#9a0d18]'
-                : i >= 1
-                  ? 'bg-amber-500'
-                  : 'bg-sky-600'
-              : 'bg-muted'
-          }`}
-        />
-      ))}
-    </div>
+    </button>
   )
 }

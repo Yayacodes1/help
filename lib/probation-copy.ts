@@ -35,6 +35,9 @@ export type ProbationStreakPhase =
   | 'due_kick'
   | 'paused'
 
+/** How this person looks on the selected calendar day. */
+export type DayPostStatus = 'posted' | 'missed' | 'break' | 'off'
+
 export type ProbationStreakRow = {
   creatorId: number
   name: string
@@ -43,7 +46,12 @@ export type ProbationStreakRow = {
   probationStartedOn: string
   /** Consecutive miss days ending at last completed day. */
   missCount: number
+  /** Consecutive miss dates (newest streak run). */
   missDates: string[]
+  /** Every miss day since the epoch (for the calendar chips). */
+  allMissDates: string[]
+  /** 0 = clean, else current streak ladder step. */
+  streakLevel: 0 | ProbationLevel
   nextThreshold: number | null
   missesToNext: number | null
   phase: ProbationStreakPhase
@@ -51,13 +59,19 @@ export type ProbationStreakRow = {
   pendingLevel: ProbationLevel | null
   lastMessagedLevel: ProbationLevel | null
   paused: boolean
-  /** No video on the operational “today”. */
+  /** Status on the selected board day. */
+  dayStatus: DayPostStatus
+  /** @deprecated use dayStatus === 'missed' */
   missedToday: boolean
 }
 
 export type ProbationStreakBoard = {
   today: string
+  /** Day the board is focused on (epoch ≤ day ≤ today). */
+  selectedDay: string
   epochStart: string
+  /** Days you can pick, epoch → today. */
+  dayOptions: string[]
   projectId: number | null
   rows: ProbationStreakRow[]
   missedToday: Array<{
@@ -72,6 +86,9 @@ export type ProbationStreakBoard = {
     /** Active people still on the list (not fired). Used for Clear all. */
     total: number
     missedToday: number
+    postedOnDay: number
+    missedOnDay: number
+    breakOnDay: number
   }
 }
 

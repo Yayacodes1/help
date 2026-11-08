@@ -403,14 +403,39 @@ function phaseFor(opts: {
   return 'clean'
 }
 
-/** Admin board: all creators, consecutive miss streaks from Nov 7, who missed today. */
+function eachDayInclusive(from: string, to: string): string[] {
+  if (from > to) return []
+  const out: string[] = []
+  let cur = from
+  while (cur <= to) {
+    out.push(cur)
+    cur = addDays(cur, 1)
+  }
+  return out
+}
+
+/** Admin board: pick a day from Nov 7 → today; see posted / missed + streak ladder. */
 export async function getProbationStreakBoard(opts: {
   today: string
   projectId?: number | null
+  /** Focus day (defaults to today, clipped to epoch…today). */
+  day?: string | null
 }): Promise<ProbationStreakBoard> {
   const today = opts.today
   const projectId = opts.projectId ?? null
   const lastCompleted = lastCompletedOperationalDay(today)
+  const dayOptions = eachDayInclusive(
+    STREAK_EPOCH_START,
+    today < STREAK_EPOCH_START ? STREAK_EPOCH_START : today,
+  )
+  const dayRaw =
+    opts.day && /^\d{4}-\d{2}-\d{2}$/.test(opts.day) ? opts.day : today
+  const selectedDay =
+    dayRaw < STREAK_EPOCH_START
+      ? STREAK_EPOCH_START
+      : dayRaw > today
+        ? today
+        : dayRaw
 
   await syncProbationMisses({ today })
 
@@ -464,20 +489,20 @@ export async function getProbationStreakBoard(opts: {
     byCreator.set(n.creator_id, list)
   }
 
-  const postedTodayRows = (await sql`
+  const postedOnDayRows = (await sql`
     SELECT DISTINCT creator_id
     FROM submissions
-    WHERE video_date = ${today}::date
+    WHERE video_date = ${selectedDay}::date
   `) as { creator_id: number }[]
-  const postedToday = new Set(postedTodayRows.map((r) => Number(r.creator_id)))
+  const postedOnDay = new Set(postedOnDayRows.map((r) => Number(r.creator_id)))
 
-  const onBreakToday = (await sql`
+  const onBreakDay = (await sql`
     SELECT DISTINCT creator_id
     FROM schedule_breaks
-    WHERE start_date <= ${today}::date
-      AND end_date >= ${today}::date
+    WHERE start_date <= ${selectedDay}::date
+      AND end_date >= ${selectedDay}::date
   `) as { creator_id: number }[]
-  const breakToday = new Set(onBreakToday.map((r) => Number(r.creator_id)))
+  const breakOnDay = new Set(onBreakDay.map((r) => Number(r.creator_id)))
 
   const rows: ProbationStreakRow[] = []
   const missedToday: ProbationStreakBoard['missedToday'] = []
@@ -511,13 +536,13 @@ export async function getProbationStreakBoard(opts: {
       ORDER BY strike_date ASC
     `) as Array<{ strike_date: string }>
 
-    const missSet = new Set(
+    const allMissDates =
       schedule && contract
         ? missRows
             .map((r) => r.strike_date)
             .filter((d) => isPostingDay(schedule, contract.start_date, d))
-        : missRows.map((r) => r.strike_date),
-    )
+        : missRows.map((r) => r.strike_date)
+    const missSet = new Set(allMissDates)
     const { count: missCount, dates: missDates } =
       lastCompleted >= start
         ? consecutiveMisses({
@@ -529,12 +554,21 @@ export async function getProbationStreakBoard(opts: {
           })
         : { count: 0, dates: [] as string[] }
 
-    const shouldPostToday =
-      today >= STREAK_EPOCH_START &&
-      !breakToday.has(person.id) &&
-      (!schedule || !contract || isPostingDay(schedule, contract.start_date, today))
-    const missedTodayFlag = shouldPostToday && !postedToday.has(person.id)
-    if (missedTodayFlag) {
+    const onBreak = breakOnDay.has(person.id)
+    const shouldPost =
+      selectedDay >= STREAK_EPOCH_START &&
+      !onBreak &&
+      (!schedule || !contract || isPostingDay(schedule, contract.start_date, selectedDay))
+    const posted = postedOnDay.has(person.id)
+    const dayStatus: ProbationStreakRow['dayStatus'] = onBreak
+      ? 'break'
+      : !shouldPost
+        ? 'off'
+        : posted
+          ? 'posted'
+          : 'missed'
+    const missedTodayFlag = dayStatus === 'missed' && selectedDay === today
+    if (dayStatus === 'missed') {
       missedToday.push({
         creatorId: person.id,
         name: person.name,
@@ -561,6 +595,7 @@ export async function getProbationStreakBoard(opts: {
 
     const paused = person.paused_at != null
     const phase = phaseFor({ missCount, pendingLevel, paused })
+    const streakLevel = streakBucketFromMisses(missCount)
 
     const nextThreshold =
       missCount < PROBATION_LEVEL_THRESHOLDS[1]
@@ -579,6 +614,8 @@ export async function getProbationStreakBoard(opts: {
       probationStartedOn: start,
       missCount,
       missDates,
+      allMissDates,
+      streakLevel,
       nextThreshold,
       missesToNext: nextThreshold != null ? nextThreshold - missCount : null,
       phase,
@@ -586,33 +623,31 @@ export async function getProbationStreakBoard(opts: {
       pendingLevel,
       lastMessagedLevel,
       paused,
+      dayStatus,
       missedToday: missedTodayFlag,
     })
   }
 
   missedToday.sort((a, b) => a.name.localeCompare(b.name))
 
-  const phaseRank: Record<ProbationStreakPhase, number> = {
-    due_kick: 0,
-    due_verbal2: 1,
-    due_verbal1: 2,
-    near_kick: 3,
-    near_verbal2: 4,
-    near_verbal1: 5,
-    clean: 6,
-    paused: 7,
+  const statusRank: Record<ProbationStreakRow['dayStatus'], number> = {
+    missed: 0,
+    posted: 1,
+    break: 2,
+    off: 3,
   }
   rows.sort(
     (a, b) =>
-      Number(b.missedToday) - Number(a.missedToday) ||
-      phaseRank[a.phase] - phaseRank[b.phase] ||
+      statusRank[a.dayStatus] - statusRank[b.dayStatus] ||
       b.missCount - a.missCount ||
       a.name.localeCompare(b.name),
   )
 
   return {
     today,
+    selectedDay,
     epochStart: STREAK_EPOCH_START,
+    dayOptions,
     projectId,
     rows,
     missedToday,
@@ -621,7 +656,10 @@ export async function getProbationStreakBoard(opts: {
       second: rows.filter((r) => !r.paused && streakBucketFromMisses(r.missCount) === 2).length,
       final: rows.filter((r) => !r.paused && streakBucketFromMisses(r.missCount) === 3).length,
       total: rows.filter((r) => !r.paused && r.missCount > 0).length,
-      missedToday: missedToday.length,
+      missedToday: rows.filter((r) => r.dayStatus === 'missed' && selectedDay === today).length,
+      postedOnDay: rows.filter((r) => r.dayStatus === 'posted').length,
+      missedOnDay: rows.filter((r) => r.dayStatus === 'missed').length,
+      breakOnDay: rows.filter((r) => r.dayStatus === 'break').length,
     },
   }
 }

@@ -175,6 +175,7 @@ export default async function AdminPage({
     tvPlatform?: string
     fitFrom?: string
     fitTo?: string
+    streakDay?: string
     ofFrom?: string
     ofTo?: string
     ofView?: string
@@ -618,6 +619,7 @@ export default async function AdminPage({
       streakBoard = await getProbationStreakBoard({
         today: opToday,
         projectId,
+        day: sp.streakDay,
       })
     } catch (err) {
       console.error('[admin] probation streaks', err)
@@ -2107,7 +2109,7 @@ export default async function AdminPage({
             id: 'streaks',
             title: t('streaksTitle'),
             summary: streakBoard
-              ? `${streakBoard.counts.missedToday} ${t('streaksMissedToday').toLowerCase()} · ${streakBoard.counts.first} ${t('streaksFirst').toLowerCase()} · ${streakBoard.counts.second} ${t('streaksSecond').toLowerCase()} · ${streakBoard.counts.final} ${t('streaksFinal').toLowerCase()}`
+              ? `${streakBoard.counts.missedOnDay} ${t('streaksMissed').toLowerCase()} · ${streakBoard.counts.postedOnDay} ${t('streaksPosted').toLowerCase()} · ${streakBoard.counts.total} ${t('streaksOnStreak').toLowerCase()} · ${streakBoard.counts.first}/${streakBoard.counts.second}/${streakBoard.counts.final}`
               : streakBoardError ?? '—',
             hint: t('streaksHint'),
             children: streakBoardError ? (
@@ -2123,13 +2125,7 @@ export default async function AdminPage({
                   chooseProject: t('chooseProject'),
                   person: t('streaksPerson'),
                   project: t('streaksProject'),
-                  misses: t('streaksMisses'),
-                  progress: t('streaksProgress'),
-                  status: t('streaksStatus'),
-                  next: t('streaksNext'),
-                  started: t('streaksStarted'),
                   empty: t('streaksEmpty'),
-                  clear: t('fitnessClear'),
                   clearAll: t('streaksClearAll'),
                   clearAllConfirm: t('streaksClearAllConfirm'),
                   reset: t('streaksReset'),
@@ -2137,21 +2133,21 @@ export default async function AdminPage({
                   copyArabic: t('streaksCopyArabic'),
                   copied: t('streaksCopied'),
                   markSent: t('streaksMarkSent'),
-                  filterAll: t('streaksFilterAll'),
-                  phaseClean: t('streaksPhaseClean'),
-                  phaseNearVerbal1: t('streaksPhaseNearVerbal1'),
-                  phaseDueVerbal1: t('streaksPhaseDueVerbal1'),
-                  phaseNearVerbal2: t('streaksPhaseNearVerbal2'),
-                  phaseDueVerbal2: t('streaksPhaseDueVerbal2'),
-                  phaseNearKick: t('streaksPhaseNearKick'),
-                  phaseDueKick: t('streaksPhaseDueKick'),
-                  phasePaused: t('fitnessFired'),
                   firstStreak: t('streaksFirst'),
                   secondStreak: t('streaksSecond'),
                   finalStreak: t('streaksFinal'),
-                  missedToday: t('streaksMissedToday'),
-                  missedTodayEmpty: t('streaksMissedTodayEmpty'),
-                  openPerson: t('lookOpenPerson'),
+                  pickDay: t('streaksPickDay'),
+                  posted: t('streaksPosted'),
+                  missed: t('streaksMissed'),
+                  onBreak: t('streaksOnBreak'),
+                  offDay: t('streaksOffDay'),
+                  onStreak: t('streaksOnStreak'),
+                  clean: t('streaksClean'),
+                  missDays: t('streaksMissDays'),
+                  showMissed: t('streaksShowMissed'),
+                  showPosted: t('streaksShowPosted'),
+                  showStreaks: t('streaksShowStreaks'),
+                  showAll: t('streaksFilterAll'),
                 }}
               />
             ) : (
