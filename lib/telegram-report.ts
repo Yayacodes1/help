@@ -3,13 +3,7 @@ import { addDays } from '@/lib/campaign'
 import { getAttendanceForDay } from '@/lib/attendance'
 import { OPERATIONAL_TZ, lastCompletedOperationalDay } from '@/lib/operational-day'
 import type { AttendancePerson, AttendanceStatus } from '@/lib/attendance-types'
-import {
-  EMPTY_COUNTS,
-  formatPlanCompare,
-  getLeaderBoard,
-  type LeaderBoard,
-  type LeaderScore,
-} from '@/lib/leaders'
+import { EMPTY_COUNTS, getLeaderBoard, type LeaderBoard } from '@/lib/leaders'
 import {
   peopleInSquad,
   rosterForSquad,
@@ -18,7 +12,7 @@ import {
   squadRoleButtons,
   type ReportSquad,
 } from '@/lib/telegram-groups'
-import { formatDailyViewsSection, type DailyViewsCompare } from '@/lib/daily-views'
+import type { DailyViewsCompare } from '@/lib/daily-views'
 import { formatCreatorReminder } from '@/lib/telegram-reminder'
 
 /**
@@ -103,10 +97,10 @@ function onPlanPct(c: Counts): number | null {
   return total > 0 ? Math.round(((c.posted + c.late) / total) * 100) : null
 }
 
-export type DayReportProfile = 'full' | 'slim'
+export type DayReportProfile = 'full' | 'slim' | 'lite'
 
 type BuildDayReportOpts = {
-  /** full = projects + yesterday + leaders + views. slim = today attendance only (messages). */
+  /** full = projects + yesterday + leaders. lite = today + projects (fast update). slim = today only (messages). */
   profile?: DayReportProfile
 }
 
@@ -158,12 +152,23 @@ export async function buildDayReport(
 
   const { getAllProjects, getCreatorsWithProgressOnDate } = await import('@/lib/queries')
   const projects = await getAllProjects()
+  const lite = profile === 'lite'
 
   const [everyone, prevEveryone, perProject] = await Promise.all([
     getAttendanceForDay(day),
-    getAttendanceForDay(prevDay),
+    lite ? Promise.resolve([] as AttendancePerson[]) : getAttendanceForDay(prevDay),
     Promise.all(
       projects.map(async (project) => {
+        if (lite) {
+          const members = await getCreatorsWithProgressOnDate(day, project.id, 'creator', {
+            projectMembersOnly: true,
+          })
+          return {
+            project,
+            creatorIds: new Set(members.map((m) => m.id)),
+            postsHere: [] as AttendancePerson[],
+          }
+        }
         const [members, postsHere] = await Promise.all([
           getCreatorsWithProgressOnDate(day, project.id, 'creator', { projectMembersOnly: true }),
           getAttendanceForDay(day, project.id),
@@ -172,14 +177,16 @@ export async function buildDayReport(
       }),
     ),
   ])
-  const leaders = await getLeaderBoard(day, { today: everyone, yesterday: prevEveryone })
+  const leaders = lite
+    ? emptyLeaders(day)
+    : await getLeaderBoard(day, { today: everyone, yesterday: prevEveryone })
 
   const groups: Group[] = perProject.map(({ project, creatorIds }) => {
     const inGroup = (p: AttendancePerson) => p.role === 'creator' && creatorIds.has(p.id)
     const people = everyone.filter(inGroup)
     return {
       label: project.name,
-      role: 'creator',
+      role: 'creator' as const,
       people,
       today: countStatuses(people),
       yesterday: countStatuses(prevEveryone.filter(inGroup)),
@@ -193,22 +200,16 @@ export async function buildDayReport(
     people: reposters,
     today: countStatuses(reposters),
     yesterday: countStatuses(prevEveryone.filter((p) => p.role === 'reposter')),
-    postedFor: perProject.map(({ project, postsHere }) => ({
-      projectName: project.name,
-      names: postsHere
-        .filter((p) => p.role === 'reposter' && p.todayInstagram + p.todayTiktok > 0)
-        .map((p) => p.name)
-        .sort((a, b) => a.localeCompare(b)),
-    })),
+    postedFor: lite
+      ? undefined
+      : perProject.map(({ project, postsHere }) => ({
+          projectName: project.name,
+          names: postsHere
+            .filter((p) => p.role === 'reposter' && p.todayInstagram + p.todayTiktok > 0)
+            .map((p) => p.name)
+            .sort((a, b) => a.localeCompare(b)),
+        })),
   })
-
-  let dailyViews: DailyViewsCompare | null = null
-  try {
-    const { loadDailyViewsCompare } = await import('@/lib/daily-views-store')
-    dailyViews = await loadDailyViewsCompare(day, mode)
-  } catch {
-    dailyViews = null
-  }
 
   const value: DayReport = {
     mode,
@@ -217,7 +218,7 @@ export async function buildDayReport(
     everyone,
     leaders,
     generatedAt: new Date(),
-    dailyViews,
+    dailyViews: null,
   }
   reportCache.set(cacheKey, { expires: Date.now() + REPORT_CACHE_TTL_MS, value })
   // Keep slim cache warm with the same attendance for message taps.
@@ -225,6 +226,12 @@ export async function buildDayReport(
     expires: Date.now() + REPORT_CACHE_TTL_MS,
     value: { ...value, groups: [], dailyViews: null },
   })
+  if (!lite) {
+    reportCache.set(`${mode}:${day}:lite`, {
+      expires: Date.now() + REPORT_CACHE_TTL_MS,
+      value: { ...value, leaders: emptyLeaders(day), dailyViews: null },
+    })
+  }
   return value
 }
 
@@ -286,33 +293,27 @@ function missingAr(p: AttendancePerson): string {
 const ROLE_TITLE: Record<ReportRole, string> = { creator: '🎬 CREATORS', reposter: '🔁 REPOSTERS' }
 
 export const BUTTON_GUIDE =
-  'WHAT YOU CAN DO\n' +
-  '📊 Type /update — pick Previous day, Today, or So far today.\n' +
-  '📋 Full list — names: who posted, partial, didn\'t post (same day). Or type /list\n' +
-  '✉️ Creators — tap a name to copy Arabic (or Send all). Or type /messages_creators\n' +
-  '✉️ Reposters — same for reposters. Or type /messages_reposters\n' +
-  '⚠️ Creator streaks — first / second / final streak list. Tap a name to copy. Or type /streaks\n' +
-  '📈 Consistency — pick a creator, or /fitness Name to look them up. Copy-paste check-in.\n' +
-  '👋 Welcome — pick a new creator, or /welcome Name. Copy-paste system intro.\n' +
-  '👑 Group Leader — pick Alpha / Beta / Charlie / Delta, then Update, List, Creators reminder, or Reposter reminder. Or type /groups\n' +
-  '📅 Type /yesterday for the previous day. /today for the day we\'re in. /now for so far today.'
+  '📊 /update — so far today (posted / didn’t / %).\n' +
+  '📋 /list — names. ✉️ /messages_creators · /messages_reposters\n' +
+  '📅 /yesterday · /today · /now'
 
 export function updateMenuButtons() {
   return {
     inline_keyboard: [
-      [{ text: '📅 Previous day', callback_data: 'upd:prev' }],
-      [{ text: '☀️ Today', callback_data: 'upd:today' }],
       [{ text: '⏱ So far today', callback_data: 'upd:sofar' }],
+      [
+        { text: '☀️ Today', callback_data: 'upd:today' },
+        { text: '📅 Previous day', callback_data: 'upd:prev' },
+      ],
     ],
   }
 }
 
 export function updateMenuPrompt(): string {
   return (
-    '📊 WHICH UPDATE?\n' +
-    '📅 Previous day — the day that already ended (late posts included).\n' +
-    '☀️ Today — the day we are in right now (who posted / partial / not yet).\n' +
-    '⏱ So far today — to this point: how many videos posted vs plan.'
+    '📊 UPDATE\n' +
+    '⏱ So far today — how many posted to this point.\n' +
+    '☀️ Today / 📅 Previous day — same counts for that day.'
   )
 }
 
@@ -320,21 +321,15 @@ export function reportButtons(mode: ReportMode) {
   return {
     inline_keyboard: [
       [
-        { text: '📅 Previous day', callback_data: 'upd:prev' },
-        { text: '☀️ Today', callback_data: 'upd:today' },
         { text: '⏱ So far', callback_data: 'upd:sofar' },
+        { text: '☀️ Today', callback_data: 'upd:today' },
+        { text: '📅 Prev', callback_data: 'upd:prev' },
       ],
-      [{ text: '📋 Full list', callback_data: `list:${mode}` }],
+      [{ text: '📋 Who posted', callback_data: `list:${mode}` }],
       [
         { text: '✉️ Creators', callback_data: `msgs:creator:${mode}` },
         { text: '✉️ Reposters', callback_data: `msgs:reposter:${mode}` },
       ],
-      [{ text: '⚠️ Creator streaks', callback_data: 'pstreaks' }],
-      [
-        { text: '📈 Consistency', callback_data: 'fitpage:0' },
-        { text: '👋 Welcome', callback_data: 'welcomepage:0' },
-      ],
-      [{ text: '👑 Group Leader', callback_data: `gl:${mode}` }],
     ],
   }
 }
@@ -364,15 +359,12 @@ function videoTotalsLine(people: AttendancePerson[], label = ''): string {
   return `${label}🎬 ${t.posted}/${t.goal} videos · IG ${t.ig}/${t.igGoal} · TT ${t.tt}/${t.ttGoal}`
 }
 
-/** Counts only: posted / partial / didn't, per project, plus on-plan % today vs yesterday. */
+/** Counts only: posted / partial / didn't, per project, plus on-plan %. */
 export function formatSummary(report: DayReport, flavor: 'default' | 'today' | 'progress' = 'default'): string {
   const titleFlavor = flavor === 'today' ? 'today' : flavor === 'progress' ? 'progress' : 'default'
   const lines: string[] = [`📊 ${dayTitle(report, titleFlavor)}`]
   if (flavor === 'progress') {
     lines.push('', 'TO THIS POINT', videoTotalsLine(report.everyone, 'Everyone: '))
-  }
-  if (report.dailyViews) {
-    lines.push('', formatDailyViewsSection(report.dailyViews))
   }
   for (const role of ['creator', 'reposter'] as const) {
     lines.push('', ROLE_TITLE[role])
@@ -391,23 +383,22 @@ export function formatSummary(report: DayReport, flavor: 'default' | 'today' | '
       const missLabel = report.mode === 'live' ? 'not yet' : "didn't"
       lines.push(`${label}✅ ${c.posted} posted${late} · ⚠️ ${c.partial} partial · ❌ ${c.missed} ${missLabel}${away}`)
       const now = onPlanPct(c)
-      const before = onPlanPct(g.yesterday)
       if (now != null) {
-        const diff = before != null ? now - before : null
-        const trend = diff == null ? '' : diff > 0 ? ` ▲${diff}` : diff < 0 ? ` ▼${-diff}` : ' ='
-        const [nowLabel, beforeLabel] =
-          report.mode === 'live'
-            ? ['today', 'yesterday']
-            : [weekday(report.day), weekday(addDays(report.day, -1))]
-        lines.push(`   On plan: ${now}% ${nowLabel} · ${before ?? '–'}% ${beforeLabel}${trend}`)
-      }
-      if (g.postedFor) {
-        lines.push(`   Posted for ${g.postedFor.map((x) => `${x.projectName} ${x.names.length}`).join(' · ')}`)
+        const before = onPlanPct(g.yesterday)
+        if (before != null) {
+          const diff = now - before
+          const trend = diff > 0 ? ` ▲${diff}` : diff < 0 ? ` ▼${-diff}` : ' ='
+          const [nowLabel, beforeLabel] =
+            report.mode === 'live'
+              ? ['today', 'yesterday']
+              : [weekday(report.day), weekday(addDays(report.day, -1))]
+          lines.push(`   On plan: ${now}% ${nowLabel} · ${before}% ${beforeLabel}${trend}`)
+        } else {
+          lines.push(`   On plan: ${now}%`)
+        }
       }
     }
   }
-  lines.push('', ...leaderSummaryLines(report))
-  lines.push('', BUTTON_GUIDE)
   return lines.join('\n')
 }
 
@@ -415,39 +406,6 @@ function compareLabels(report: DayReport): [string, string] {
   return report.mode === 'live'
     ? ['today', 'yesterday']
     : [weekday(report.day), weekday(addDays(report.day, -1))]
-}
-
-function leaderScoreLine(rank: string, row: LeaderScore, todayLabel: string, yesterdayLabel: string): string {
-  const plan = formatPlanCompare(row.todayPct, row.yesterdayPct, todayLabel, yesterdayLabel)
-  const late = row.today.late > 0 ? ` · ⏰ ${row.today.late}` : ''
-  const counts = `✅ ${row.today.posted}${late} · ⚠️ ${row.today.partial} · ❌ ${row.today.missed}`
-  const checked = row.leaderId == null ? '' : ` · checked ${row.checks}/${row.roster}`
-  const reposter =
-    row.reposterName == null
-      ? ''
-      : row.reposterStatus === 'hit'
-        ? ' · reposter posted'
-        : ' · reposter not on plan'
-  return `${rank} ${row.name} — ${plan} · ${counts}${checked}${reposter}`
-}
-
-function leaderSummaryLines(report: DayReport): string[] {
-  const [todayLabel, yesterdayLabel] = compareLabels(report)
-  const lines = [
-    '👑 LEADERS',
-    `All creators — ${formatPlanCompare(report.leaders.all.todayPct, report.leaders.all.yesterdayPct, todayLabel, yesterdayLabel)}`,
-  ]
-  if (report.leaders.leaders.length === 0) {
-    lines.push('No leaders yet')
-  } else {
-    report.leaders.leaders.forEach((row, index) => {
-      lines.push(leaderScoreLine(`${index + 1}.`, row, todayLabel, yesterdayLabel))
-    })
-  }
-  if (report.leaders.unassigned) {
-    lines.push(leaderScoreLine('—', report.leaders.unassigned, todayLabel, yesterdayLabel))
-  }
-  return lines
 }
 
 function nameList(people: AttendancePerson[], withMissing = false): string {
@@ -478,18 +436,7 @@ export function formatFullList(report: DayReport): string {
       }
       if (of('break').length) lines.push(`🏖 Break (${of('break').length}): ${nameList(of('break'))}`)
       if (of('off').length) lines.push(`💤 Off day (${of('off').length}): ${nameList(of('off'))}`)
-      for (const x of g.postedFor ?? []) {
-        lines.push(`📌 Posted for ${x.projectName} (${x.names.length}): ${x.names.join(', ') || '—'}`)
-      }
     }
-  }
-  lines.push('', ...leaderSummaryLines(report))
-  for (const row of report.leaders.leaders) {
-    const behind = row.people.filter((p) => p.status === 'miss' || p.status === 'partial')
-    if (behind.length === 0) continue
-    lines.push(
-      `   ${row.name} still open: ${behind.map((p) => `${p.name} (${p.status === 'miss' ? 'no post' : 'partial'})`).join(', ')}`,
-    )
   }
   return lines.join('\n')
 }
@@ -764,13 +711,10 @@ export async function sendAttendanceReports(
     page = 0,
   } = opts
 
-  // Messages only need today's attendance; summary/list need the full board.
+  // Messages: today only. Update/list: lite (no yesterday/leaders/views). Squad needs full.
   const profile: DayReportProfile =
-    view === 'messages' && !squad ? 'slim' : 'full'
-  // Squad filters need leaders → full profile.
-  const report = await buildDayReport(opToday, mode, {
-    profile: squad ? 'full' : profile,
-  })
+    squad ? 'full' : view === 'messages' ? 'slim' : 'lite'
+  const report = await buildDayReport(opToday, mode, { profile })
   const buttons = squad ? squadRoleButtons(squad, mode) : reportButtons(mode)
   const scope = squad ? ` · ${squadMenuTitle(squad)}` : ''
 
@@ -796,10 +740,10 @@ export async function sendAttendanceReports(
     : report.everyone.filter((p) => p.role === role)
   const noun = role === 'creator' ? 'creator' : 'reposter'
   if (squad && pool.length === 0) {
-    const res = await sendTelegramMessage(
-      `✉️ No ${noun}s in ${squadMenuTitle(squad)}.\n\n${BUTTON_GUIDE}`,
-      { chatId, replyMarkup: buttons },
-    )
+    const res = await sendTelegramMessage(`✉️ No ${noun}s in ${squadMenuTitle(squad)}.`, {
+      chatId,
+      replyMarkup: buttons,
+    })
     return { ok: res.ok, day: report.day, error: res.error, messages: 0 }
   }
 
@@ -841,7 +785,7 @@ export async function sendAttendanceReports(
     templates.length === 0
       ? `✉️ No ${noun} messages needed${scope} — every ${noun} is done for ${dayTitle(report)}.`
       : `✅ That's all ${templates.length} ${noun} messages${scope}.`
-  const tail = await sendTelegramMessage(`${footer}\n\n${BUTTON_GUIDE}`, {
+  const tail = await sendTelegramMessage(footer, {
     chatId,
     replyMarkup: messagePickerButtons(behind, role, mode, 0, squad),
   })

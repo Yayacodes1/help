@@ -11,7 +11,6 @@ import {
 } from '@/lib/telegram-groups'
 import {
   BUTTON_GUIDE,
-  reportButtons,
   sendAttendanceReports,
   sendBehindPersonMessage,
   updateMenuButtons,
@@ -40,15 +39,9 @@ type ReportRequest = {
   flavor?: 'default' | 'today' | 'progress'
 }
 
-type CreatorNoteKind = 'fit' | 'welcome'
-
 type Request_ =
   | ReportRequest
   | { menu: 'groups' | 'squad' | 'update'; mode: ReportMode; squad?: ReportSquad }
-  | { probation: 'list' }
-  | { probation: 'send'; noticeId: number }
-  | { note: 'pick'; kind: CreatorNoteKind; page?: number; query?: string }
-  | { note: 'send'; kind: CreatorNoteKind; creatorId: number }
   | {
       messagePick: 'page' | 'one' | 'all'
       role: ReportRole
@@ -61,14 +54,8 @@ type Request_ =
   | null
 
 const HELP =
-  `${BUTTON_GUIDE}\n` +
-  '📊 Type /update to pick Previous day, Today, or So far today.\n' +
-  '📅 /yesterday — previous day · /today — the day we\'re in · /now — so far today.\n' +
-  '⚠️ /streaks — miss queue from Nov 7: 1st verbal → 2nd verbal → final (tap = copy + mark sent).\n' +
-  '📈 /fitness — pick a creator (or /fitness Sara) for a consistency check-in to copy.\n' +
-  '👋 /welcome — pick a creator (or /welcome Sara) for the new-creator intro to copy.\n' +
-  '👑 Type /groups to pick Alpha, Beta, Charlie, Delta, or Ungrouped.\n\n' +
-  'Automatic summary: 5:00 PM Riyadh (so far today) and 12:00 AM Riyadh (previous day final).'
+  `${BUTTON_GUIDE}\n\n` +
+  'Automatic: 5:00 PM Riyadh (so far) and 12:00 AM Riyadh (previous day).'
 
 function secretMatches(header: string | null): boolean {
   const secret = telegramWebhookSecret()
@@ -108,20 +95,9 @@ function parseText(text: string): Request_ {
   }
   if (['update', 'summary'].includes(cmd)) {
     if (/yester|prev|previous|أمس|امس/.test(rest)) return { view: 'summary', mode: 'final' }
-    if (/so\s*far|now|progress|حتى|الآن|الان/.test(rest)) {
-      return { view: 'progress', mode: 'live', flavor: 'progress' }
-    }
     if (/today|اليوم/.test(rest)) return { view: 'summary', mode: 'live', flavor: 'today' }
-    return { menu: 'update', mode: 'live' }
-  }
-  if (['streaks', 'pstreaks', 'creator_streaks', 'probation'].includes(cmd)) {
-    return { probation: 'list' }
-  }
-  if (['fitness', 'consistency', 'checkin', 'التزام'].includes(cmd)) {
-    return { note: 'pick', kind: 'fit', page: 0, query: rest || undefined }
-  }
-  if (['welcome', 'onboard', 'newcreator', 'ترحيب'].includes(cmd)) {
-    return { note: 'pick', kind: 'welcome', page: 0, query: rest || undefined }
+    // Default: so far today — how many posted to this point.
+    return { view: 'progress', mode: 'live', flavor: 'progress' }
   }
   if (['start', 'help'].includes(cmd)) return 'help'
   return null
@@ -183,21 +159,6 @@ function parseButton(data: string | undefined): Request_ {
     if (!Number.isFinite(creatorId) || creatorId <= 0) return null
     return { messagePick: 'one', role: a, mode, creatorId, squad }
   }
-  if (kind === 'pstreaks') return { probation: 'list' }
-  if (kind === 'pstreak') {
-    const noticeId = Number(a)
-    if (Number.isFinite(noticeId) && noticeId > 0) return { probation: 'send', noticeId }
-  }
-  if (kind === 'fit' || kind === 'welcome') {
-    const creatorId = Number(a)
-    if (Number.isFinite(creatorId) && creatorId > 0) {
-      return { note: 'send', kind, creatorId }
-    }
-  }
-  if (kind === 'fitpage' || kind === 'welcomepage') {
-    const page = Math.max(0, Number(a) || 0)
-    return { note: 'pick', kind: kind === 'fitpage' ? 'fit' : 'welcome', page }
-  }
   return null
 }
 
@@ -224,23 +185,15 @@ export async function POST(req: Request) {
             : request.messagePick === 'all'
               ? 'Sending all…'
               : 'Loading list…'
-          : 'probation' in request
-            ? request.probation === 'list'
-              ? 'Loading streaks…'
-              : 'Building streak message…'
-            : 'note' in request
-              ? request.note === 'pick'
-                ? 'Loading creators…'
-                : 'Building message…'
-              : 'menu' in request
-                ? request.menu === 'groups'
-                  ? 'Pick a group…'
-                  : request.menu === 'update'
-                    ? 'Pick an update…'
-                    : 'Update, list, or reminders…'
-                : request.view === 'messages'
-                  ? 'Loading who is behind…'
-                  : 'Building…'
+          : 'menu' in request
+            ? request.menu === 'groups'
+              ? 'Pick a group…'
+              : request.menu === 'update'
+                ? 'Pick an update…'
+                : 'Update, list, or reminders…'
+            : request.view === 'messages'
+              ? 'Loading who is behind…'
+              : 'Building…'
         : undefined
     await answerCallbackQuery(update.callback_query.id, tapNote)
   } else if (update.message?.text) {
@@ -249,178 +202,6 @@ export async function POST(req: Request) {
 
   if (request === 'help') {
     await sendTelegramMessage(HELP, { chatId, replyMarkup: updateMenuButtons() })
-  } else if (request && 'note' in request) {
-    const noteReq = request
-    // Text commands need an instant ack — otherwise the group looks broken.
-    if (!update.callback_query) {
-      await sendTelegramMessage(
-        noteReq.note === 'pick'
-          ? noteReq.kind === 'fit'
-            ? '📈 Loading consistency…'
-            : '👋 Loading welcome…'
-          : 'Building message…',
-        { chatId },
-      )
-    }
-    after(async () => {
-      try {
-        const {
-          listCreatorsForTelegramNotes,
-          creatorNotesPickerButtons,
-          consistencyPickerPrompt,
-          welcomePickerPrompt,
-          buildConsistencyNoteForCreator,
-          buildWelcomeNoteForCreator,
-        } = await import('@/lib/telegram-creator-notes')
-        const query = noteReq.note === 'pick' ? noteReq.query : undefined
-        const people = await listCreatorsForTelegramNotes(query)
-
-        if (noteReq.note === 'pick') {
-          const page = noteReq.page ?? 0
-          if (people.length === 0) {
-            await sendTelegramMessage(
-              query
-                ? `No creators matching “${query}”. Try another name, or /fitness with no name for the full list.`
-                : 'No active creators found.',
-              { chatId },
-            )
-            return
-          }
-          // Exact / single match → send the message immediately (no extra tap).
-          if (query && people.length === 1) {
-            const only = people[0]!
-            const body =
-              noteReq.kind === 'fit'
-                ? await buildConsistencyNoteForCreator(only.id)
-                : await buildWelcomeNoteForCreator(only.id)
-            if (body) {
-              const title =
-                noteReq.kind === 'fit' ? 'Consistency check-in' : 'New creator intro'
-              await sendTelegramMessage(
-                `<b>${title} · ${escapeHtml(only.name)}</b>\n\n<pre>${escapeHtml(body)}</pre>\n\n<i>Copy the message above, then send it to them.</i>`,
-                {
-                  chatId,
-                  parseMode: 'HTML',
-                  replyMarkup: creatorNotesPickerButtons(people, noteReq.kind, 0),
-                },
-              )
-              return
-            }
-          }
-          const prompt =
-            noteReq.kind === 'fit'
-              ? consistencyPickerPrompt(people.length, query)
-              : welcomePickerPrompt(people.length, query)
-          await sendTelegramMessage(prompt, {
-            chatId,
-            replyMarkup: creatorNotesPickerButtons(people, noteReq.kind, page),
-          })
-          return
-        }
-
-        const body =
-          noteReq.kind === 'fit'
-            ? await buildConsistencyNoteForCreator(noteReq.creatorId)
-            : await buildWelcomeNoteForCreator(noteReq.creatorId)
-        if (!body) {
-          await sendTelegramMessage('Creator not found.', {
-            chatId,
-            replyMarkup: creatorNotesPickerButtons(people, noteReq.kind, 0),
-          })
-          return
-        }
-        const title = noteReq.kind === 'fit' ? 'Consistency check-in' : 'New creator intro'
-        await sendTelegramMessage(
-          `<b>${title}</b>\n\n<pre>${escapeHtml(body)}</pre>\n\n<i>Copy the message above, then send it to them.</i>`,
-          {
-            chatId,
-            parseMode: 'HTML',
-            replyMarkup: creatorNotesPickerButtons(people, noteReq.kind, 0),
-          },
-        )
-      } catch (e) {
-        await sendTelegramMessage(
-          `Could not build creator note: ${e instanceof Error ? e.message.slice(0, 300) : 'unknown error'}`,
-          { chatId },
-        )
-      }
-    })
-  } else if (request && 'probation' in request) {
-    const probationReq = request
-    if (!update.callback_query) {
-      await sendTelegramMessage(
-        probationReq.probation === 'list' ? '⚠️ Loading streaks…' : 'Building streak message…',
-        { chatId },
-      )
-    }
-    after(async () => {
-      try {
-        const { getOperationalToday, getServerToday } = await import('@/lib/queries')
-        const {
-          listPendingProbationNotices,
-          probationStreakButtons,
-          probationStreakListText,
-          getProbationNoticeById,
-          buildProbationStreakMessage,
-          markProbationNoticeMessaged,
-        } = await import('@/lib/probation')
-        const { reportButtons } = await import('@/lib/telegram-report')
-        // Don't run syncProbationMisses here — it loops every creator with many SQL
-        // round-trips and made /streaks feel stuck. Cron + admin page keep the queue fresh.
-        const opToday = await getOperationalToday()
-
-        if (probationReq.probation === 'list') {
-          const notices = await listPendingProbationNotices()
-          await sendTelegramMessage(probationStreakListText(notices, opToday), {
-            chatId,
-            replyMarkup:
-              notices.length > 0 ? probationStreakButtons(notices) : reportButtons('live'),
-          })
-          return
-        }
-
-        const notice = await getProbationNoticeById(probationReq.noticeId)
-        if (!notice || notice.messagedAt) {
-          const notices = await listPendingProbationNotices()
-          await sendTelegramMessage(
-            notice?.messagedAt
-              ? `Already sent for ${notice.name} (streak ${notice.level}). They stay off this list until the next streak.`
-              : 'That streak notice was not found.',
-            {
-              chatId,
-              replyMarkup:
-                notices.length > 0 ? probationStreakButtons(notices) : reportButtons('live'),
-            },
-          )
-          return
-        }
-
-        const body = buildProbationStreakMessage(notice)
-        await sendTelegramMessage(
-          `<b>${escapeHtml(notice.name)}</b> · streak ${notice.level}\n\n` +
-            escapeHtml(body) +
-            (notice.level === 3 ? '\n\n<i>Sending this marks them fired (final streak).</i>' : ''),
-          { chatId, parseMode: 'HTML' },
-        )
-        await markProbationNoticeMessaged(notice.id, await getServerToday())
-        const remaining = await listPendingProbationNotices()
-        await sendTelegramMessage(
-          notice.level === 3
-            ? `✅ Final streak ready · ${notice.name} fired. ${remaining.length} left on the streak list.`
-            : `✅ Marked streak ${notice.level} as sent for ${notice.name}. They won’t reappear until the next streak. ${remaining.length} left.`,
-          {
-            chatId,
-            replyMarkup:
-              remaining.length > 0 ? probationStreakButtons(remaining) : reportButtons('live'),
-          },
-        )
-      } catch (e) {
-        await sendTelegramMessage(
-          `Could not build creator streaks: ${e instanceof Error ? e.message.slice(0, 300) : 'unknown error'}`,
-          { chatId },
-        )
-      }
-    })
   } else if (request && 'messagePick' in request) {
     const pick = request
     after(async () => {
@@ -498,7 +279,6 @@ export async function POST(req: Request) {
     after(async () => {
       try {
         const { getOperationalToday } = await import('@/lib/queries')
-        // Skip ensureCreatorTrackingColumns here — it burns cold-start time on every tap.
         const result = await sendAttendanceReports(await getOperationalToday(), mode, {
           chatId,
           view,
@@ -518,8 +298,4 @@ export async function POST(req: Request) {
     })
   }
   return NextResponse.json({ ok: true })
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
