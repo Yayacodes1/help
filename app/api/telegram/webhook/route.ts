@@ -74,15 +74,11 @@ function parseText(text: string): Request_ {
   const words = text.trim().toLowerCase().split(/\s+/)
   const cmd = words[0]?.split('@')[0]?.replace(/^\//, '') ?? ''
   const rest = words.slice(1).join(' ')
-  if (['messages_creators', 'msgs_creators'].includes(cmd)) {
+  if (['messages_creators', 'msgs_creators', 'messages', 'message', 'msgs', 'رسائل'].includes(cmd)) {
     return { view: 'messages', mode: 'live', role: 'creator' }
   }
   if (['messages_reposters', 'msgs_reposters'].includes(cmd)) {
-    return { view: 'messages', mode: 'live', role: 'reposter' }
-  }
-  if (['messages', 'message', 'msgs', 'رسائل'].includes(cmd)) {
-    if (/repost|معيد/.test(rest)) return { view: 'messages', mode: 'live', role: 'reposter' }
-    if (/creat|صانع|صناع/.test(rest)) return { view: 'messages', mode: 'live', role: 'creator' }
+    // Reposters removed from the bot — creators only.
     return 'help'
   }
   if (['list', 'full', 'names'].includes(cmd)) return { view: 'list', mode: 'live' }
@@ -92,16 +88,13 @@ function parseText(text: string): Request_ {
   if (['yesterday', 'report', 'prev', 'previous'].includes(cmd)) {
     return { view: 'summary', mode: 'final' }
   }
-  if (['today', 'day'].includes(cmd)) {
-    return { view: 'summary', mode: 'live', flavor: 'today' }
-  }
-  if (['now', 'sofar', 'so_far', 'progress'].includes(cmd)) {
+  // /today is the same as so-far now — no separate "today" report.
+  if (['today', 'day', 'now', 'sofar', 'so_far', 'progress'].includes(cmd)) {
     return { view: 'progress', mode: 'live', flavor: 'progress' }
   }
   if (['update', 'summary'].includes(cmd)) {
     if (/yester|prev|previous|أمس|امس/.test(rest)) return { view: 'summary', mode: 'final' }
-    if (/today|اليوم/.test(rest)) return { view: 'summary', mode: 'live', flavor: 'today' }
-    // Default: so far today — how many posted to this point.
+    // Default: so far today — how many creators posted to this point.
     return { view: 'progress', mode: 'live', flavor: 'progress' }
   }
   // Removed from the bot — still answer so the chat doesn't look dead.
@@ -126,8 +119,8 @@ function parseButton(data: string | undefined): Request_ {
   const [kind, a, b, c] = (data ?? '').split(':')
   if (kind === 'upd') {
     if (a === 'prev') return { view: 'summary', mode: 'final' }
-    if (a === 'today') return { view: 'summary', mode: 'live', flavor: 'today' }
-    if (a === 'sofar') return { view: 'progress', mode: 'live', flavor: 'progress' }
+    // Old "Today" buttons → so far (same live day).
+    if (a === 'today' || a === 'sofar') return { view: 'progress', mode: 'live', flavor: 'progress' }
     return { menu: 'update', mode: 'live' }
   }
   if (kind === 'report') return { view: 'summary', mode: parseMode(a) }
@@ -150,29 +143,35 @@ function parseButton(data: string | undefined): Request_ {
   }
   if (kind === 'sqm') {
     const squad = parseReportSquad(a)
-    if (!squad || (b !== 'creator' && b !== 'reposter')) return null
-    return { view: 'messages', mode: parseMode(c), role: b, squad }
+    if (!squad) return null
+    if (b === 'reposter') return 'help'
+    if (b !== 'creator') return null
+    return { view: 'messages', mode: parseMode(c), role: 'creator', squad }
   }
-  if (kind === 'msgs' && (a === 'creator' || a === 'reposter')) {
-    return { view: 'messages', mode: parseMode(b), role: a }
+  if (kind === 'msgs' && a === 'creator') {
+    return { view: 'messages', mode: parseMode(b), role: 'creator' }
   }
+  if (kind === 'msgs' && a === 'reposter') return 'help'
   if (kind === 'msgs') return 'help'
-  if ((kind === 'msg' || kind === 'msgpage' || kind === 'msgall') && (a === 'creator' || a === 'reposter')) {
+  if ((kind === 'msg' || kind === 'msgpage' || kind === 'msgall') && a === 'reposter') {
+    return 'help'
+  }
+  if ((kind === 'msg' || kind === 'msgpage' || kind === 'msgall') && a === 'creator') {
     const mode = parseMode(b)
     const parts = (data ?? '').split(':')
     const squadTok = kind === 'msgall' ? parts[3] : parts[4]
     const squad =
       !squadTok || squadTok === '_' ? undefined : parseReportSquad(squadTok) ?? undefined
     if (kind === 'msgall') {
-      return { messagePick: 'all', role: a, mode, squad }
+      return { messagePick: 'all', role: 'creator', mode, squad }
     }
     if (kind === 'msgpage') {
       const pageNum = Math.max(0, Number(parts[3]) || 0)
-      return { messagePick: 'page', role: a, mode, page: pageNum, squad }
+      return { messagePick: 'page', role: 'creator', mode, page: pageNum, squad }
     }
     const creatorId = Number(parts[3])
     if (!Number.isFinite(creatorId) || creatorId <= 0) return null
-    return { messagePick: 'one', role: a, mode, creatorId, squad }
+    return { messagePick: 'one', role: 'creator', mode, creatorId, squad }
   }
   // Old keyboards (streaks / fitness / welcome) — send help instead of silence.
   if (
@@ -305,16 +304,12 @@ export async function POST(req: Request) {
     if (!update.callback_query) {
       const ack =
         view === 'messages'
-          ? role === 'reposter'
-            ? '✉️ Loading who is behind (reposters)…'
-            : '✉️ Loading who is behind (creators)…'
+          ? '✉️ Loading who is behind (creators)…'
           : view === 'list'
-            ? '📋 Building the full list…'
+            ? '📋 Building the creator list…'
             : mode === 'final'
               ? '📅 Building previous day…'
-              : view === 'progress'
-                ? '⏱ Building so-far today…'
-                : '📊 Building update…'
+              : '⏱ Building so-far today…'
       await sendTelegramMessage(ack, { chatId })
     }
     // Answer Telegram now; sending many messages can take a minute and it would retry.

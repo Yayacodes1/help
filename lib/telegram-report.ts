@@ -193,23 +193,24 @@ export async function buildDayReport(
     }
   })
 
-  const reposters = everyone.filter((p) => p.role === 'reposter')
-  groups.push({
-    label: 'All projects',
-    role: 'reposter',
-    people: reposters,
-    today: countStatuses(reposters),
-    yesterday: countStatuses(prevEveryone.filter((p) => p.role === 'reposter')),
-    postedFor: lite
-      ? undefined
-      : perProject.map(({ project, postsHere }) => ({
-          projectName: project.name,
-          names: postsHere
-            .filter((p) => p.role === 'reposter' && p.todayInstagram + p.todayTiktok > 0)
-            .map((p) => p.name)
-            .sort((a, b) => a.localeCompare(b)),
-        })),
-  })
+  // Bot reports are creators-only; skip the reposter group.
+  if (!lite) {
+    const reposters = everyone.filter((p) => p.role === 'reposter')
+    groups.push({
+      label: 'All projects',
+      role: 'reposter',
+      people: reposters,
+      today: countStatuses(reposters),
+      yesterday: countStatuses(prevEveryone.filter((p) => p.role === 'reposter')),
+      postedFor: perProject.map(({ project, postsHere }) => ({
+        projectName: project.name,
+        names: postsHere
+          .filter((p) => p.role === 'reposter' && p.todayInstagram + p.todayTiktok > 0)
+          .map((p) => p.name)
+          .sort((a, b) => a.localeCompare(b)),
+      })),
+    })
+  }
 
   const value: DayReport = {
     mode,
@@ -294,17 +295,14 @@ const ROLE_TITLE: Record<ReportRole, string> = { creator: '🎬 CREATORS', repos
 
 export const BUTTON_GUIDE =
   '📊 /update — so far today (posted / didn’t / %).\n' +
-  '📋 /list — names. ✉️ /messages_creators · /messages_reposters\n' +
-  '📅 /yesterday · /today · /now'
+  '📋 /list — who posted. ✉️ /messages_creators\n' +
+  '📅 /yesterday — previous day · /now — same as /update'
 
 export function updateMenuButtons() {
   return {
     inline_keyboard: [
       [{ text: '⏱ So far today', callback_data: 'upd:sofar' }],
-      [
-        { text: '☀️ Today', callback_data: 'upd:today' },
-        { text: '📅 Previous day', callback_data: 'upd:prev' },
-      ],
+      [{ text: '📅 Previous day', callback_data: 'upd:prev' }],
     ],
   }
 }
@@ -312,8 +310,8 @@ export function updateMenuButtons() {
 export function updateMenuPrompt(): string {
   return (
     '📊 UPDATE\n' +
-    '⏱ So far today — how many posted to this point.\n' +
-    '☀️ Today / 📅 Previous day — same counts for that day.'
+    '⏱ So far today — how many creators posted to this point.\n' +
+    '📅 Previous day — final counts for the day that ended.'
   )
 }
 
@@ -322,14 +320,10 @@ export function reportButtons(mode: ReportMode) {
     inline_keyboard: [
       [
         { text: '⏱ So far', callback_data: 'upd:sofar' },
-        { text: '☀️ Today', callback_data: 'upd:today' },
         { text: '📅 Prev', callback_data: 'upd:prev' },
       ],
       [{ text: '📋 Who posted', callback_data: `list:${mode}` }],
-      [
-        { text: '✉️ Creators', callback_data: `msgs:creator:${mode}` },
-        { text: '✉️ Reposters', callback_data: `msgs:reposter:${mode}` },
-      ],
+      [{ text: '✉️ Creators', callback_data: `msgs:creator:${mode}` }],
     ],
   }
 }
@@ -359,43 +353,42 @@ function videoTotalsLine(people: AttendancePerson[], label = ''): string {
   return `${label}🎬 ${t.posted}/${t.goal} videos · IG ${t.ig}/${t.igGoal} · TT ${t.tt}/${t.ttGoal}`
 }
 
-/** Counts only: posted / partial / didn't, per project, plus on-plan %. */
+/** Counts only: creators posted / partial / didn't, per project, plus on-plan %. */
 export function formatSummary(report: DayReport, flavor: 'default' | 'today' | 'progress' = 'default'): string {
   const titleFlavor = flavor === 'today' ? 'today' : flavor === 'progress' ? 'progress' : 'default'
+  const creators = report.everyone.filter((p) => p.role === 'creator')
   const lines: string[] = [`📊 ${dayTitle(report, titleFlavor)}`]
   if (flavor === 'progress') {
-    lines.push('', 'TO THIS POINT', videoTotalsLine(report.everyone, 'Everyone: '))
+    lines.push('', 'TO THIS POINT', videoTotalsLine(creators, 'Creators: '))
   }
-  for (const role of ['creator', 'reposter'] as const) {
-    lines.push('', ROLE_TITLE[role])
-    for (const g of report.groups.filter((x) => x.role === role)) {
-      const c = g.today
-      const label = role === 'reposter' ? '' : `${g.label}: `
-      if (flavor === 'progress') {
-        lines.push(videoTotalsLine(g.people, label))
-      }
-      if (c.posted + c.late + c.partial + c.missed + c.away === 0) {
-        lines.push(`${label}nobody`)
-        continue
-      }
-      const away = c.away > 0 ? ` · 🏖 ${c.away}` : ''
-      const late = c.late > 0 ? ` · ⏰ ${c.late} late` : ''
-      const missLabel = report.mode === 'live' ? 'not yet' : "didn't"
-      lines.push(`${label}✅ ${c.posted} posted${late} · ⚠️ ${c.partial} partial · ❌ ${c.missed} ${missLabel}${away}`)
-      const now = onPlanPct(c)
-      if (now != null) {
-        const before = onPlanPct(g.yesterday)
-        if (before != null) {
-          const diff = now - before
-          const trend = diff > 0 ? ` ▲${diff}` : diff < 0 ? ` ▼${-diff}` : ' ='
-          const [nowLabel, beforeLabel] =
-            report.mode === 'live'
-              ? ['today', 'yesterday']
-              : [weekday(report.day), weekday(addDays(report.day, -1))]
-          lines.push(`   On plan: ${now}% ${nowLabel} · ${before}% ${beforeLabel}${trend}`)
-        } else {
-          lines.push(`   On plan: ${now}%`)
-        }
+  lines.push('', ROLE_TITLE.creator)
+  for (const g of report.groups.filter((x) => x.role === 'creator')) {
+    const c = g.today
+    const label = `${g.label}: `
+    if (flavor === 'progress') {
+      lines.push(videoTotalsLine(g.people, label))
+    }
+    if (c.posted + c.late + c.partial + c.missed + c.away === 0) {
+      lines.push(`${label}nobody`)
+      continue
+    }
+    const away = c.away > 0 ? ` · 🏖 ${c.away}` : ''
+    const late = c.late > 0 ? ` · ⏰ ${c.late} late` : ''
+    const missLabel = report.mode === 'live' ? 'not yet' : "didn't"
+    lines.push(`${label}✅ ${c.posted} posted${late} · ⚠️ ${c.partial} partial · ❌ ${c.missed} ${missLabel}${away}`)
+    const now = onPlanPct(c)
+    if (now != null) {
+      const before = onPlanPct(g.yesterday)
+      if (before != null) {
+        const diff = now - before
+        const trend = diff > 0 ? ` ▲${diff}` : diff < 0 ? ` ▼${-diff}` : ' ='
+        const [nowLabel, beforeLabel] =
+          report.mode === 'live'
+            ? ['today', 'yesterday']
+            : [weekday(report.day), weekday(addDays(report.day, -1))]
+        lines.push(`   On plan: ${now}% ${nowLabel} · ${before}% ${beforeLabel}${trend}`)
+      } else {
+        lines.push(`   On plan: ${now}%`)
       }
     }
   }
@@ -414,56 +407,14 @@ function nameList(people: AttendancePerson[], withMissing = false): string {
     .join(', ')
 }
 
-/** Every name for the same day: posted / partial / didn't, per project and role. */
+/** Creator names for the same day: posted / partial / didn't, per project. */
 export function formatFullList(report: DayReport): string {
   const live = report.mode === 'live'
-  const lines: string[] = [`📋 FULL LIST · ${dayTitle(report)}`]
-  for (const role of ['creator', 'reposter'] as const) {
-    lines.push('', ROLE_TITLE[role])
-    for (const g of report.groups.filter((x) => x.role === role)) {
-      const byName = [...g.people].sort((a, b) => a.name.localeCompare(b.name))
-      const of = (s: AttendanceStatus) => byName.filter((p) => p.status === s)
-      if (role === 'creator') lines.push(`— ${g.label} —`)
-      if (byName.length === 0) {
-        lines.push('nobody')
-        continue
-      }
-      if (of('hit').length) lines.push(`✅ Posted (${of('hit').length}): ${nameList(of('hit'))}`)
-      if (of('late').length) lines.push(`⏰ Late (${of('late').length}): ${nameList(of('late'))}`)
-      if (of('partial').length) lines.push(`⚠️ Partial (${of('partial').length}): ${nameList(of('partial'), true)}`)
-      if (of('miss').length) {
-        lines.push(`❌ ${live ? 'Not yet' : "Didn't post"} (${of('miss').length}): ${nameList(of('miss'))}`)
-      }
-      if (of('break').length) lines.push(`🏖 Break (${of('break').length}): ${nameList(of('break'))}`)
-      if (of('off').length) lines.push(`💤 Off day (${of('off').length}): ${nameList(of('off'))}`)
-    }
-  }
-  return lines.join('\n')
-}
-
-function formatSquadSummary(report: DayReport, squad: ReportSquad): string {
-  const title = squadMenuTitle(squad)
-  const lines: string[] = [`📊 ${title} · ${dayTitle(report)}`]
-  for (const role of ['creator', 'reposter'] as const) {
-    const people = peopleInSquad(report.everyone, report.leaders, squad, role)
-    const today = countStatuses(people)
-    lines.push('', ROLE_TITLE[role], countsLine(today))
-    const plan = onPlanLine(report, today, yesterdayCounts(report, squad, role))
-    if (plan) lines.push(plan)
-  }
-  return lines.join('\n')
-}
-
-function formatSquadList(report: DayReport, squad: ReportSquad): string {
-  const live = report.mode === 'live'
-  const title = squadMenuTitle(squad)
-  const lines: string[] = [`📋 ${title} · ${dayTitle(report)}`]
-  for (const role of ['creator', 'reposter'] as const) {
-    const byName = [...peopleInSquad(report.everyone, report.leaders, squad, role)].sort((a, b) =>
-      a.name.localeCompare(b.name),
-    )
+  const lines: string[] = [`📋 CREATORS · ${dayTitle(report)}`]
+  for (const g of report.groups.filter((x) => x.role === 'creator')) {
+    const byName = [...g.people].sort((a, b) => a.name.localeCompare(b.name))
     const of = (s: AttendanceStatus) => byName.filter((p) => p.status === s)
-    lines.push('', ROLE_TITLE[role])
+    lines.push('', `— ${g.label} —`)
     if (byName.length === 0) {
       lines.push('nobody')
       continue
@@ -477,6 +428,39 @@ function formatSquadList(report: DayReport, squad: ReportSquad): string {
     if (of('break').length) lines.push(`🏖 Break (${of('break').length}): ${nameList(of('break'))}`)
     if (of('off').length) lines.push(`💤 Off day (${of('off').length}): ${nameList(of('off'))}`)
   }
+  return lines.join('\n')
+}
+
+function formatSquadSummary(report: DayReport, squad: ReportSquad): string {
+  const title = squadMenuTitle(squad)
+  const people = peopleInSquad(report.everyone, report.leaders, squad, 'creator')
+  const today = countStatuses(people)
+  const lines: string[] = [`📊 ${title} · ${dayTitle(report)}`, '', ROLE_TITLE.creator, countsLine(today)]
+  const plan = onPlanLine(report, today, yesterdayCounts(report, squad, 'creator'))
+  if (plan) lines.push(plan)
+  return lines.join('\n')
+}
+
+function formatSquadList(report: DayReport, squad: ReportSquad): string {
+  const live = report.mode === 'live'
+  const title = squadMenuTitle(squad)
+  const byName = [...peopleInSquad(report.everyone, report.leaders, squad, 'creator')].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  )
+  const of = (s: AttendanceStatus) => byName.filter((p) => p.status === s)
+  const lines: string[] = [`📋 ${title} · ${dayTitle(report)}`, '', ROLE_TITLE.creator]
+  if (byName.length === 0) {
+    lines.push('nobody')
+    return lines.join('\n')
+  }
+  if (of('hit').length) lines.push(`✅ Posted (${of('hit').length}): ${nameList(of('hit'))}`)
+  if (of('late').length) lines.push(`⏰ Late (${of('late').length}): ${nameList(of('late'))}`)
+  if (of('partial').length) lines.push(`⚠️ Partial (${of('partial').length}): ${nameList(of('partial'), true)}`)
+  if (of('miss').length) {
+    lines.push(`❌ ${live ? 'Not yet' : "Didn't post"} (${of('miss').length}): ${nameList(of('miss'))}`)
+  }
+  if (of('break').length) lines.push(`🏖 Break (${of('break').length}): ${nameList(of('break'))}`)
+  if (of('off').length) lines.push(`💤 Off day (${of('off').length}): ${nameList(of('off'))}`)
   return lines.join('\n')
 }
 
@@ -726,7 +710,7 @@ export async function sendAttendanceReports(
         ? formatSquadList(report, squad)
         : formatSquadSummary(report, squad) +
           (view === 'progress' || summaryFlavor === 'progress'
-            ? `\n\nTO THIS POINT\n${videoTotalsLine(peopleInSquad(report.everyone, report.leaders, squad), 'This group: ')}`
+            ? `\n\nTO THIS POINT\n${videoTotalsLine(peopleInSquad(report.everyone, report.leaders, squad, 'creator'), 'Creators: ')}`
             : '')
       : view === 'list'
         ? formatFullList(report)

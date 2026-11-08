@@ -82,10 +82,7 @@ export function squadRoleButtons(squad: ReportSquad, mode: string) {
         { text: '📊 Update', callback_data: `squ:${token}:${mode}` },
         { text: '📋 List', callback_data: `sql:${token}:${mode}` },
       ],
-      [
-        { text: '✉️ Creators reminder', callback_data: `sqm:${token}:creator:${mode}` },
-        { text: '✉️ Reposter reminder', callback_data: `sqm:${token}:reposter:${mode}` },
-      ],
+      [{ text: '✉️ Creators reminder', callback_data: `sqm:${token}:creator:${mode}` }],
       [{ text: '← Groups', callback_data: `gl:${mode}` }],
     ],
   }
@@ -94,7 +91,7 @@ export function squadRoleButtons(squad: ReportSquad, mode: string) {
 export function groupLeaderPrompt(): string {
   return (
     '👑 GROUP LEADER\n' +
-    'Pick a group. Then Update, List, Creators reminder, or Reposter reminder for that group only.\n\n' +
+    'Pick a group. Then Update, List, or Creators reminder for that group only.\n\n' +
     'Alpha · Ammar\n' +
     'Beta · Abdul Kareem\n' +
     'Charlie · Lina\n' +
@@ -107,10 +104,9 @@ export function squadRolePrompt(squad: ReportSquad): string {
   const title = squadMenuTitle(squad)
   return (
     `👑 ${title}\n` +
-    '📊 Update — counts for this group (same day as the report you opened from).\n' +
-    '📋 List — names in this group.\n' +
-    `✉️ Creators reminder — copy-ready texts for ${title} creators who are behind.\n` +
-    `✉️ Reposter reminder — the same for ${title} reposters.\n\n` +
-    'For Previous day / Today / So far today, type /update.'
+    '📊 Update — creator counts for this group.\n' +
+    '📋 List — creator names in this group.\n' +
+    `✉️ Creators reminder — copy-ready texts for ${title} creators who are behind.\n\n` +
+    'For so far today / previous day, type /update.'
   )
 }
