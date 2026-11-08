@@ -1369,6 +1369,69 @@ export async function deletePayment(id: number, creatorId: number) {
   revalidatePath('/submit')
 }
 
+/** Edit an existing payment (amount, date, kind, contract, who paid). */
+export async function updatePayment(id: number, creatorId: number, formData: FormData) {
+  await requireAdmin()
+  const paymentId = Math.floor(Number(id))
+  if (!(paymentId > 0)) return
+
+  const paidOn = parseOptionalDate(formData.get('paid_on'))
+  if (!paidOn) return
+  const amount = parseAmount(formData.get('amount'))
+  if (amount <= 0) return
+  const noteRaw = (formData.get('note') ?? '').toString().trim()
+  const note = noteRaw ? noteRaw.slice(0, 500) : null
+  const amountKind = parsePaymentAmountKind(formData.get('amount_kind'))
+  const contractRaw = (formData.get('contract_id') ?? '').toString()
+  const contractId =
+    contractRaw && Number.isFinite(Number(contractRaw)) && Number(contractRaw) > 0
+      ? Number(contractRaw)
+      : null
+
+  const paidFrom = (formData.get('paid_from') ?? '').toString()
+  let paidBy: string | null | undefined
+  if (paidFrom === 'ahmed') paidBy = 'ahmed'
+  else if (paidFrom === 'direct') paidBy = null
+  else paidBy = undefined
+
+  if (paidBy === undefined) {
+    await sql`
+      UPDATE payments
+      SET paid_on = ${paidOn}::date,
+          amount = ${amount},
+          note = ${note},
+          amount_kind = ${amountKind},
+          contract_id = ${contractId}
+      WHERE id = ${paymentId} AND creator_id = ${creatorId}
+    `
+  } else {
+    await sql`
+      UPDATE payments
+      SET paid_on = ${paidOn}::date,
+          amount = ${amount},
+          note = ${note},
+          amount_kind = ${amountKind},
+          contract_id = ${contractId},
+          paid_by = ${paidBy}
+      WHERE id = ${paymentId} AND creator_id = ${creatorId}
+    `
+  }
+
+  const latest = (await sql`
+    SELECT paid_on::text AS paid_on FROM payments
+    WHERE creator_id = ${creatorId}
+    ORDER BY paid_on DESC, id DESC LIMIT 1
+  `) as { paid_on: string }[]
+  await sql`
+    UPDATE creators
+    SET last_paid_at = ${latest[0]?.paid_on ?? null}
+    WHERE id = ${creatorId}
+  `
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  revalidatePath('/submit')
+}
+
 /**
  * Save how a person is really paid: currency (USD/SAR) and, optionally, the actual
  * biweekly amount in that currency. `biweekly` null = work it out from the contract.
