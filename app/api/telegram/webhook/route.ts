@@ -306,10 +306,8 @@ export async function POST(req: Request) {
     const probationReq = request
     after(async () => {
       try {
-        const { ensureCreatorTrackingColumns } = await import('@/lib/schema')
         const { getOperationalToday, getServerToday } = await import('@/lib/queries')
         const {
-          syncProbationMisses,
           listPendingProbationNotices,
           probationStreakButtons,
           probationStreakListText,
@@ -318,9 +316,9 @@ export async function POST(req: Request) {
           markProbationNoticeMessaged,
         } = await import('@/lib/probation')
         const { reportButtons } = await import('@/lib/telegram-report')
-        await ensureCreatorTrackingColumns()
+        // Don't run syncProbationMisses here — it loops every creator with many SQL
+        // round-trips and made /streaks feel stuck. Cron + admin page keep the queue fresh.
         const opToday = await getOperationalToday()
-        await syncProbationMisses({ today: opToday })
 
         if (probationReq.probation === 'list') {
           const notices = await listPendingProbationNotices()
