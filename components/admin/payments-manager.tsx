@@ -26,6 +26,18 @@ function kindClass(kind: PaymentAmountKind | null | undefined): string {
   return 'bg-primary/10 text-primary'
 }
 
+/** Who actually paid the creator (Ahmed’s wallet vs Yahya / Lula / Sultan…). */
+function payerLabel(paidBy?: string | null, recordedBy?: string | null): string {
+  if (paidBy === 'ahmed') return 'Ahmed'
+  const id = (recordedBy ?? '').trim().toLowerCase()
+  if (id === 'yahya') return 'Yahya'
+  if (id === 'ahmed') return 'Ahmed'
+  if (id === 'lula') return 'Lula'
+  if (id === 'sultan') return 'Sultan'
+  if (id) return id.charAt(0).toUpperCase() + id.slice(1)
+  return '—'
+}
+
 export function PaymentsManager({
   creatorId,
   today,
@@ -89,6 +101,10 @@ export function PaymentsManager({
               {kindLabel(latest.amount_kind)}
               {' on '}
               {formatDate(latest.paid_on)}
+              {' · paid by '}
+              <span className="font-medium text-foreground">
+                {payerLabel(latest.paid_by, latest.recorded_by)}
+              </span>
               {latest.note ? ` · ${latest.note}` : ''}
             </p>
           ) : (
@@ -207,6 +223,7 @@ export function PaymentsManager({
                 <th className="px-4 py-3 font-medium">Date</th>
                 <th className="px-4 py-3 font-medium">Amount</th>
                 <th className="px-4 py-3 font-medium">Kind</th>
+                <th className="px-4 py-3 font-medium">Paid by</th>
                 <th className="px-4 py-3 font-medium">Contract</th>
                 <th className="px-4 py-3 font-medium">Note</th>
                 <th className="px-4 py-3" />
@@ -223,6 +240,9 @@ export function PaymentsManager({
                     <span className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${kindClass(p.amount_kind)}`}>
                       {kindLabel(p.amount_kind)}
                     </span>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 font-medium">
+                    {payerLabel(p.paid_by, p.recorded_by)}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {p.contract_name ?? '—'}

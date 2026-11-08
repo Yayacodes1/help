@@ -182,5 +182,9 @@ export type Payment = {
   note: string | null
   /** Defaults to full for legacy rows that were never tagged. */
   amount_kind?: PaymentAmountKind | null
+  /** 'ahmed' when paid from Ahmed’s wallet; otherwise null (direct). */
+  paid_by?: string | null
+  /** Admin account id that recorded the payment (yahya, ahmed, lula, sultan…). */
+  recorded_by?: string | null
   created_at: string
 }

@@ -1706,6 +1706,8 @@ export async function getPaymentsForCreator(creatorId: number): Promise<PaymentR
            p.amount::float AS amount,
            p.note, p.created_at,
            p.amount_kind,
+           p.paid_by,
+           p.recorded_by,
            ct.name AS contract_name
     FROM payments p
     LEFT JOIN contracts ct ON ct.id = p.contract_id
@@ -1720,7 +1722,7 @@ export async function getLatestPayment(creatorId: number): Promise<Payment | nul
     SELECT id, creator_id, contract_id,
            paid_on::text AS paid_on,
            amount::float AS amount,
-           note, created_at, amount_kind
+           note, created_at, amount_kind, paid_by, recorded_by
     FROM payments
     WHERE creator_id = ${creatorId}
     ORDER BY paid_on DESC, id DESC
@@ -1745,6 +1747,8 @@ export async function getPaymentsInRange(
            p.amount::float AS amount,
            p.note, p.created_at,
            p.amount_kind,
+           p.paid_by,
+           p.recorded_by,
            c.name AS creator_name,
            c.role AS creator_role,
            c.pay_currency AS creator_pay_currency,
