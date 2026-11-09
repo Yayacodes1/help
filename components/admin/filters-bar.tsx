@@ -128,6 +128,7 @@ export function FiltersBar({
             <option value="">All platforms</option>
             <option value="instagram">Instagram</option>
             <option value="tiktok">TikTok</option>
+            <option value="youtube">YouTube</option>
           </select>
         </div>
         {hasFilters ? (

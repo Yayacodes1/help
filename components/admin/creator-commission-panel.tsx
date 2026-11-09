@@ -168,7 +168,7 @@ function PeriodDetail({ sheet }: { sheet: CommissionContractSheet }) {
                   <p className="font-medium">
                     {video.videoDate ? formatDate(video.videoDate) : '—'}
                     <span className="ml-2 text-xs font-normal text-muted-foreground">
-                      {video.platform === 'instagram' ? 'IG' : 'TT'}
+                      {video.platform === 'instagram' ? 'IG' : video.platform === 'youtube' ? 'YT' : 'TT'}
                     </span>
                   </p>
                   <p className="shrink-0 tabular-nums font-semibold">{formatMoney(video.sar, 'SAR')}</p>

@@ -312,7 +312,7 @@ export default async function SubmitPage({
     goal_instagram: dailyGoals.goalInstagram,
     goal_tiktok: dailyGoals.goalTiktok,
   }
-  // Always show Instagram + TikTok fields on the creator page.
+  // Always show Instagram, TikTok, and YouTube on the creator page.
   const fields = PLATFORMS.map((platform) => ({
     platform,
     goal: goalFor(goalShape, platform),

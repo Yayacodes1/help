@@ -48,6 +48,38 @@ export function extractTikTokAwemeId(url: string): string | null {
   }
 }
 
+const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/
+
+export function isYouTubeHost(host: string): boolean {
+  const h = host.replace(/^www\./i, '').toLowerCase()
+  return (
+    h === 'youtu.be' ||
+    h === 'youtube.com' ||
+    h.endsWith('.youtube.com') ||
+    h === 'youtube-nocookie.com' ||
+    h.endsWith('.youtube-nocookie.com')
+  )
+}
+
+/** watch?v=, youtu.be, Shorts, embed, and live URLs. Channel pages are not videos. */
+export function extractYouTubeVideoId(url: string): string | null {
+  try {
+    const u = new URL(normalizeMediaUrl(url) ?? '')
+    const host = u.hostname.replace(/^www\./i, '').toLowerCase()
+    if (!isYouTubeHost(host)) return null
+    if (host === 'youtu.be') {
+      const id = u.pathname.split('/').filter(Boolean)[0] ?? ''
+      return YOUTUBE_ID.test(id) ? id : null
+    }
+    const fromQuery = u.searchParams.get('v')
+    if (fromQuery && YOUTUBE_ID.test(fromQuery)) return fromQuery
+    const fromPath = u.pathname.match(/\/(?:shorts|embed|live|v)\/([A-Za-z0-9_-]{11})/)
+    return fromPath?.[1] ?? null
+  } catch {
+    return null
+  }
+}
+
 export function detectPlatformFromUrl(url: string): Platform | null {
   let parsed: URL
   try {
@@ -68,6 +100,10 @@ export function detectPlatformFromUrl(url: string): Platform | null {
 
   if (isTikTokHost(host)) {
     return 'tiktok'
+  }
+
+  if (extractYouTubeVideoId(parsed.href)) {
+    return 'youtube'
   }
 
   return null
@@ -118,9 +154,17 @@ export function classifyMediaLinks(raw: string): {
   for (const url of links) {
     const platform = detectPlatformFromUrl(url)
     if (!platform) {
+      let host = ''
+      try {
+        host = new URL(url).hostname
+      } catch {
+        host = ''
+      }
       rejected.push({
         url,
-        error: 'Not an Instagram or TikTok link',
+        error: isYouTubeHost(host)
+          ? 'Not a video link'
+          : 'Not an Instagram, TikTok, or YouTube link',
       })
       continue
     }

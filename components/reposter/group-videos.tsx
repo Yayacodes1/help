@@ -1,12 +1,13 @@
 import { CopyLink } from '@/components/copy-link'
 import { formatNumber } from '@/lib/format'
 import { PLATFORM_META } from '@/lib/platforms'
+import type { Platform } from '@/lib/db'
 import { projectToneClass } from '@/lib/project-scope'
 
 export type GroupVideoRow = {
   id: number
   handle: string
-  platform: 'instagram' | 'tiktok'
+  platform: Platform
   url: string
   views: number
   projectName: string | null

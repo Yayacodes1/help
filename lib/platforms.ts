@@ -23,6 +23,13 @@ export const PLATFORM_META: Record<Platform, PlatformMeta> = {
     hint_en: 'Paste your TikTok video links (one per line).',
     hint_ar: 'الصق روابط فيديوهات تيك توك (رابط في كل سطر).',
   },
+  youtube: {
+    key: 'youtube',
+    en: 'YouTube',
+    ar: 'يوتيوب',
+    hint_en: 'Paste your YouTube video links (one per line).',
+    hint_ar: 'الصق روابط فيديوهات يوتيوب (رابط في كل سطر).',
+  },
 }
 
 export function goalFor(
@@ -30,5 +37,6 @@ export function goalFor(
   platform: Platform,
 ): number {
   if (platform === 'instagram') return goals.goal_instagram
-  return goals.goal_tiktok
+  if (platform === 'tiktok') return goals.goal_tiktok
+  return 0
 }

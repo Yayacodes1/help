@@ -91,12 +91,12 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
     if (rejected.length > 0) {
       return {
         ok: false,
-        message: `لم نتعرف على الروابط. Could not recognize ${rejected.length} link(s). Use Instagram or TikTok video links only:\n${rejected
+        message: `لم نتعرف على الروابط. Could not recognize ${rejected.length} link(s). Use Instagram, TikTok, or YouTube video links only:\n${rejected
           .map((r) => `• ${r.url}`)
           .join('\n')}`,
       }
     }
-    return { ok: false, message: 'Paste at least one Instagram or TikTok video link.' }
+    return { ok: false, message: 'Paste at least one Instagram, TikTok, or YouTube video link.' }
   }
 
   const videoDateRaw = (formData.get('video_date') ?? '').toString().trim()
@@ -196,16 +196,17 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   revalidatePath('/leader', 'layout')
   const skipped =
     rejected.length > 0
-      ? `\n\n⚠️ لم نتعرف على هذه الروابط ولم تُحسب. Skipped ${rejected.length} link(s) that are not Instagram/TikTok videos:\n${rejected
+      ? `\n\n⚠️ لم نتعرف على هذه الروابط ولم تُحسب. Skipped ${rejected.length} link(s) that are not Instagram, TikTok, or YouTube videos:\n${rejected
           .map((r) => `• ${r.url}`)
           .join('\n')}`
       : ''
   const ig = fresh.filter((r) => r.platform === 'instagram').length
   const tt = fresh.filter((r) => r.platform === 'tiktok').length
+  const yt = fresh.filter((r) => r.platform === 'youtube').length
   const when = `${videoDate} ${postTime.slice(0, 5)}`
   return {
     ok: true,
-    message: `✅ تم حفظ ${fresh.length} فيديو ليوم ${when}. Added ${fresh.length} video${fresh.length > 1 ? 's' : ''} to ${projectName} for ${when} (IG ${ig} · TT ${tt}).${skipped}${blockedNote}`,
+    message: `✅ تم حفظ ${fresh.length} فيديو ليوم ${when}. Added ${fresh.length} video${fresh.length > 1 ? 's' : ''} to ${projectName} for ${when} (IG ${ig} · TT ${tt} · YT ${yt}).${skipped}${blockedNote}`,
     blocked: blocked.length,
     videoDate,
   }

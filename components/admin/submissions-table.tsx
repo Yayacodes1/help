@@ -11,7 +11,7 @@ import { OPERATIONAL_TZ, calendarDayInTimeZone } from '@/lib/operational-day'
 import { PLATFORM_META } from '@/lib/platforms'
 import { scopedPersonHref, type LinkScope } from '@/lib/admin-href'
 import { projectToneClass } from '@/lib/project-scope'
-import type { Project } from '@/lib/db'
+import type { Platform, Project } from '@/lib/db'
 import { VideoPager } from '@/components/admin/video-pager'
 import { VIDEO_PAGE_SIZE } from '@/lib/video-page'
 
@@ -51,7 +51,7 @@ export function SubmissionsTable({
     created_at?: string | null
     submitted_at?: string | null
     platform_posted_at?: string | null
-    platform: 'instagram' | 'tiktok'
+    platform: Platform
     url: string
     views: number
     views_error?: string | null

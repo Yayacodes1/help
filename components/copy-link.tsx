@@ -9,7 +9,8 @@ export function CopyLink({
   copiedLabel?: string
 }) {
   const platform = detectPlatformFromUrl(url)
-  const label = platform === 'instagram' ? 'Instagram' : platform === 'tiktok' ? 'TikTok' : 'Open'
+  const label =
+    platform === 'instagram' ? 'Instagram' : platform === 'tiktok' ? 'TikTok' : platform === 'youtube' ? 'YouTube' : 'Open'
   return (
     <a
       href={url}

@@ -1,11 +1,12 @@
 import 'server-only'
 import { sql } from '@/lib/db'
-import { isTikTokHost } from '@/lib/media-url'
+import { extractYouTubeVideoId, isTikTokHost } from '@/lib/media-url'
 import { ensureOnce } from '@/lib/ensure-once'
 
 /**
  * One key per video, however the link was written:
- * TikTok → `tt:<video id>`, Instagram → `ig:<post code>`, anything else → `url:<host><path>`.
+ * TikTok → `tt:<video id>`, Instagram → `ig:<post code>`, YouTube → `yt:<video id>`,
+ * anything else → `url:<host><path>`.
  */
 export function videoKeyFromUrl(raw: string): string | null {
   let u: URL
@@ -24,6 +25,8 @@ export function videoKeyFromUrl(raw: string): string | null {
     const code = path.match(/\/(?:p|reels?|tv)\/([A-Za-z0-9_-]+)/i)?.[1]
     if (code) return `ig:${code}`
   }
+  const youtubeId = extractYouTubeVideoId(u.href)
+  if (youtubeId) return `yt:${youtubeId}`
   return `url:${host}${path}`
 }
 

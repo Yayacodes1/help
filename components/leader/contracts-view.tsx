@@ -218,7 +218,7 @@ export function BonusView({
                     <li key={video.id} className="flex items-baseline justify-between gap-3 px-3 py-2 text-sm">
                       <span>
                         {video.videoDate ? formatDate(video.videoDate) : '—'} ·{' '}
-                        {video.platform === 'instagram' ? 'IG' : 'TT'} · {formatNumber(video.views)} {t('views')}
+                        {video.platform === 'instagram' ? 'IG' : video.platform === 'youtube' ? 'YT' : 'TT'} · {formatNumber(video.views)} {t('views')}
                         {video.url ? (
                           <>
                             {' · '}

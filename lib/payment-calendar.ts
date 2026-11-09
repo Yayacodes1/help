@@ -229,7 +229,7 @@ export function videosForContract(
     if (hit.creatorId !== creatorId) continue
     if (hit.videoDate < window.start || hit.videoDate > window.end) continue
     if (hit.platform === 'instagram') instagram++
-    else tiktok++
+    else if (hit.platform === 'tiktok') tiktok++
   }
   return { instagram, tiktok, total: instagram + tiktok }
 }

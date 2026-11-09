@@ -277,7 +277,9 @@ export async function startRefreshJob(
   const projectId = filters.projectId && Number.isFinite(filters.projectId) ? filters.projectId : null
   const role = filters.role === 'creator' || filters.role === 'reposter' ? filters.role : null
   const platform =
-    filters.platform === 'instagram' || filters.platform === 'tiktok' ? filters.platform : null
+    filters.platform === 'instagram' || filters.platform === 'tiktok' || filters.platform === 'youtube'
+      ? filters.platform
+      : null
 
   await cancelRunningJobForCreator(actor, creatorId)
 

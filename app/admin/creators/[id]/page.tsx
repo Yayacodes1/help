@@ -443,6 +443,7 @@ export default async function CreatorDetailPage({
                   both: t('platformBoth'),
                   instagram: t('instagram'),
                   tiktok: t('tiktok'),
+                  youtube: t('youtube'),
                   videos: t('videosWord'),
                   views: t('views'),
                   noMatch: t('noVideosMatch'),

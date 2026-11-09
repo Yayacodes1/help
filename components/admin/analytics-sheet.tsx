@@ -34,6 +34,7 @@ import { loadSheetDay, loadSheetPerson, saveDailyDownloads, syncRevenueCatNow } 
 
 const IG = '#E1306C'
 const TT = '#0F766E'
+const YT = '#B91C1C'
 const CREATOR = '#6366F1'
 const REPOSTER = '#F59E0B'
 const DOWNLOADS = '#94A3B8'
@@ -241,7 +242,7 @@ function DayDetail({
     for (const v of videos) {
       views += v.views
       if (v.platform === 'tiktok') tt++
-      else ig++
+      else if (v.platform === 'instagram') ig++
       const p = byPerson.get(v.creator_id) ?? {
         id: v.creator_id,
         name: v.creator_name,
@@ -252,7 +253,7 @@ function DayDetail({
       }
       p.views += v.views
       if (v.platform === 'tiktok') p.tt++
-      else p.ig++
+      else if (v.platform === 'instagram') p.ig++
       byPerson.set(v.creator_id, p)
     }
     const people = [...byPerson.values()].sort((a, b) => b.views - a.views)
@@ -421,9 +422,9 @@ function DayDetail({
                         >
                           <span
                             className="text-[10px] font-semibold"
-                            style={{ color: v.platform === 'tiktok' ? TT : IG }}
+                            style={{ color: v.platform === 'tiktok' ? TT : v.platform === 'youtube' ? YT : IG }}
                           >
-                            {v.platform === 'tiktok' ? 'TT' : 'IG'}
+                            {v.platform === 'tiktok' ? 'TT' : v.platform === 'youtube' ? 'YT' : 'IG'}
                           </span>
                           <span className="truncate">{v.creator_name}</span>
                           <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
@@ -621,9 +622,9 @@ function PersonTimeline({
                   >
                     <span
                       className="text-[10px] font-semibold"
-                      style={{ color: v.platform === 'tiktok' ? TT : IG }}
+                      style={{ color: v.platform === 'tiktok' ? TT : v.platform === 'youtube' ? YT : IG }}
                     >
-                      {v.platform === 'tiktok' ? 'TT' : 'IG'}
+                      {v.platform === 'tiktok' ? 'TT' : v.platform === 'youtube' ? 'YT' : 'IG'}
                     </span>
                     <span className="truncate">{dayLabel(v.date)}</span>
                     <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
@@ -773,7 +774,7 @@ export function AnalyticsSheet({
         if (isTt) {
           agg.ttVideos += r.videos
           agg.ttViews += r.views
-        } else {
+        } else if (r.platform === 'instagram') {
           agg.igVideos += r.videos
           agg.igViews += r.views
         }

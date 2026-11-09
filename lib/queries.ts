@@ -276,7 +276,7 @@ export async function getCreatorCountsByPlatformOnDate(
     WHERE creator_id = ${creatorId} AND video_date = ${date}
     GROUP BY platform
   `) as PlatformCount[]
-  const result: Record<Platform, number> = { instagram: 0, tiktok: 0 }
+  const result: Record<Platform, number> = { instagram: 0, tiktok: 0, youtube: 0 }
   for (const row of rows) {
     if (row.platform in result) result[row.platform] = row.count
   }

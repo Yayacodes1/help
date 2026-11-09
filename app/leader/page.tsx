@@ -114,7 +114,9 @@ export default async function LeaderHomePage({
   const projectRaw = Number(sp.project)
   const projectId = sp.project && Number.isFinite(projectRaw) && projectRaw > 0 ? projectRaw : undefined
   const platform: Platform | undefined =
-    sp.platform === 'instagram' || sp.platform === 'tiktok' ? sp.platform : undefined
+    sp.platform === 'instagram' || sp.platform === 'tiktok' || sp.platform === 'youtube'
+      ? sp.platform
+      : undefined
   const selectedDay = date(sp.day, today)
   const isToday = selectedDay === today
   const dayLabel = isToday ? t('today') : formatDate(selectedDay)

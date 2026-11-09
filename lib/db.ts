@@ -18,7 +18,7 @@ export type Project = {
   created_at: string
 }
 
-export const PLATFORMS = ['instagram', 'tiktok'] as const
+export const PLATFORMS = ['instagram', 'tiktok', 'youtube'] as const
 export type Platform = (typeof PLATFORMS)[number]
 
 export type Creator = {

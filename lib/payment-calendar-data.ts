@@ -79,6 +79,7 @@ export async function loadPaymentCalendar(opts: {
       WHERE s.video_date >= ${lookback}::date
         AND s.video_date <= ${lookahead}::date
         AND cr.paused_at IS NULL
+        AND s.platform IN ('instagram', 'tiktok')
         AND (${roleSql}::text IS NULL OR cr.role = ${roleSql})
     `,
     getCommissionBoard({

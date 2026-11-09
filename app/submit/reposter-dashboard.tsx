@@ -145,8 +145,9 @@ export async function ReposterDashboard({
       ? getCreatorCountsByPlatformOnDate(creator.id, date).catch(() => ({
           instagram: 0,
           tiktok: 0,
+          youtube: 0,
         }))
-      : Promise.resolve({ instagram: 0, tiktok: 0 }),
+      : Promise.resolve({ instagram: 0, tiktok: 0, youtube: 0 }),
     needUploadMeta ? getActiveContract(creator.id, today).catch(() => null) : Promise.resolve(null),
     getCreatorStrikeSummary(creator.id, today).catch(() => null),
   ])

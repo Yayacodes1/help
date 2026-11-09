@@ -8,8 +8,9 @@ import { AddCreatorVideoForm } from '@/components/admin/add-creator-video-form'
 import { formatNumber } from '@/lib/format'
 import { sortProjects } from '@/lib/project-order'
 import { VIDEO_PAGE_SIZE } from '@/lib/video-page'
+import type { Platform } from '@/lib/db'
 
-type PlatformFilter = 'both' | 'instagram' | 'tiktok'
+type PlatformFilter = 'both' | Platform
 
 type Submission = {
   id: number
@@ -23,7 +24,7 @@ type Submission = {
   created_at?: string | null
   submitted_at?: string | null
   platform_posted_at?: string | null
-  platform: 'instagram' | 'tiktok'
+  platform: Platform
   url: string
   views: number
   views_error?: string | null
@@ -54,6 +55,7 @@ export function CreatorVideosPanel({
     both: string
     instagram: string
     tiktok: string
+    youtube: string
     videos: string
     views: string
     noMatch: string
@@ -73,24 +75,31 @@ export function CreatorVideosPanel({
   const counts = useMemo(() => {
     let instagram = 0
     let tiktok = 0
+    let youtube = 0
     let viewsIg = 0
     let viewsTt = 0
+    let viewsYt = 0
     for (const s of submissions) {
       if (s.platform === 'instagram') {
         instagram++
         viewsIg += s.views ?? 0
-      } else {
+      } else if (s.platform === 'tiktok') {
         tiktok++
         viewsTt += s.views ?? 0
+      } else if (s.platform === 'youtube') {
+        youtube++
+        viewsYt += s.views ?? 0
       }
     }
     return {
-      both: instagram + tiktok,
+      both: instagram + tiktok + youtube,
       instagram,
       tiktok,
-      viewsBoth: viewsIg + viewsTt,
+      youtube,
+      viewsBoth: viewsIg + viewsTt + viewsYt,
       viewsIg,
       viewsTt,
+      viewsYt,
     }
   }, [submissions])
 
@@ -117,18 +126,23 @@ export function CreatorVideosPanel({
       ? counts.both
       : platform === 'instagram'
         ? counts.instagram
-        : counts.tiktok
+        : platform === 'youtube'
+          ? counts.youtube
+          : counts.tiktok
   const activeViews =
     platform === 'both'
       ? counts.viewsBoth
       : platform === 'instagram'
         ? counts.viewsIg
-        : counts.viewsTt
+        : platform === 'youtube'
+          ? counts.viewsYt
+          : counts.viewsTt
 
   const tabs: { id: PlatformFilter; label: string; count: number }[] = [
     { id: 'both', label: labels.both, count: counts.both },
     { id: 'instagram', label: labels.instagram, count: counts.instagram },
     { id: 'tiktok', label: labels.tiktok, count: counts.tiktok },
+    { id: 'youtube', label: labels.youtube, count: counts.youtube },
   ]
 
   return (

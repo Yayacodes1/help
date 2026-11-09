@@ -471,6 +471,9 @@ export async function fetchViewsDetailed(
   if (!trimmed) return failViews('empty url', platform, { category: 'invalid_url' })
 
   try {
+    if (platform === 'youtube') {
+      return failViews('youtube views are not tracked', platform, { category: 'unknown' })
+    }
     if (platform === 'instagram') return await fetchInstagramViews(trimmed)
     return await fetchTikTokViews(trimmed)
   } catch (e) {

@@ -21,6 +21,7 @@ export async function hydrateSubmissionViews(
   rows: Array<{ id: number; platform: Platform; url: string }>,
 ) {
   for (const row of rows) {
+    if (row.platform === 'youtube') continue
     try {
       const result = await fetchViewsDetailed(row.platform, row.url)
       if (result.ok) {
@@ -138,6 +139,10 @@ export async function refreshOneSubmission(
     `
     platformsFixed = 1
     row.platform = detected
+  }
+
+  if (platform === 'youtube') {
+    return { outcome: 'skipped', views: row.views, platformsFixed }
   }
 
   const attempt = async (
@@ -270,7 +275,9 @@ export async function refreshViews(
       f.submissionId && Number.isFinite(f.submissionId) ? f.submissionId : null
     const role = f.role === 'creator' || f.role === 'reposter' ? f.role : null
     const platform =
-      f.platform === 'instagram' || f.platform === 'tiktok' ? f.platform : null
+      f.platform === 'instagram' || f.platform === 'tiktok' || f.platform === 'youtube'
+        ? f.platform
+        : null
     const ids = Array.isArray(f.creatorIds) ? f.creatorIds : null
 
     rows = (await sql`

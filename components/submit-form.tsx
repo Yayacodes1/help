@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Camera, Clock, Music2, Send, CheckCircle2, AlertCircle, Link2 } from 'lucide-react'
+import { Camera, Clock, Music2, Send, CheckCircle2, AlertCircle, Link2, Youtube } from 'lucide-react'
 import { submitVideos } from '@/app/actions/creator'
 import { PLATFORM_META } from '@/lib/platforms'
 import type { Platform } from '@/lib/db'
@@ -10,6 +10,7 @@ import type { Platform } from '@/lib/db'
 const PLATFORM_ICON: Record<Platform, typeof Camera> = {
   instagram: Camera,
   tiktok: Music2,
+  youtube: Youtube,
 }
 
 type PlatformField = {
@@ -189,7 +190,7 @@ export function SubmitForm({
       aria-busy={pending}
     >
       {/* Today's goal — one glance */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         {fields.map(({ platform, goal, todayCount }) => {
           const meta = PLATFORM_META[platform]
           const met = goal > 0 && todayCount >= goal
@@ -197,23 +198,25 @@ export function SubmitForm({
           return (
             <div
               key={platform}
-              className={`rounded-xl border px-3 py-2.5 ${
+              className={`min-w-0 rounded-xl border px-2 py-2.5 sm:px-3 ${
                 met
                   ? 'border-emerald-300/60 bg-emerald-50/80 dark:border-emerald-800 dark:bg-emerald-950/40'
                   : 'border-border bg-card'
               }`}
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="flex size-8 items-center justify-center rounded-lg bg-secondary text-foreground">
-                    <Icon className="size-4" />
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-secondary text-foreground">
+                    <Icon className="size-3.5" />
                   </span>
-                  <div>
-                    <p className="text-sm font-semibold text-card-foreground">{meta.ar}</p>
-                    <p className="text-[10px] text-muted-foreground">{labels.dailyGoalLabel}</p>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-card-foreground sm:text-sm">{meta.ar}</p>
+                    {goal > 0 ? (
+                      <p className="text-[10px] text-muted-foreground">{labels.dailyGoalLabel}</p>
+                    ) : null}
                   </div>
                 </div>
-                {goal > 0 ? (
+                {(goal > 0 || todayCount > 0) ? (
                   <span
                     className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
                       met
@@ -222,7 +225,7 @@ export function SubmitForm({
                     }`}
                   >
                     {met ? <CheckCircle2 className="size-3" /> : null}
-                    {todayCount}/{goal}
+                    {goal > 0 ? `${todayCount}/${goal}` : todayCount}
                   </span>
                 ) : null}
               </div>
@@ -293,7 +296,7 @@ export function SubmitForm({
           rows={4}
           onChange={(e) => onLinksChange(e.target.value)}
           dir="ltr"
-          placeholder={'https://www.instagram.com/reel/…\nhttps://www.tiktok.com/@…/video/…'}
+          placeholder={'https://www.instagram.com/reel/…\nhttps://www.youtube.com/watch?v=…\nhttps://www.tiktok.com/@…/video/…'}
           className="mt-3 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
       </div>
