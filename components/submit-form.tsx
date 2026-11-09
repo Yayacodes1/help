@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Camera, Clock, Music2, Send, CheckCircle2, AlertCircle, Link2, Youtube } from 'lucide-react'
+import { Camera, Clock, Music2, Send, CheckCircle2, AlertCircle, Link2, Video } from 'lucide-react'
 import { submitVideos } from '@/app/actions/creator'
 import { PLATFORM_META } from '@/lib/platforms'
 import type { Platform } from '@/lib/db'
@@ -10,7 +10,7 @@ import type { Platform } from '@/lib/db'
 const PLATFORM_ICON: Record<Platform, typeof Camera> = {
   instagram: Camera,
   tiktok: Music2,
-  youtube: Youtube,
+  youtube: Video,
 }
 
 type PlatformField = {

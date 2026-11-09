@@ -1,6 +1,4 @@
-import type { Platform } from '@/lib/db'
-
-export type LoginPlatform = Platform
+export type LoginPlatform = 'instagram' | 'tiktok'
 
 /** Strip @ and whitespace from a social handle. */
 export function normalizeHandle(raw: string | null | undefined): string {
