@@ -137,16 +137,19 @@ export function ProbationStreaksBoard({
 
   async function copyArabic(row: ProbationStreakRow) {
     if (!row.pendingNoticeId || !row.pendingLevel) return
-    const text = buildProbationStreakMessage({
-      id: row.pendingNoticeId,
-      creatorId: row.creatorId,
-      name: row.name,
-      level: row.pendingLevel,
-      unlockedOn: row.missDates[row.pendingLevel - 1] ?? board.today,
-      missDates: row.missDates.slice(-3),
-      messagedAt: null,
-      missCount: row.missCount,
-    })
+    const text = buildProbationStreakMessage(
+      {
+        id: row.pendingNoticeId,
+        creatorId: row.creatorId,
+        name: row.name,
+        level: row.pendingLevel,
+        unlockedOn: row.missDates[row.pendingLevel - 1] ?? board.today,
+        missDates: row.missDates.slice(-3),
+        messagedAt: null,
+        missCount: row.missCount,
+      },
+      { today: board.today },
+    )
     try {
       await navigator.clipboard.writeText(text)
       setCopiedId(row.pendingNoticeId)

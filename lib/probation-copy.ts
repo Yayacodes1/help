@@ -100,11 +100,34 @@ export function streakBucketFromMisses(missCount: number): 0 | ProbationLevel {
   return 0
 }
 
+/** Calendar day in Riyadh (YYYY-MM-DD). */
+function riyadhTodayYmd(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' })
+}
+
+/** Days left in that month including today (1 on the last day). */
+export function daysLeftInMonth(ymd: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
+  if (!m) return 0
+  const y = Number(m[1])
+  const month = Number(m[2])
+  const day = Number(m[3])
+  const lastDay = new Date(Date.UTC(y, month, 0)).getUTCDate()
+  return Math.max(0, lastDay - day + 1)
+}
+
 const LEVELS_EXPLAIN = [
-  `نظام الستريكات عندنا (3 أيام):`,
-  `١) الستريك الأول — تنبيه لطيف بعد يوم غياب واحد.`,
-  `٢) الستريك الثاني — تنبيه ثاني بعد يومين غياب متتاليين.`,
-  `٣) الستريك الأخير — بعد 3 أيام غياب متتالية نتوقف عن العمل معك.`,
+  `نظام الستريكات عندنا (غياب متتالٍ — 3 أيام):`,
+  `١) الستريك الأول — بعد يوم غياب واحد: تنبيه شفهي لطيف.`,
+  `٢) الستريك الثاني — بعد يومين غياب متتاليين: تنبيه ثاني.`,
+  `٣) الستريك الأخير — بعد 3 أيام غياب متتالية: نتوقف عن العمل معك.`,
+].join('\n')
+
+const STREAK_RESET_EXPLAIN = [
+  `كيف ينعاد ضبط الستريك (Reset):`,
+  `• الستريك يعدّ أيام الغياب المتتالية فقط.`,
+  `• إذا نشرت في يوم نشرك ورفعت الروابط من صفحة الرفع في نفس اليوم، ينكسر التتابع ويرجع الستريك من الصفر.`,
+  `• النشر بدون رفع الروابط على الموقع ما يحسب — الستريك ما ينعاد ضبطه.`,
 ].join('\n')
 
 const HOW_TO_STAY_CLEAR = [
@@ -117,11 +140,46 @@ const HOW_TO_STAY_CLEAR = [
 const HELP_LINE =
   `إذا عندك أي سؤال، أو تحس إنك تحتاج مساعدة أو دعم منّا، تواصل معنا ونساعدك بكل سرور ❤️`
 
-export function buildProbationStreakMessage(notice: ProbationNotice): string {
+function monthDaysLeftLine(todayYmd: string): string {
+  const left = daysLeftInMonth(todayYmd)
+  if (left <= 0) return `انتهى هذا الشهر — ابدأ الشهر الجديد بنشر منتظم.`
+  if (left === 1) return `باقي يوم واحد في هذا الشهر — استغليه عشان ما يتصاعد الستريك.`
+  return `باقي ${left} يوم في هذا الشهر — هذي فرصتك تثبت التزامك وما توصل للستريك الثاني أو الأخير.`
+}
+
+function nextStreakPressureLine(level: ProbationLevel): string {
+  if (level === 1) {
+    return [
+      `وين أنت الحين:`,
+      `• عندك الستريك الأول.`,
+      `• إذا غبت يوم نشر ثاني متتالي → يوصلك الستريك الثاني.`,
+      `• إذا غبت يومين نشر متتاليين بعد كذا → الستريك الأخير ونتوقف عن العمل معك.`,
+    ].join('\n')
+  }
+  if (level === 2) {
+    return [
+      `وين أنت الحين:`,
+      `• عندك الستريك الثاني.`,
+      `• باقي يوم غياب متتالٍ واحد فقط → الستريك الأخير ونتوقف عن العمل معك.`,
+    ].join('\n')
+  }
+  return [
+    `وين أنت الحين:`,
+    `• وصلت الستريك الأخير بعد 3 أيام غياب متتالية.`,
+  ].join('\n')
+}
+
+export function buildProbationStreakMessage(
+  notice: ProbationNotice,
+  opts?: { today?: string },
+): string {
+  const today = opts?.today && /^\d{4}-\d{2}-\d{2}$/.test(opts.today) ? opts.today : riyadhTodayYmd()
   const days =
     notice.missDates.length > 0
       ? notice.missDates.map((d) => d.slice(5)).join(' و ')
       : notice.unlockedOn.slice(5)
+  const monthLine = monthDaysLeftLine(today)
+  const pressure = nextStreakPressureLine(notice.level)
 
   if (notice.level === 1) {
     return [
@@ -130,11 +188,17 @@ export function buildProbationStreakMessage(notice: ProbationNotice): string {
       `نرسل لك هالرسالة بلطف — هذا الستريك الأول (First streak): تنبيه شفهي بعد يوم واحد بدون نشر.`,
       days ? `يوم الغياب: ${days}.` : '',
       ``,
+      pressure,
+      ``,
+      monthLine,
+      ``,
       `نتمنى ما يتكرر، ونثق فيك إنك تكمّل معانا بشكل منتظم ✨`,
       ``,
       HOW_TO_STAY_CLEAR,
       ``,
       LEVELS_EXPLAIN,
+      ``,
+      STREAK_RESET_EXPLAIN,
       ``,
       `انشر اليوم وارفع الروابط من صفحة الرفع — ومنها تتابع التزامك والستريكات.`,
       ``,
@@ -150,12 +214,18 @@ export function buildProbationStreakMessage(notice: ProbationNotice): string {
       `هذا الستريك الثاني (Second streak) — تنبيه شفهي بعد يومين غياب متتاليين.`,
       days ? `أيام الغياب: ${days}.` : '',
       ``,
+      pressure,
+      ``,
+      monthLine,
+      ``,
       `ما زلنا معاك، ونبغى نساعدك ترجع على المسار قبل ما نصل للستريك الأخير.`,
       `رجاءً تأكد إن هذا ما يتكرر.`,
       ``,
       HOW_TO_STAY_CLEAR,
       ``,
       LEVELS_EXPLAIN,
+      ``,
+      STREAK_RESET_EXPLAIN,
       ``,
       `انشر اليوم وارفع الروابط من صفحة الرفع حتى لا يصل الستريك الأخير غداً.`,
       ``,
@@ -170,9 +240,15 @@ export function buildProbationStreakMessage(notice: ProbationNotice): string {
     `هذا الستريك الأخير (Final streak) — بعد 3 أيام غياب متتالية.`,
     days ? `أيام الغياب: ${days}.` : '',
     ``,
+    pressure,
+    ``,
+    monthLine,
+    ``,
     `للأسف، بسبب تكرار عدم النشر حسب المطلوب، سنتوقف عن العمل معك اعتباراً من اليوم.`,
     ``,
     LEVELS_EXPLAIN,
+    ``,
+    STREAK_RESET_EXPLAIN,
     ``,
     `نتمنى لك كل التوفيق، وإذا احتجت توضيحاً تواصل معنا.`,
   ]
