@@ -4,7 +4,6 @@ import { useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
-  clearAllProbationCreators,
   forgiveAllCreatorStreaksForDayAction,
   forgiveCreatorStreakDayAction,
   markProbationNoticeMessagedAction,
@@ -26,8 +25,6 @@ type Labels = {
   person: string
   project: string
   empty: string
-  clearAll: string
-  clearAllConfirm: string
   clearDay: string
   clearDayConfirm: string
   clearDayChip: string
@@ -261,44 +258,23 @@ export function ProbationStreaksBoard({
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => {
-              const dayLabel = shortDate(board.selectedDay)
-              if (
-                !window.confirm(
-                  labels.clearDayConfirm.replace(/\{day\}/g, dayLabel),
-                )
-              ) {
-                return
-              }
-              startTransition(() => {
-                void forgiveAllCreatorStreaksForDayAction(
-                  board.selectedDay,
-                  projectId ?? null,
-                ).then(() => router.refresh())
-              })
-            }}
-            className="h-9 rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 text-xs font-semibold text-[#9a0d18] hover:bg-rose-500/10 disabled:opacity-60"
-          >
-            {labels.clearDay.replace(/\{day\}/g, shortDate(board.selectedDay))}
-          </button>
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => {
-              if (!window.confirm(labels.clearAllConfirm)) return
-              startTransition(() => {
-                void clearAllProbationCreators(projectId ?? null).then(() => router.refresh())
-              })
-            }}
-            className="h-9 rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
-          >
-            {labels.clearAll}
-          </button>
-        </div>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            const dayLabel = shortDate(board.selectedDay)
+            if (!window.confirm(labels.clearDayConfirm.replace(/\{day\}/g, dayLabel))) return
+            startTransition(() => {
+              void forgiveAllCreatorStreaksForDayAction(
+                board.selectedDay,
+                projectId ?? null,
+              ).then(() => router.refresh())
+            })
+          }}
+          className="h-9 rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 text-xs font-semibold text-[#9a0d18] hover:bg-rose-500/10 disabled:opacity-60"
+        >
+          {labels.clearDay.replace(/\{day\}/g, shortDate(board.selectedDay))}
+        </button>
       </div>
 
       {rows.length === 0 ? (

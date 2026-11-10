@@ -2126,8 +2126,6 @@ export default async function AdminPage({
                   person: t('streaksPerson'),
                   project: t('streaksProject'),
                   empty: t('streaksEmpty'),
-                  clearAll: t('streaksClearAll'),
-                  clearAllConfirm: t('streaksClearAllConfirm'),
                   clearDay: t('streaksClearDay'),
                   clearDayConfirm: t('streaksClearDayConfirm'),
                   clearDayChip: t('streaksClearDayChip'),

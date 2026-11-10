@@ -761,7 +761,7 @@ export const messages = {
     fitnessLoadError: 'Could not load creator fitness. Refresh and try again.',
     streaksTitle: 'Creator streaks',
     streaksHint:
-      'Pick a day from Nov 7. See who posted, who missed, and who’s on a streak (1 / 2 / 3). Tap a miss-day chip to clear that day only. “Clear this day for everyone” takes that day off every streak. Reset clears one person’s whole streak.',
+      'Pick a day from Nov 7. See who posted, who missed, and who’s on a streak (1 / 2 / 3). “Reset this day” clears that day only for everyone — they leave Didn’t post. Tap a miss-day chip to clear one day for one person. Row Reset clears one person’s whole streak.',
     streaksLoadError: 'Could not load streaks. Refresh and try again.',
     streaksOnProbation: 'On streaks',
     streaksApproaching: 'Approaching',
@@ -779,9 +779,9 @@ export const messages = {
     streaksMarkSent: 'Mark sent',
     streaksClearAll: 'Reset all streaks',
     streaksClearAllConfirm: 'Reset streaks for everyone listed here (from Nov 7)?',
-    streaksClearDay: 'Clear {day} for everyone',
+    streaksClearDay: 'Reset {day}',
     streaksClearDayConfirm:
-      'Take {day} off every streak here? Other miss days stay. Streak 1 people who only missed that day go clean.',
+      'Reset {day} only for everyone? They leave Didn’t post for that day. Other miss days stay.',
     streaksClearDayChip: 'Clear {day} for {name}?',
     streaksReset: 'Reset',
     streaksResetConfirm: 'Reset streak for {name}?',
@@ -1617,7 +1617,7 @@ export const messages = {
     fitnessLoadError: 'تعذّر تحميل قوة الصنّاع. حدّث الصفحة وحاول مرة أخرى.',
     streaksTitle: 'ستريكات الصنّاع',
     streaksHint:
-      'اختر يوماً من ٧ نوفمبر. شوف من نشر، من غاب، ومن على ستريك (١ / ٢ / ٣). اضغط شارة يوم غياب لمسحه فقط. «مسح هذا اليوم للجميع» يشيل هذا اليوم من كل ستريك. إعادة الضبط تمسح ستريك الشخص كامل.',
+      'اختر يوماً من ٧ نوفمبر. شوف من نشر، من غاب، ومن على ستريك (١ / ٢ / ٣). «إعادة ضبط هذا اليوم» تمسح هذا اليوم فقط للجميع — يطلعون من ما نشروا. اضغط شارة يوم لمسح يوم واحد لشخص. إعادة ضبط الصف تمسح ستريك الشخص كامل.',
     streaksLoadError: 'تعذّر تحميل الستريكات. حدّث الصفحة وحاول مرة أخرى.',
     streaksOnProbation: 'على ستريك',
     streaksApproaching: 'يقترب',
@@ -1635,9 +1635,9 @@ export const messages = {
     streaksMarkSent: 'تم الإرسال',
     streaksClearAll: 'إعادة ضبط الكل',
     streaksClearAllConfirm: 'إعادة ضبط الستريكات للجميع هنا (من ٧ نوفمبر)؟',
-    streaksClearDay: 'مسح {day} للجميع',
+    streaksClearDay: 'إعادة ضبط {day}',
     streaksClearDayConfirm:
-      'نشيل {day} من كل ستريك هنا؟ باقي أيام الغياب تبقى. اللي ستريكهم ١ بس بسبب هذا اليوم يرجعون نظيف.',
+      'نعيد ضبط {day} فقط للجميع؟ يطلعون من «ما نشروا» لهذا اليوم. باقي أيام الغياب تبقى.',
     streaksClearDayChip: 'نمسح {day} من ستريك {name}؟',
     streaksReset: 'إعادة ضبط',
     streaksResetConfirm: 'إعادة ضبط ستريك {name}؟',

@@ -297,7 +297,8 @@ export async function forgiveCreatorStreakDay(
 
 /**
  * Take the selected day off everyone’s streak (optional project filter).
- * Only that day — other miss days stay. Streak levels recount after.
+ * Only that day — other miss days stay.
+ * Also covers “clean” leftovers who didn’t post that day but never got a strike row yet.
  */
 export async function forgiveAllCreatorStreaksForDay(
   day: string,
@@ -309,24 +310,55 @@ export async function forgiveAllCreatorStreaksForDay(
   const pid = projectId != null && Number.isFinite(projectId) ? projectId : null
   const reason = `Forgiven by admin (${day})`
 
-  const updated = (await sql`
-    UPDATE creator_strikes cs
-    SET status = 'waived',
-        reason = ${reason}
+  // Everyone who would show as “didn’t post” that day — not only people with an active strike.
+  const targets = (await sql`
+    SELECT
+      c.id AS creator_id,
+      (
+        SELECT ct.id
+        FROM contracts ct
+        WHERE ct.creator_id = c.id
+          AND ct.start_date <= ${day}::date
+          AND (ct.end_date IS NULL OR ct.end_date >= ${day}::date)
+        ORDER BY ct.start_date DESC, ct.id DESC
+        LIMIT 1
+      ) AS contract_id
     FROM creators c
-    WHERE cs.creator_id = c.id
-      AND c.role = 'creator'
+    WHERE c.role = 'creator'
       AND c.paused_at IS NULL
       AND (${pid}::int IS NULL OR c.project_id = ${pid})
-      AND cs.strike_date = ${day}::date
-      AND cs.source = 'auto'
-      AND cs.status = 'active'
-    RETURNING cs.creator_id
-  `) as { creator_id: number }[]
+      AND NOT EXISTS (
+        SELECT 1 FROM submissions s
+        WHERE s.creator_id = c.id AND s.video_date = ${day}::date
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM schedule_breaks b
+        WHERE b.creator_id = c.id
+          AND b.start_date <= ${day}::date
+          AND b.end_date >= ${day}::date
+      )
+  `) as Array<{ creator_id: number; contract_id: number | null }>
+
+  for (const row of targets) {
+    await sql`
+      INSERT INTO creator_strikes (creator_id, contract_id, strike_date, source, status, reason)
+      VALUES (
+        ${row.creator_id},
+        ${row.contract_id},
+        ${day}::date,
+        'auto',
+        'waived',
+        ${reason}
+      )
+      ON CONFLICT (creator_id, strike_date) DO UPDATE
+      SET status = 'waived',
+          reason = EXCLUDED.reason
+    `
+  }
 
   const { getOperationalToday } = await import('@/lib/queries')
   await syncProbationMisses({ today: await getOperationalToday() })
-  return { cleared: new Set(updated.map((r) => r.creator_id)).size }
+  return { cleared: targets.length }
 }
 
 /** Reset streaks for every active creator (optional project filter). */
