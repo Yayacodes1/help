@@ -242,8 +242,15 @@ export async function syncProbationMisses(opts: {
   return { strikesAdded, noticesUnlocked }
 }
 
-/** Wipe streak progress for one creator (strikes + notices since the epoch). */
-export async function resetCreatorStreak(creatorId: number): Promise<{ ok: boolean }> {
+/**
+ * Wipe streak progress for one creator (strikes + notices since the epoch).
+ * Pass `forgiveDay` (the board’s selected day) so they leave Didn’t post for that day
+ * instead of sync putting the miss straight back.
+ */
+export async function resetCreatorStreak(
+  creatorId: number,
+  opts?: { forgiveDay?: string | null },
+): Promise<{ ok: boolean }> {
   const id = Math.floor(Number(creatorId))
   if (!(id > 0)) return { ok: false }
   await sql`
@@ -253,6 +260,30 @@ export async function resetCreatorStreak(creatorId: number): Promise<{ ok: boole
       AND source = 'auto'
   `
   await sql`DELETE FROM probation_streak_notices WHERE creator_id = ${id}`
+
+  const forgiveDay = opts?.forgiveDay?.trim() ?? ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(forgiveDay) && forgiveDay >= STREAK_EPOCH_START) {
+    const contracts = (await sql`
+      SELECT id
+      FROM contracts
+      WHERE creator_id = ${id}
+        AND start_date <= ${forgiveDay}::date
+        AND (end_date IS NULL OR end_date >= ${forgiveDay}::date)
+      ORDER BY start_date DESC, id DESC
+      LIMIT 1
+    `) as { id: number }[]
+    const reason = `Forgiven by admin (${forgiveDay})`
+    await sql`
+      INSERT INTO creator_strikes (creator_id, contract_id, strike_date, source, status, reason)
+      VALUES (${id}, ${contracts[0]?.id ?? null}, ${forgiveDay}::date, 'auto', 'waived', ${reason})
+      ON CONFLICT (creator_id, strike_date) DO UPDATE
+      SET status = 'waived',
+          reason = EXCLUDED.reason
+    `
+  }
+
+  const { getOperationalToday } = await import('@/lib/queries')
+  await syncProbationMisses({ today: await getOperationalToday(), creatorId: id })
   return { ok: true }
 }
 

@@ -392,14 +392,27 @@ export function ProbationStreaksBoard({
                       </button>
                     </>
                   ) : null}
-                  {(row.missCount > 0 || row.allMissDates.length > 0) && (
+                  {(row.missCount > 0 ||
+                    row.allMissDates.length > 0 ||
+                    row.dayStatus === 'missed') && (
                     <button
                       type="button"
                       disabled={pending}
                       onClick={() => {
-                        if (!window.confirm(labels.resetConfirm.replace('{name}', row.name))) return
+                        if (
+                          !window.confirm(
+                            labels.resetConfirm
+                              .replace(/\{name\}/g, row.name)
+                              .replace(/\{day\}/g, shortDate(board.selectedDay)),
+                          )
+                        ) {
+                          return
+                        }
                         startTransition(() => {
-                          void resetCreatorStreakAction(row.creatorId).then(() => router.refresh())
+                          void resetCreatorStreakAction(
+                            row.creatorId,
+                            board.selectedDay,
+                          ).then(() => router.refresh())
                         })
                       }}
                       className="h-8 rounded-lg border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-accent disabled:opacity-60"

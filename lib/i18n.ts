@@ -784,7 +784,8 @@ export const messages = {
       'Reset {day} only for everyone? They leave Didn’t post for that day. Other miss days stay.',
     streaksClearDayChip: 'Clear {day} for {name}?',
     streaksReset: 'Reset',
-    streaksResetConfirm: 'Reset streak for {name}?',
+    streaksResetConfirm:
+      'Reset streak for {name} and clear them from {day}? They leave Didn’t post for that day.',
     streaksMissedToday: 'Didn’t post today',
     streaksMissedTodayEmpty: 'Everyone who should post today already did.',
     streaksPickDay: 'Day',
@@ -1640,7 +1641,8 @@ export const messages = {
       'نعيد ضبط {day} فقط للجميع؟ يطلعون من «ما نشروا» لهذا اليوم. باقي أيام الغياب تبقى.',
     streaksClearDayChip: 'نمسح {day} من ستريك {name}؟',
     streaksReset: 'إعادة ضبط',
-    streaksResetConfirm: 'إعادة ضبط ستريك {name}؟',
+    streaksResetConfirm:
+      'إعادة ضبط ستريك {name} ومسحهم من {day}؟ يطلعون من «ما نشروا» لهذا اليوم.',
     streaksMissedToday: 'ما نشروا اليوم',
     streaksMissedTodayEmpty: 'كل من المفروض ينشر اليوم نشر.',
     streaksPickDay: 'اليوم',

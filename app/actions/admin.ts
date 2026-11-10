@@ -663,6 +663,124 @@ export async function startNewContract(creatorId: number, formData: FormData) {
 }
 
 /**
+ * Copy terms from a finished/dated contract into the next equal period
+ * (biweekly → next 2 weeks, monthly → next month, custom → same day span).
+ */
+export async function duplicateContractForNextPeriod(
+  contractId: number,
+  creatorId: number,
+) {
+  await requireAdmin()
+  const { nextContractPeriodDates } = await import('@/lib/contract-next-period')
+
+  const rows = (await sql`
+    SELECT
+      id, name,
+      start_date::text AS start_date,
+      end_date::text AS end_date,
+      goal_instagram, goal_tiktok, target_instagram, target_tiktok,
+      platforms,
+      base_amount::float AS base_amount,
+      base_pay_cadence, pay_timing,
+      commission_amount::float AS commission_amount,
+      count_mode, views_threshold,
+      view_commission_amount::float AS view_commission_amount,
+      commission_reels, max_strikes,
+      project_targets,
+      schedule_type, schedule_every_days, schedule_weekdays, schedule_per_week
+    FROM contracts
+    WHERE id = ${contractId} AND creator_id = ${creatorId}
+    LIMIT 1
+  `) as {
+    id: number
+    name: string
+    start_date: string
+    end_date: string | null
+    goal_instagram: number
+    goal_tiktok: number
+    target_instagram: number
+    target_tiktok: number
+    platforms: string
+    base_amount: number
+    base_pay_cadence: string
+    pay_timing: string | null
+    commission_amount: number | null
+    count_mode: string | null
+    views_threshold: number | null
+    view_commission_amount: number | null
+    commission_reels: number | null
+    max_strikes: number
+    project_targets: unknown
+    schedule_type: string | null
+    schedule_every_days: number | null
+    schedule_weekdays: string | null
+    schedule_per_week: number | null
+  }[]
+
+  const source = rows[0]
+  if (!source?.end_date) return
+
+  const next = nextContractPeriodDates(source.start_date, source.end_date)
+  const start = next.startDate
+  const end = next.endDate
+  const cadence = normalizeBasePayCadence(source.base_pay_cadence)
+  const payTiming =
+    cadence === 'monthly'
+      ? 'end'
+      : source.pay_timing === 'upfront' ||
+          source.pay_timing === 'end' ||
+          source.pay_timing === 'fifteen'
+        ? source.pay_timing
+        : 'fifteen'
+  const projectTargetsJson =
+    typeof source.project_targets === 'string'
+      ? source.project_targets
+      : JSON.stringify(source.project_targets ?? {})
+
+  const covering = (await sql`
+    SELECT id, start_date::text AS start_date
+    FROM contracts
+    WHERE creator_id = ${creatorId}
+      AND start_date <= ${start}::date
+      AND (end_date IS NULL OR end_date >= ${start}::date)
+    ORDER BY start_date DESC, id DESC
+  `) as { id: number; start_date: string }[]
+
+  for (const row of covering) {
+    const prevEnd =
+      start <= row.start_date ? row.start_date : addDays(start, -1)
+    await sql`UPDATE contracts SET end_date = ${prevEnd} WHERE id = ${row.id}`
+  }
+
+  await sql`
+    INSERT INTO contracts (
+      creator_id, name, start_date, end_date,
+      goal_instagram, goal_tiktok, target_instagram, target_tiktok,
+      platforms, base_amount, base_pay_cadence, pay_timing, commission_amount,
+      count_mode, views_threshold, view_commission_amount, commission_reels,
+      max_strikes, project_targets,
+      schedule_type, schedule_every_days, schedule_weekdays, schedule_per_week
+    )
+    VALUES (
+      ${creatorId}, ${source.name}, ${start}, ${end},
+      ${source.goal_instagram}, ${source.goal_tiktok},
+      ${source.target_instagram}, ${source.target_tiktok},
+      ${normalizePlatforms(source.platforms)}, ${source.base_amount},
+      ${cadence}, ${payTiming}, ${source.commission_amount},
+      ${source.count_mode}, ${source.views_threshold},
+      ${source.view_commission_amount}, ${source.commission_reels},
+      ${source.max_strikes ?? 3}, ${projectTargetsJson}::jsonb,
+      ${source.schedule_type ?? 'daily'}, ${source.schedule_every_days ?? 2},
+      ${source.schedule_weekdays ?? ''}, ${source.schedule_per_week ?? 0}
+    )
+  `
+
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  revalidatePath('/submit')
+}
+
+/**
  * On ended contracts, money you type (base + commission) is what you paid her.
  * Create/top-up a payment so Total paid and Pay due update automatically.
  */
@@ -2246,12 +2364,15 @@ export async function clearAllProbationCreators(projectId?: number | null) {
   return result
 }
 
-/** Reset one creator’s streak (miss days + notices from Nov 7). */
-export async function resetCreatorStreakAction(creatorId: number) {
+/** Reset one creator’s streak; pass forgiveDay so they leave that day’s Didn’t post list. */
+export async function resetCreatorStreakAction(
+  creatorId: number,
+  forgiveDay?: string | null,
+) {
   await requireAdmin()
   await ensureCreatorTrackingColumns()
   const { resetCreatorStreak } = await import('@/lib/probation')
-  const result = await resetCreatorStreak(creatorId)
+  const result = await resetCreatorStreak(creatorId, { forgiveDay })
   revalidatePath('/admin')
   revalidatePath('/submit')
   revalidatePath(`/admin/creators/${creatorId}`)
