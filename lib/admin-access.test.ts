@@ -11,26 +11,26 @@ import {
   canSendUrgentList,
 } from './admin-access.ts'
 
-test('Yahya, Ahmed, and Sultan see Ahmed’s wallet', () => {
+test('Yahya and Ahmed see Ahmed’s wallet; Lula and Sultan do not', () => {
   assert.equal(canSeeAhmedWallet('yahya'), true)
   assert.equal(canSeeAhmedWallet('ahmed'), true)
-  assert.equal(canSeeAhmedWallet('sultan'), true)
+  assert.equal(canSeeAhmedWallet('sultan'), false)
   assert.equal(canSeeAhmedWallet('lula'), false)
   assert.equal(canSeeAhmedWallet(null), false)
 })
 
-test('Yahya, Ahmed, and Sultan see Yahya’s expenses', () => {
+test('Yahya and Ahmed see Yahya’s expenses; Lula and Sultan do not', () => {
   assert.equal(canSeeYahyaExpenses('yahya'), true)
   assert.equal(canSeeYahyaExpenses('ahmed'), true)
-  assert.equal(canSeeYahyaExpenses('sultan'), true)
+  assert.equal(canSeeYahyaExpenses('sultan'), false)
   assert.equal(canSeeYahyaExpenses('lula'), false)
   assert.equal(canSeeYahyaExpenses(null), false)
 })
 
-test('Yahya, Ahmed, and Sultan can move Yahya expense people', () => {
+test('Yahya and Ahmed can move Yahya expense people', () => {
   assert.equal(canMoveYahyaExpenses('yahya'), true)
   assert.equal(canMoveYahyaExpenses('ahmed'), true)
-  assert.equal(canMoveYahyaExpenses('sultan'), true)
+  assert.equal(canMoveYahyaExpenses('sultan'), false)
   assert.equal(canMoveYahyaExpenses('lula'), false)
   assert.equal(canMoveYahyaExpenses(null), false)
 })
@@ -47,11 +47,12 @@ test('Ahmed, Lula, and Sultan see/add urgent list; Yahya sees only', () => {
   assert.equal(canSendUrgentList('yahya'), false)
 })
 
-test('Lula sees people under her, not the CEO or the COO; Sultan sees all', () => {
+test('Lula and Sultan see people under them, not the CEO or the COO', () => {
   assert.equal(canSeeStructureTier('yahya', 'ceo'), true)
   assert.equal(canSeeStructureTier('ahmed', 'coo'), true)
-  assert.equal(canSeeStructureTier('sultan', 'ceo'), true)
-  assert.equal(canSeeStructureTier('sultan', 'coo'), true)
+  assert.equal(canSeeStructureTier('sultan', 'ceo'), false)
+  assert.equal(canSeeStructureTier('sultan', 'coo'), false)
+  assert.equal(canSeeStructureTier('sultan', 'leader'), true)
   assert.equal(canSeeStructureTier('lula', 'ceo'), false)
   assert.equal(canSeeStructureTier('lula', 'coo'), false)
   assert.equal(canSeeStructureTier('lula', 'deputy_coo'), true)
