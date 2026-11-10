@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   clearAllProbationCreators,
+  forgiveAllCreatorStreaksForDayAction,
+  forgiveCreatorStreakDayAction,
   markProbationNoticeMessagedAction,
   resetCreatorStreakAction,
 } from '@/app/actions/admin'
@@ -26,6 +28,9 @@ type Labels = {
   empty: string
   clearAll: string
   clearAllConfirm: string
+  clearDay: string
+  clearDayConfirm: string
+  clearDayChip: string
   reset: string
   resetConfirm: string
   copyArabic: string
@@ -256,19 +261,44 @@ export function ProbationStreaksBoard({
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => {
-            if (!window.confirm(labels.clearAllConfirm)) return
-            startTransition(() => {
-              void clearAllProbationCreators(projectId ?? null).then(() => router.refresh())
-            })
-          }}
-          className="h-9 rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
-        >
-          {labels.clearAll}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => {
+              const dayLabel = shortDate(board.selectedDay)
+              if (
+                !window.confirm(
+                  labels.clearDayConfirm.replace(/\{day\}/g, dayLabel),
+                )
+              ) {
+                return
+              }
+              startTransition(() => {
+                void forgiveAllCreatorStreaksForDayAction(
+                  board.selectedDay,
+                  projectId ?? null,
+                ).then(() => router.refresh())
+              })
+            }}
+            className="h-9 rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 text-xs font-semibold text-[#9a0d18] hover:bg-rose-500/10 disabled:opacity-60"
+          >
+            {labels.clearDay.replace(/\{day\}/g, shortDate(board.selectedDay))}
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => {
+              if (!window.confirm(labels.clearAllConfirm)) return
+              startTransition(() => {
+                void clearAllProbationCreators(projectId ?? null).then(() => router.refresh())
+              })
+            }}
+            className="h-9 rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
+          >
+            {labels.clearAll}
+          </button>
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -321,16 +351,37 @@ export function ProbationStreaksBoard({
                         {labels.missDays}
                       </span>
                       {row.allMissDates.map((d) => (
-                        <span
+                        <button
                           key={d}
-                          className={`rounded border px-1.5 py-0.5 text-[10px] tabular-nums ${
+                          type="button"
+                          disabled={pending}
+                          title={labels.clearDayChip
+                            .replace(/\{day\}/g, shortDate(d))
+                            .replace(/\{name\}/g, row.name)}
+                          onClick={() => {
+                            if (
+                              !window.confirm(
+                                labels.clearDayChip
+                                  .replace(/\{day\}/g, shortDate(d))
+                                  .replace(/\{name\}/g, row.name),
+                              )
+                            ) {
+                              return
+                            }
+                            startTransition(() => {
+                              void forgiveCreatorStreakDayAction(row.creatorId, d).then(() =>
+                                router.refresh(),
+                              )
+                            })
+                          }}
+                          className={`rounded border px-1.5 py-0.5 text-[10px] tabular-nums transition-colors hover:border-rose-500 hover:bg-rose-500/20 disabled:opacity-60 ${
                             d === board.selectedDay
                               ? 'border-rose-500/50 bg-rose-500/15 font-semibold text-[#9a0d18]'
                               : 'border-border bg-muted/40 text-muted-foreground'
                           }`}
                         >
                           {shortDate(d)}
-                        </span>
+                        </button>
                       ))}
                     </div>
                   ) : null}

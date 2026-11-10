@@ -256,6 +256,79 @@ export async function resetCreatorStreak(creatorId: number): Promise<{ ok: boole
   return { ok: true }
 }
 
+/**
+ * Take one miss day off a creator’s streak only.
+ * Keeps a waived strike row so sync won’t put that day back as a miss.
+ */
+export async function forgiveCreatorStreakDay(
+  creatorId: number,
+  day: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const id = Math.floor(Number(creatorId))
+  if (!(id > 0)) return { ok: false, error: 'Invalid creator' }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < STREAK_EPOCH_START) {
+    return { ok: false, error: 'Invalid day' }
+  }
+
+  const contracts = (await sql`
+    SELECT id
+    FROM contracts
+    WHERE creator_id = ${id}
+      AND start_date <= ${day}::date
+      AND (end_date IS NULL OR end_date >= ${day}::date)
+    ORDER BY start_date DESC, id DESC
+    LIMIT 1
+  `) as { id: number }[]
+  const contractId = contracts[0]?.id ?? null
+  const reason = `Forgiven by admin (${day})`
+
+  await sql`
+    INSERT INTO creator_strikes (creator_id, contract_id, strike_date, source, status, reason)
+    VALUES (${id}, ${contractId}, ${day}::date, 'auto', 'waived', ${reason})
+    ON CONFLICT (creator_id, strike_date) DO UPDATE
+    SET status = 'waived',
+        reason = EXCLUDED.reason
+  `
+
+  const { getOperationalToday } = await import('@/lib/queries')
+  await syncProbationMisses({ today: await getOperationalToday(), creatorId: id })
+  return { ok: true }
+}
+
+/**
+ * Take the selected day off everyone’s streak (optional project filter).
+ * Only that day — other miss days stay. Streak levels recount after.
+ */
+export async function forgiveAllCreatorStreaksForDay(
+  day: string,
+  projectId?: number | null,
+): Promise<{ cleared: number; error?: string }> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < STREAK_EPOCH_START) {
+    return { cleared: 0, error: 'Invalid day' }
+  }
+  const pid = projectId != null && Number.isFinite(projectId) ? projectId : null
+  const reason = `Forgiven by admin (${day})`
+
+  const updated = (await sql`
+    UPDATE creator_strikes cs
+    SET status = 'waived',
+        reason = ${reason}
+    FROM creators c
+    WHERE cs.creator_id = c.id
+      AND c.role = 'creator'
+      AND c.paused_at IS NULL
+      AND (${pid}::int IS NULL OR c.project_id = ${pid})
+      AND cs.strike_date = ${day}::date
+      AND cs.source = 'auto'
+      AND cs.status = 'active'
+    RETURNING cs.creator_id
+  `) as { creator_id: number }[]
+
+  const { getOperationalToday } = await import('@/lib/queries')
+  await syncProbationMisses({ today: await getOperationalToday() })
+  return { cleared: new Set(updated.map((r) => r.creator_id)).size }
+}
+
 /** Reset streaks for every active creator (optional project filter). */
 export async function resetAllCreatorStreaks(projectId?: number | null): Promise<{ cleared: number }> {
   const pid = projectId != null && Number.isFinite(projectId) ? projectId : null

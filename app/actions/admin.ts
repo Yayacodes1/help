@@ -2258,6 +2258,32 @@ export async function resetCreatorStreakAction(creatorId: number) {
   return result
 }
 
+/** Take one miss day off one creator’s streak only. */
+export async function forgiveCreatorStreakDayAction(creatorId: number, day: string) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const { forgiveCreatorStreakDay } = await import('@/lib/probation')
+  const result = await forgiveCreatorStreakDay(creatorId, day)
+  revalidatePath('/admin')
+  revalidatePath('/submit')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  return result
+}
+
+/** Take the selected day off everyone’s streak (optional project). */
+export async function forgiveAllCreatorStreaksForDayAction(
+  day: string,
+  projectId?: number | null,
+) {
+  await requireAdmin()
+  await ensureCreatorTrackingColumns()
+  const { forgiveAllCreatorStreaksForDay } = await import('@/lib/probation')
+  const result = await forgiveAllCreatorStreaksForDay(day, projectId)
+  revalidatePath('/admin')
+  revalidatePath('/submit')
+  return result
+}
+
 /** Person period: mark (or clear) “Talk to them today” for a creator. */
 export async function setAdminTalkToday(formData: FormData) {
   await requireAdmin()

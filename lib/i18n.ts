@@ -761,7 +761,7 @@ export const messages = {
     fitnessLoadError: 'Could not load creator fitness. Refresh and try again.',
     streaksTitle: 'Creator streaks',
     streaksHint:
-      'Pick a day from Nov 7. See who posted, who missed, and who’s on a streak (1 / 2 / 3). Miss chips show every day they skipped. Telegram /streaks for Arabic copy. Reset clears their streak.',
+      'Pick a day from Nov 7. See who posted, who missed, and who’s on a streak (1 / 2 / 3). Tap a miss-day chip to clear that day only. “Clear this day for everyone” takes that day off every streak. Reset clears one person’s whole streak.',
     streaksLoadError: 'Could not load streaks. Refresh and try again.',
     streaksOnProbation: 'On streaks',
     streaksApproaching: 'Approaching',
@@ -779,6 +779,10 @@ export const messages = {
     streaksMarkSent: 'Mark sent',
     streaksClearAll: 'Reset all streaks',
     streaksClearAllConfirm: 'Reset streaks for everyone listed here (from Nov 7)?',
+    streaksClearDay: 'Clear {day} for everyone',
+    streaksClearDayConfirm:
+      'Take {day} off every streak here? Other miss days stay. Streak 1 people who only missed that day go clean.',
+    streaksClearDayChip: 'Clear {day} for {name}?',
     streaksReset: 'Reset',
     streaksResetConfirm: 'Reset streak for {name}?',
     streaksMissedToday: 'Didn’t post today',
@@ -1613,7 +1617,7 @@ export const messages = {
     fitnessLoadError: 'تعذّر تحميل قوة الصنّاع. حدّث الصفحة وحاول مرة أخرى.',
     streaksTitle: 'ستريكات الصنّاع',
     streaksHint:
-      'اختر يوماً من ٧ نوفمبر. شوف من نشر، من غاب، ومن على ستريك (١ / ٢ / ٣). شارات الغياب تعرض كل الأيام اللي فوّتوها. تيليجرام /streaks للنسخ. إعادة الضبط تمسح الستريك.',
+      'اختر يوماً من ٧ نوفمبر. شوف من نشر، من غاب، ومن على ستريك (١ / ٢ / ٣). اضغط شارة يوم غياب لمسحه فقط. «مسح هذا اليوم للجميع» يشيل هذا اليوم من كل ستريك. إعادة الضبط تمسح ستريك الشخص كامل.',
     streaksLoadError: 'تعذّر تحميل الستريكات. حدّث الصفحة وحاول مرة أخرى.',
     streaksOnProbation: 'على ستريك',
     streaksApproaching: 'يقترب',
@@ -1631,6 +1635,10 @@ export const messages = {
     streaksMarkSent: 'تم الإرسال',
     streaksClearAll: 'إعادة ضبط الكل',
     streaksClearAllConfirm: 'إعادة ضبط الستريكات للجميع هنا (من ٧ نوفمبر)؟',
+    streaksClearDay: 'مسح {day} للجميع',
+    streaksClearDayConfirm:
+      'نشيل {day} من كل ستريك هنا؟ باقي أيام الغياب تبقى. اللي ستريكهم ١ بس بسبب هذا اليوم يرجعون نظيف.',
+    streaksClearDayChip: 'نمسح {day} من ستريك {name}؟',
     streaksReset: 'إعادة ضبط',
     streaksResetConfirm: 'إعادة ضبط ستريك {name}؟',
     streaksMissedToday: 'ما نشروا اليوم',
