@@ -569,6 +569,16 @@ export async function getProbationStreakBoard(opts: {
   `) as { creator_id: number }[]
   const postedOnDay = new Set(postedOnDayRows.map((r) => Number(r.creator_id)))
 
+  // Days forgiven via “clear this day” — keep them off the didn’t-post list for that day.
+  const waivedOnDayRows = (await sql`
+    SELECT DISTINCT creator_id
+    FROM creator_strikes
+    WHERE strike_date = ${selectedDay}::date
+      AND status = 'waived'
+      AND source = 'auto'
+  `) as { creator_id: number }[]
+  const waivedOnDay = new Set(waivedOnDayRows.map((r) => Number(r.creator_id)))
+
   const onBreakDay = (await sql`
     SELECT DISTINCT creator_id
     FROM schedule_breaks
@@ -635,6 +645,10 @@ export async function getProbationStreakBoard(opts: {
       selectedDay >= STREAK_EPOCH_START &&
       (!schedule || !contract || isPostingDay(schedule, contract.start_date, selectedDay))
     const posted = postedOnDay.has(person.id)
+    const forgivenForSelectedDay = waivedOnDay.has(person.id)
+    // Cleared this day’s miss → leave the didn’t-post list for this day.
+    if (shouldPost && !posted && forgivenForSelectedDay) continue
+
     const dayStatus: ProbationStreakRow['dayStatus'] = !shouldPost
       ? 'off'
       : posted
