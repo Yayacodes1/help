@@ -5,6 +5,7 @@ import {
   extractAwemeRecords,
   extractInstagramCode,
   extractPayloadAwemeId,
+  extractPostedAt,
   extractViewCount,
   parseTikHubEnvelope,
   payloadMatchesRequestedVideo,
@@ -57,6 +58,23 @@ test('extractViewCount: success, zero, missing', () => {
     0,
   )
   assert.equal(extractViewCount({ data: { id: 'x', caption: 'hi' } }), null)
+})
+
+test('extractViewCount reads a YouTube video info payload', () => {
+  assert.equal(
+    extractViewCount({
+      code: 200,
+      data: { video_id: 'dQw4w9WgXcQ', view_count: 1640000000, publish_date: '2009-10-25' },
+    }),
+    1640000000,
+  )
+  assert.equal(
+    extractPostedAt({
+      code: 200,
+      data: { video_id: 'dQw4w9WgXcQ', view_count: 10, publish_date: '2009-10-25' },
+    })?.slice(0, 10),
+    '2009-10-25',
+  )
 })
 
 test('extractViewCount unwraps JSON-string data and prefers play_count over likes', () => {

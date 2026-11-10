@@ -2,6 +2,7 @@ import 'server-only'
 import type { Platform } from '@/lib/db'
 import {
   extractTikTokAwemeId,
+  extractYouTubeVideoId,
   isTikTokShareLink,
 } from '@/lib/media-url'
 import {
@@ -25,6 +26,8 @@ import { acquireTikHubQuota, blockTikHubQuota, releaseTikHubQuota } from '@/lib/
 import {
   INSTAGRAM_V1_PATH,
   INSTAGRAM_V2_PATH,
+  YOUTUBE_V1_PATH,
+  YOUTUBE_V2_PATH,
   TIKTOK_AWEME_PATH,
   TIKTOK_MULTI_PATH,
   TIKTOK_SHARE_PATH,
@@ -463,6 +466,47 @@ async function fetchInstagramViews(url: string): Promise<FetchViewsResult> {
   return failViews('instagram: no play/view count', 'instagram', { category: 'metric_missing' })
 }
 
+function youtubeIdFromPayload(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null
+  const root = data as Record<string, unknown>
+  const inner =
+    root.data && typeof root.data === 'object' && !Array.isArray(root.data)
+      ? (root.data as Record<string, unknown>)
+      : root
+  const id = inner.video_id ?? inner.videoId
+  return typeof id === 'string' && id.trim() ? id.trim() : null
+}
+
+async function fetchYouTubeViews(url: string): Promise<FetchViewsResult> {
+  const videoId = extractYouTubeVideoId(url)
+  if (!videoId) {
+    return failViews('youtube: no video id', 'youtube', { category: 'invalid_url' })
+  }
+
+  const paths = [YOUTUBE_V1_PATH, YOUTUBE_V2_PATH]
+  for (let i = 0; i < paths.length; i++) {
+    const path = paths[i]
+    try {
+      const data = await tikhubGet(path, { video_id: videoId })
+      const gotId = youtubeIdFromPayload(data)
+      if (gotId && gotId !== videoId) {
+        logTikHub('youtube-id-mismatch', { expected: videoId, got: gotId, path })
+        continue
+      }
+      const hit = metaFromPayload(data, url)
+      if (hit) return hit
+      logTikHub('youtube-missing-count', { path, videoId })
+    } catch (e) {
+      const failed = errorFromCaught(e, 'youtube')
+      if (i === paths.length - 1 || !shouldFallbackToNextEndpoint(failed.category)) {
+        return failed
+      }
+    }
+  }
+
+  return failViews('youtube: no view count', 'youtube', { category: 'metric_missing' })
+}
+
 export async function fetchViewsDetailed(
   platform: Platform,
   url: string,
@@ -471,9 +515,7 @@ export async function fetchViewsDetailed(
   if (!trimmed) return failViews('empty url', platform, { category: 'invalid_url' })
 
   try {
-    if (platform === 'youtube') {
-      return failViews('youtube views are not tracked', platform, { category: 'unknown' })
-    }
+    if (platform === 'youtube') return await fetchYouTubeViews(trimmed)
     if (platform === 'instagram') return await fetchInstagramViews(trimmed)
     return await fetchTikTokViews(trimmed)
   } catch (e) {

@@ -61,7 +61,14 @@ export function publicViewsCategoryMessage(
   category: ViewsErrorCategory,
   platform?: string | null,
 ): string {
-  const network = platform === 'instagram' ? 'Instagram' : platform === 'tiktok' ? 'TikTok' : 'Video'
+  const network =
+    platform === 'instagram'
+      ? 'Instagram'
+      : platform === 'tiktok'
+        ? 'TikTok'
+        : platform === 'youtube'
+          ? 'YouTube'
+          : 'Video'
   switch (category) {
     case 'rate_limited':
       return 'Rate limited by TikHub. Waiting, then retrying automatically.'

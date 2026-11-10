@@ -108,7 +108,7 @@ function readFilters(
   const role =
     roleRaw === 'all' ? undefined : roleRaw === 'reposter' ? 'reposter' : 'creator'
   const platform =
-    platformRaw === 'instagram' || platformRaw === 'tiktok'
+    platformRaw === 'instagram' || platformRaw === 'tiktok' || platformRaw === 'youtube'
       ? (platformRaw as Platform)
       : undefined
 

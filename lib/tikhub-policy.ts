@@ -6,6 +6,8 @@ export const TIKTOK_SHARE_PATH = '/api/v1/tiktok/app/v3/fetch_one_video_by_share
 export const TIKTOK_MULTI_PATH = '/api/v1/tiktok/app/v3/fetch_multi_video_v2'
 export const INSTAGRAM_V1_PATH = '/api/v1/instagram/v1/fetch_post_by_url'
 export const INSTAGRAM_V2_PATH = '/api/v1/instagram/v2/fetch_post_info'
+export const YOUTUBE_V1_PATH = '/api/v1/youtube/web/get_video_info'
+export const YOUTUBE_V2_PATH = '/api/v1/youtube/web/get_video_info_v2'
 
 export type TikTokEndpointName = 'aweme_id' | 'share_url'
 export type InstagramEndpointName = 'ig_v1' | 'ig_v2'

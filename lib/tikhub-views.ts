@@ -442,6 +442,8 @@ const POSTED_AT_KEYS = [
   'deviceTimestamp',
   'publish_time',
   'publishTime',
+  'publish_date',
+  'publishDate',
   'posted_at',
   'postedAt',
   'timestamp',
