@@ -64,6 +64,8 @@ export async function getLeagueBoard(opts: {
 
   // Current month: hide fired. Past months: keep them, mark firedNow in the UI.
   const includeFired = to.slice(0, 7) < today.slice(0, 7)
+  // Creators stay on their home / dual-brand project. Never dump the other
+  // brand's roster onto Miqat or Notek when that chip is selected.
   const people = (await sql`
     SELECT id, name, role, tiktok_username, instagram_username, login_platform,
            paused_at::text AS paused_at
@@ -72,6 +74,38 @@ export async function getLeagueBoard(opts: {
       AND (
         paused_at IS NULL
         OR ${includeFired}::boolean
+      )
+      AND (
+        ${projectId}::int IS NULL
+        OR role = 'reposter'
+        OR project_id = ${projectId}
+        OR project_id IS NULL
+        OR EXISTS (
+          SELECT 1 FROM submissions sx
+          WHERE sx.creator_id = creators.id AND sx.project_id = ${projectId}
+        )
+        OR (
+          EXISTS (
+            SELECT 1 FROM projects p
+            WHERE p.id = ${projectId}
+              AND (lower(p.name) LIKE '%miq%' OR lower(p.name) LIKE '%miy%')
+          )
+          AND (
+            NULLIF(TRIM(miqat_tiktok_username), '') IS NOT NULL
+            OR NULLIF(TRIM(miqat_instagram_username), '') IS NOT NULL
+          )
+        )
+        OR (
+          EXISTS (
+            SELECT 1 FROM projects p
+            WHERE p.id = ${projectId}
+              AND lower(p.name) LIKE '%not%'
+          )
+          AND (
+            NULLIF(TRIM(notek_tiktok_username), '') IS NOT NULL
+            OR NULLIF(TRIM(notek_instagram_username), '') IS NOT NULL
+          )
+        )
       )
     ORDER BY name ASC
   `) as {
@@ -104,6 +138,38 @@ export async function getLeagueBoard(opts: {
       AND (${projectId}::int IS NULL OR s.project_id = ${projectId})
     LEFT JOIN projects p ON p.id = s.project_id
     WHERE (${role}::text IS NULL OR c.role = ${role})
+      AND (
+        ${projectId}::int IS NULL
+        OR c.role = 'reposter'
+        OR c.project_id = ${projectId}
+        OR c.project_id IS NULL
+        OR EXISTS (
+          SELECT 1 FROM submissions sx
+          WHERE sx.creator_id = c.id AND sx.project_id = ${projectId}
+        )
+        OR (
+          EXISTS (
+            SELECT 1 FROM projects px
+            WHERE px.id = ${projectId}
+              AND (lower(px.name) LIKE '%miq%' OR lower(px.name) LIKE '%miy%')
+          )
+          AND (
+            NULLIF(TRIM(c.miqat_tiktok_username), '') IS NOT NULL
+            OR NULLIF(TRIM(c.miqat_instagram_username), '') IS NOT NULL
+          )
+        )
+        OR (
+          EXISTS (
+            SELECT 1 FROM projects px
+            WHERE px.id = ${projectId}
+              AND lower(px.name) LIKE '%not%'
+          )
+          AND (
+            NULLIF(TRIM(c.notek_tiktok_username), '') IS NOT NULL
+            OR NULLIF(TRIM(c.notek_instagram_username), '') IS NOT NULL
+          )
+        )
+      )
     GROUP BY c.id, c.name, c.tiktok_username, c.instagram_username,
              s.video_date, s.project_id, p.name, s.platform
   `) as AggRow[]

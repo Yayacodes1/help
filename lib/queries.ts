@@ -77,7 +77,7 @@ export async function getCreatorByToken(token: string): Promise<Creator | null> 
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
-           pay_every_days, notes, tiktok_username, instagram_username, login_platform,
+           pay_every_days, notes, whatsapp_phone, tiktok_username, instagram_username, login_platform,
            notek_tiktok_username, notek_instagram_username,
            miqat_tiktok_username, miqat_instagram_username
     FROM creators
@@ -94,7 +94,7 @@ export async function getCreatorById(id: number): Promise<Creator | null> {
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
-           pay_every_days, notes, tiktok_username, instagram_username, login_platform,
+           pay_every_days, notes, whatsapp_phone, tiktok_username, instagram_username, login_platform,
            notek_tiktok_username, notek_instagram_username,
            miqat_tiktok_username, miqat_instagram_username
     FROM creators
@@ -113,7 +113,7 @@ export async function getCreatorByName(name: string): Promise<Creator | null> {
            contract_start::text AS contract_start,
            contract_end::text AS contract_end,
            last_paid_at::text AS last_paid_at,
-           pay_every_days, notes, tiktok_username, instagram_username, login_platform,
+           pay_every_days, notes, whatsapp_phone, tiktok_username, instagram_username, login_platform,
            notek_tiktok_username, notek_instagram_username,
            miqat_tiktok_username, miqat_instagram_username
     FROM creators
@@ -417,7 +417,7 @@ export async function getAllCreators(): Promise<CreatorWithProject[]> {
            c.contract_start::text AS contract_start,
            c.contract_end::text AS contract_end,
            c.last_paid_at::text AS last_paid_at,
-           c.pay_every_days, c.notes, c.tiktok_username, c.instagram_username, c.login_platform,
+           c.pay_every_days, c.notes, c.whatsapp_phone, c.tiktok_username, c.instagram_username, c.login_platform,
            c.notek_tiktok_username, c.notek_instagram_username,
            c.miqat_tiktok_username, c.miqat_instagram_username,
            c.paused_at::text AS paused_at,
@@ -464,7 +464,7 @@ export async function getCreatorsWithProgressOnDate(
       c.contract_start::text AS contract_start,
       c.contract_end::text AS contract_end,
       c.last_paid_at::text AS last_paid_at,
-      c.pay_every_days, c.notes, c.tiktok_username, c.instagram_username, c.login_platform,
+      c.pay_every_days, c.notes, c.whatsapp_phone, c.tiktok_username, c.instagram_username, c.login_platform,
            c.notek_tiktok_username, c.notek_instagram_username,
            c.miqat_tiktok_username, c.miqat_instagram_username,
       c.paused_at::text AS paused_at,

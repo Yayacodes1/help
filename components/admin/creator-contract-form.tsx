@@ -28,10 +28,23 @@ export function CreatorContractForm({
         Prefer setting platforms and goals on each contract. Profile goals are only a fallback.
       </p>
       <div className="mt-3 grid gap-3">
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Username
-          <input name="name" required defaultValue={creator.name} className={inputClass} />
-        </label>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Username
+            <input name="name" required defaultValue={creator.name} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            WhatsApp phone
+            <input
+              name="whatsapp_phone"
+              type="tel"
+              inputMode="tel"
+              defaultValue={creator.whatsapp_phone ?? ''}
+              placeholder="05xxxxxxxx or +966…"
+              className={inputClass}
+            />
+          </label>
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             TikTok username

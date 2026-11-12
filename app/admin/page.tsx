@@ -107,6 +107,8 @@ import { LeadersBoard } from '@/components/admin/leaders-board'
 import { LeaderSquadsBoard } from '@/components/admin/leader-squads-board'
 import { LeadersManager } from '@/components/admin/leaders-manager'
 import { OutreachAccess } from '@/components/outreach/outreach-access'
+import { CreatorOffersBoard } from '@/components/admin/creator-offers-board'
+import { countOpenCreatorOffers, listCreatorOffers } from '@/lib/creator-offer-db'
 import { getActivityForDay } from '@/lib/activity'
 import { getProjectViewsBoard } from '@/lib/project-views'
 import { ProjectViewsPanel } from '@/components/admin/project-views-panel'
@@ -722,6 +724,10 @@ export default async function AdminPage({
       : null
   const structurePay =
     tab === 'people' && session ? await loadStructurePaySlots(session.id) : []
+  const creatorOffers =
+    tab === 'people' ? await listCreatorOffers(80).catch(() => []) : []
+  const openOfferCount =
+    tab === 'people' ? await countOpenCreatorOffers().catch(() => 0) : 0
 
   // Notek | Miqat side by side: same panels, one column per project.
   const splitProjects = splitRequested ? splitProjectPair(projects) : []
@@ -2012,6 +2018,16 @@ export default async function AdminPage({
             ),
           },
           {
+            id: 'offers',
+            title: 'Creator offers',
+            summary:
+              creatorOffers.length === 0
+                ? 'None yet · /offer'
+                : `${openOfferCount} open · ${creatorOffers.length} total`,
+            hint: 'Self-serve estimates from /offer. Regenerate CPM, then WhatsApp them.',
+            children: <CreatorOffersBoard offers={creatorOffers} />,
+          },
+          {
             id: 'consistency',
             title: t('consistency'),
             summary: consistencyBoard
@@ -2109,7 +2125,7 @@ export default async function AdminPage({
             id: 'streaks',
             title: t('streaksTitle'),
             summary: streakBoard
-              ? `${streakBoard.counts.missedOnDay} ${t('streaksMissed').toLowerCase()} · ${streakBoard.counts.postedOnDay} ${t('streaksPosted').toLowerCase()} · ${streakBoard.counts.total} ${t('streaksOnStreak').toLowerCase()} · ${streakBoard.counts.first}/${streakBoard.counts.second}/${streakBoard.counts.final}`
+              ? `${streakBoard.counts.allCreators} ${t('streaksAllCreators').toLowerCase()} · ${streakBoard.counts.missedOnDay} ${t('streaksMissed').toLowerCase()} · ${streakBoard.counts.postedOnDay} ${t('streaksPosted').toLowerCase()} · ${streakBoard.counts.total} ${t('streaksOnStreak').toLowerCase()} · ${streakBoard.counts.first}/${streakBoard.counts.second}/${streakBoard.counts.final}`
               : streakBoardError ?? '—',
             hint: t('streaksHint'),
             children: streakBoardError ? (
@@ -2131,8 +2147,10 @@ export default async function AdminPage({
                   clearDayChip: t('streaksClearDayChip'),
                   reset: t('streaksReset'),
                   resetConfirm: t('streaksResetConfirm'),
-                  copyArabic: t('streaksCopyArabic'),
+                  copy: t('streaksCopy'),
                   copied: t('streaksCopied'),
+                  sendWhatsApp: t('streaksSendWhatsApp'),
+                  whatsappNeedsNumber: t('streaksWhatsAppNeedsNumber'),
                   markSent: t('streaksMarkSent'),
                   firstStreak: t('streaksFirst'),
                   secondStreak: t('streaksSecond'),
@@ -2149,6 +2167,8 @@ export default async function AdminPage({
                   showPosted: t('streaksShowPosted'),
                   showStreaks: t('streaksShowStreaks'),
                   showAll: t('streaksFilterAll'),
+                  allCreators: t('streaksAllCreators'),
+                  streakCount: t('streaksCountLabel'),
                 }}
               />
             ) : (

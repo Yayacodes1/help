@@ -30,8 +30,10 @@ type Labels = {
   clearDayChip: string
   reset: string
   resetConfirm: string
-  copyArabic: string
+  copy: string
   copied: string
+  sendWhatsApp: string
+  whatsappNeedsNumber: string
   markSent: string
   firstStreak: string
   secondStreak: string
@@ -48,6 +50,8 @@ type Labels = {
   showPosted: string
   showStreaks: string
   showAll: string
+  allCreators: string
+  streakCount: string
 }
 
 function weekdayLabel(iso: string): string {
@@ -67,27 +71,34 @@ function shortDate(iso: string): string {
   return iso.slice(5)
 }
 
-function streakBadge(level: number, labels: Labels): { text: string; className: string } {
+function streakBadge(
+  level: number,
+  missCount: number,
+  labels: Labels,
+): { text: string; className: string } {
+  const countLabel = labels.streakCount
+    .replace(/\{n\}/g, String(missCount))
+    .replace(/\{max\}/g, '3')
   if (level >= 3) {
     return {
-      text: labels.finalStreak,
+      text: `${labels.finalStreak} · ${countLabel}`,
       className: 'border-[#9a0d18]/40 bg-[#9a0d18]/10 text-[#9a0d18]',
     }
   }
   if (level === 2) {
     return {
-      text: labels.secondStreak,
+      text: `${labels.secondStreak} · ${countLabel}`,
       className: 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100',
     }
   }
   if (level === 1) {
     return {
-      text: labels.firstStreak,
+      text: `${labels.firstStreak} · ${countLabel}`,
       className: 'border-sky-500/40 bg-sky-500/10 text-sky-900 dark:text-sky-100',
     }
   }
   return {
-    text: labels.clean,
+    text: `${labels.clean} · ${countLabel}`,
     className: 'border-border bg-muted/40 text-muted-foreground',
   }
 }
@@ -114,7 +125,7 @@ export function ProbationStreaksBoard({
   const pathname = usePathname()
   const params = useSearchParams()
   const [pending, startTransition] = useTransition()
-  const [view, setView] = useState<'missed' | 'posted' | 'streaks' | 'all'>('missed')
+  const [view, setView] = useState<'missed' | 'posted' | 'streaks' | 'all'>('all')
   const [copiedId, setCopiedId] = useState<number | null>(null)
 
   function push(patch: Record<string, string | null>) {
@@ -129,15 +140,23 @@ export function ProbationStreaksBoard({
   }
 
   const rows = useMemo(() => {
-    if (view === 'missed') return board.rows.filter((r) => r.dayStatus === 'missed')
-    if (view === 'posted') return board.rows.filter((r) => r.dayStatus === 'posted')
-    if (view === 'streaks') return board.rows.filter((r) => r.missCount > 0)
-    return board.rows
+    const filtered =
+      view === 'missed'
+        ? board.rows.filter((r) => r.dayStatus === 'missed')
+        : view === 'posted'
+          ? board.rows.filter((r) => r.dayStatus === 'posted')
+          : view === 'streaks'
+            ? board.rows.filter((r) => r.missCount > 0)
+            : board.rows
+    if (view !== 'all' && view !== 'streaks') return filtered
+    return [...filtered].sort(
+      (a, b) => b.missCount - a.missCount || a.name.localeCompare(b.name),
+    )
   }, [board.rows, view])
 
-  async function copyArabic(row: ProbationStreakRow) {
-    if (!row.pendingNoticeId || !row.pendingLevel) return
-    const text = buildProbationStreakMessage(
+  function streakMessage(row: ProbationStreakRow): string | null {
+    if (!row.pendingNoticeId || !row.pendingLevel) return null
+    return buildProbationStreakMessage(
       {
         id: row.pendingNoticeId,
         creatorId: row.creatorId,
@@ -150,6 +169,11 @@ export function ProbationStreaksBoard({
       },
       { today: board.today },
     )
+  }
+
+  async function copyMessage(row: ProbationStreakRow) {
+    const text = streakMessage(row)
+    if (!text || !row.pendingNoticeId) return
     try {
       await navigator.clipboard.writeText(text)
       setCopiedId(row.pendingNoticeId)
@@ -157,6 +181,17 @@ export function ProbationStreaksBoard({
     } catch {
       window.prompt('Copy message:', text)
     }
+  }
+
+  function sendWhatsApp(row: ProbationStreakRow) {
+    const text = streakMessage(row)
+    const digits = (row.whatsappPhone ?? '').replace(/\D/g, '')
+    if (!text || !digits) return
+    window.open(
+      `https://wa.me/${digits}?text=${encodeURIComponent(text)}`,
+      '_blank',
+      'noopener,noreferrer',
+    )
   }
 
   return (
@@ -206,7 +241,14 @@ export function ProbationStreaksBoard({
       </div>
 
       {/* Day summary */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <Stat
+          label={labels.allCreators}
+          value={board.counts.allCreators}
+          tone="sky"
+          active={view === 'all'}
+          onClick={() => setView('all')}
+        />
         <Stat
           label={`${labels.missed} · ${weekdayLabel(board.selectedDay)}`}
           value={board.counts.missedOnDay}
@@ -232,8 +274,8 @@ export function ProbationStreaksBoard({
           label={`${labels.firstStreak} / ${labels.secondStreak} / ${labels.finalStreak}`}
           valueLabel={`${board.counts.first} · ${board.counts.second} · ${board.counts.final}`}
           tone="sky"
-          active={view === 'all'}
-          onClick={() => setView('all')}
+          active={view === 'streaks'}
+          onClick={() => setView('streaks')}
         />
       </div>
 
@@ -241,10 +283,10 @@ export function ProbationStreaksBoard({
         <div className="inline-flex flex-wrap gap-1 rounded-xl border border-border bg-muted/30 p-1">
           {(
             [
-              ['missed', labels.showMissed],
-              ['posted', labels.showPosted],
-              ['streaks', labels.showStreaks],
-              ['all', labels.showAll],
+              ['all', `${labels.showAll} (${board.counts.allCreators})`],
+              ['missed', `${labels.showMissed} (${board.counts.missedOnDay})`],
+              ['posted', `${labels.showPosted} (${board.counts.postedOnDay})`],
+              ['streaks', `${labels.showStreaks} (${board.counts.total})`],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -287,7 +329,7 @@ export function ProbationStreaksBoard({
       ) : (
         <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
           {rows.map((row) => {
-            const badge = streakBadge(row.streakLevel, labels)
+            const badge = streakBadge(row.streakLevel, row.missCount, labels)
             return (
               <li
                 key={row.creatorId}
@@ -316,9 +358,10 @@ export function ProbationStreaksBoard({
                     >
                       {dayStatusLabel(row.dayStatus, labels)}
                     </span>
-                    <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${badge.className}`}>
+                    <span
+                      className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${badge.className}`}
+                    >
                       {badge.text}
-                      {row.streakLevel > 0 ? ` · ${row.missCount}/3` : ''}
                     </span>
                     {row.projectName ? (
                       <span className="text-[11px] text-muted-foreground">{row.projectName}</span>
@@ -371,10 +414,23 @@ export function ProbationStreaksBoard({
                       <button
                         type="button"
                         disabled={pending}
-                        onClick={() => void copyArabic(row)}
+                        onClick={() => void copyMessage(row)}
                         className="h-8 rounded-lg border border-border px-2.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
                       >
-                        {copiedId === row.pendingNoticeId ? labels.copied : labels.copyArabic}
+                        {copiedId === row.pendingNoticeId ? labels.copied : labels.copy}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pending || !row.whatsappPhone}
+                        title={
+                          row.whatsappPhone
+                            ? undefined
+                            : labels.whatsappNeedsNumber
+                        }
+                        onClick={() => sendWhatsApp(row)}
+                        className="h-8 rounded-lg border border-border px-2.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
+                      >
+                        {labels.sendWhatsApp}
                       </button>
                       <button
                         type="button"

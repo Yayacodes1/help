@@ -39,6 +39,7 @@ import {
   normalizeBasePayCadence,
 } from '@/lib/contract-halves'
 import { scheduleFromContract } from '@/lib/posting-schedule'
+import { normalizeOutreachPhone } from '@/lib/saudi-phone'
 import type { CountMode, PaymentAmountKind } from '@/lib/db'
 
 function parsePaymentAmountKind(value: FormDataEntryValue | null | undefined): PaymentAmountKind {
@@ -76,6 +77,14 @@ function parsePayEveryDays(value: FormDataEntryValue | null): number {
 function parseNotes(value: FormDataEntryValue | null): string | null {
   const raw = (value ?? '').toString().trim()
   return raw ? raw.slice(0, 2000) : null
+}
+
+/** Empty clears; otherwise Saudi 05… / +966… / international +. */
+function parseWhatsappPhone(value: FormDataEntryValue | null): string | null {
+  const raw = (value ?? '').toString().trim()
+  if (!raw) return null
+  const phone = normalizeOutreachPhone(raw)
+  return phone.ok ? phone.e164 : null
 }
 
 function parseOptionalAmount(value: FormDataEntryValue | null): number | null {
@@ -351,19 +360,20 @@ export async function createCreator(formData: FormData) {
   const lastPaidAt = parseOptionalDate(formData.get('last_paid_at'))
   const payEveryDays = parsePayEveryDays(formData.get('pay_every_days'))
   const notes = parseNotes(formData.get('notes'))
+  const whatsappPhone = parseWhatsappPhone(formData.get('whatsapp_phone'))
   const token = randomBytes(12).toString('hex')
   let rows: { id: number }[]
   try {
     rows = (await sql`
       INSERT INTO creators (
         name, token, project_id, role, goal_instagram, goal_tiktok, platforms,
-        last_paid_at, pay_every_days, notes, tiktok_username, instagram_username, login_platform,
+        last_paid_at, pay_every_days, notes, whatsapp_phone, tiktok_username, instagram_username, login_platform,
         notek_tiktok_username, notek_instagram_username,
         miqat_tiktok_username, miqat_instagram_username
       )
       VALUES (
         ${name}, ${token}, ${projectId}, ${role}, ${goals.goalInstagram}, ${goals.goalTiktok}, ${platforms},
-        ${lastPaidAt}, ${payEveryDays}, ${notes}, ${tiktok}, ${instagram}, ${login_platform},
+        ${lastPaidAt}, ${payEveryDays}, ${notes}, ${whatsappPhone}, ${tiktok}, ${instagram}, ${login_platform},
         ${notekTiktok}, ${notekInstagram}, ${miqatTiktok}, ${miqatInstagram}
       )
       RETURNING id
@@ -424,6 +434,7 @@ export async function updateCreator(id: number, formData: FormData) {
   const lastPaidAt = parseOptionalDate(formData.get('last_paid_at'))
   const payEveryDays = parsePayEveryDays(formData.get('pay_every_days'))
   const notes = parseNotes(formData.get('notes'))
+  const whatsappPhone = parseWhatsappPhone(formData.get('whatsapp_phone'))
   await sql`
     UPDATE creators
     SET name = ${name}, project_id = ${projectId}, role = ${role},
@@ -431,6 +442,7 @@ export async function updateCreator(id: number, formData: FormData) {
         platforms = ${platforms},
         last_paid_at = ${lastPaidAt}, pay_every_days = ${payEveryDays},
         notes = ${notes},
+        whatsapp_phone = ${whatsappPhone},
         tiktok_username = ${tiktok},
         instagram_username = ${instagram},
         login_platform = ${login_platform},

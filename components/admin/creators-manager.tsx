@@ -167,6 +167,7 @@ export function CreatorsManager({
 
   function HandleFields({
     name,
+    whatsappPhone,
     tiktok,
     instagram,
     loginPlatform,
@@ -176,6 +177,7 @@ export function CreatorsManager({
     miqatInstagram,
   }: {
     name?: string
+    whatsappPhone?: string | null
     tiktok?: string | null
     instagram?: string | null
     loginPlatform?: string | null
@@ -186,13 +188,24 @@ export function CreatorsManager({
   }) {
     return (
       <div className="grid w-full gap-2">
-        <div className="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-5">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Display name
             <input
               name="name"
               defaultValue={name ?? ''}
               placeholder="Optional if a handle is set"
+              className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            WhatsApp phone
+            <input
+              name="whatsapp_phone"
+              type="tel"
+              inputMode="tel"
+              defaultValue={whatsappPhone ?? ''}
+              placeholder="05xxxxxxxx"
               className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </label>
@@ -371,6 +384,7 @@ export function CreatorsManager({
                 >
                   <HandleFields
                     name={c.name}
+                    whatsappPhone={c.whatsapp_phone}
                     tiktok={c.tiktok_username}
                     instagram={c.instagram_username}
                     loginPlatform={c.login_platform}

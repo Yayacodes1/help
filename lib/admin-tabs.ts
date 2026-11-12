@@ -8,6 +8,7 @@ export const ADMIN_TABS = {
     'consistency',
     'fitness',
     'streaks',
+    'offers',
     'manage',
     'ends',
     'urgent',

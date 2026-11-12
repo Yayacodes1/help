@@ -8,11 +8,16 @@ import type { PlatformsMode } from '@/lib/platforms-mode'
 import {
   createContract,
   deleteContract,
+  duplicateContractForNextPeriod,
   recordContractPayment,
   recordPastContractsAsPaid,
   startNewContract,
   updateContract,
 } from '@/app/actions/admin'
+import {
+  duplicateContractButtonLabel,
+  nextContractPeriodDates,
+} from '@/lib/contract-next-period'
 import { formatDate, formatMoney } from '@/lib/format'
 
 type PayCurrency = 'USD' | 'SAR'
@@ -37,7 +42,7 @@ import {
 } from '@/lib/posting-schedule'
 
 const SCHEDULE_HINT =
-  'Which days count. Off days never give strikes or break streaks.'
+  'Which days count. For “once every 3 days,” pick Once every N days → Every 3 days. Off days never give strikes.'
 
 const inputClass =
   'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -170,6 +175,9 @@ function ScheduleFields({
 }) {
   const initial = scheduleFromContract(contract)
   const [type, setType] = useState<ScheduleType>(initial.type)
+  const [everyDays, setEveryDays] = useState(
+    initial.type === 'every_n_days' ? Math.max(2, initial.everyDays) : 3,
+  )
   return (
     <div className="grid gap-2">
       <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -181,24 +189,55 @@ function ScheduleFields({
           className={inputClass}
         >
           <option value="daily">Every day</option>
-          <option value="every_n_days">Every few days (e.g. every other day)</option>
+          <option value="every_n_days">Once every N days (e.g. every 3 days)</option>
           <option value="weekdays">Set days of the week</option>
           <option value="per_week">Number of videos a week (any days)</option>
         </select>
       </label>
       {type === 'every_n_days' ? (
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Post once every … days (2 = post one day, skip one)
-          <input
-            type="number"
-            name="schedule_every_days"
-            min={2}
-            max={30}
-            required
-            defaultValue={initial.type === 'every_n_days' ? initial.everyDays : 2}
-            className={inputClass}
-          />
-        </label>
+        <div className="grid gap-2">
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { n: 2, label: 'Every other day' },
+              { n: 3, label: 'Every 3 days' },
+              { n: 4, label: 'Every 4 days' },
+            ].map(({ n, label }) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setEveryDays(n)}
+                className={`h-8 rounded-lg border px-2.5 text-xs font-medium transition-colors ${
+                  everyDays === n
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-background text-foreground hover:bg-accent'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Post once every … days
+            <input
+              type="number"
+              name="schedule_every_days"
+              min={2}
+              max={30}
+              required
+              value={everyDays}
+              onChange={(e) => {
+                const n = Number(e.target.value)
+                if (Number.isFinite(n)) setEveryDays(Math.min(30, Math.max(2, Math.floor(n))))
+              }}
+              className={inputClass}
+            />
+          </label>
+          <p className="text-[11px] text-muted-foreground">
+            {everyDays === 2
+              ? 'Post one day, skip one. Strikes only count on posting days.'
+              : `Post, then ${everyDays - 1} day${everyDays - 1 === 1 ? '' : 's'} off, then post again. Miss a posting day → streak. Off days never give strikes.`}
+          </p>
+        </div>
       ) : null}
       {type === 'weekdays' ? (
         <fieldset className="flex flex-wrap gap-1.5">
@@ -828,6 +867,13 @@ export function ContractsManager({
     return r.balance > 0.009
   })
   const unpaidPastTotal = needsRecord.reduce((sum, r) => sum + r.balance, 0)
+  const duplicateSource =
+    (current?.contract.end_date ? current.contract : null) ??
+    comparisons.find((r) => r.contract.end_date)?.contract ??
+    null
+  const duplicateNext = duplicateSource?.end_date
+    ? nextContractPeriodDates(duplicateSource.start_date, duplicateSource.end_date)
+    : null
 
   useEffect(() => {
     const hash = window.location.hash.replace(/^#/, '')
@@ -919,6 +965,33 @@ export function ContractsManager({
               </div>
             ) : null}
           </div>
+        </div>
+      ) : null}
+
+      {duplicateSource && duplicateNext ? (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-sm font-semibold text-foreground">
+            {duplicateContractButtonLabel(duplicateNext.kind)}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Copies “{duplicateSource.name}” terms into{' '}
+            <span className="tabular-nums text-foreground">
+              {formatDate(duplicateNext.startDate)} → {formatDate(duplicateNext.endDate)}
+            </span>
+            . Same rules, next window.
+          </p>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              startTransition(() =>
+                duplicateContractForNextPeriod(duplicateSource.id, creatorId),
+              )
+            }
+            className="mt-3 h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+          >
+            {duplicateContractButtonLabel(duplicateNext.kind)}
+          </button>
         </div>
       ) : null}
 
@@ -1193,6 +1266,25 @@ export function ContractsManager({
                         >
                           {pastVariant ? 'Save & record as paid' : 'Save terms'}
                         </button>
+                        {contract.end_date ? (
+                          <button
+                            type="button"
+                            disabled={pending}
+                            onClick={() =>
+                              startTransition(() =>
+                                duplicateContractForNextPeriod(contract.id, creatorId),
+                              )
+                            }
+                            className="h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-accent/40 disabled:opacity-60"
+                          >
+                            {duplicateContractButtonLabel(
+                              nextContractPeriodDates(
+                                contract.start_date,
+                                contract.end_date,
+                              ).kind,
+                            )}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           disabled={pending}

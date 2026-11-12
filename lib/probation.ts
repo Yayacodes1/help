@@ -579,6 +579,7 @@ export async function getProbationStreakBoard(opts: {
     SELECT
       c.id,
       c.name,
+      c.whatsapp_phone,
       c.project_id,
       p.name AS project_name,
       c.probation_started_on::text AS probation_started_on,
@@ -592,6 +593,7 @@ export async function getProbationStreakBoard(opts: {
   `) as Array<{
     id: number
     name: string
+    whatsapp_phone: string | null
     project_id: number | null
     project_name: string | null
     probation_started_on: string | null
@@ -701,22 +703,21 @@ export async function getProbationStreakBoard(opts: {
         : { count: 0, dates: [] as string[] }
 
     const onBreak = breakOnDay.has(person.id)
-    // On break for this day → stay off the streaks board until the break ends.
-    if (onBreak) continue
-
     const shouldPost =
       selectedDay >= STREAK_EPOCH_START &&
       (!schedule || !contract || isPostingDay(schedule, contract.start_date, selectedDay))
     const posted = postedOnDay.has(person.id)
     const forgivenForSelectedDay = waivedOnDay.has(person.id)
-    // Cleared this day’s miss → leave the didn’t-post list for this day.
-    if (shouldPost && !posted && forgivenForSelectedDay) continue
+    // Cleared this day’s miss → leave Didn’t post for this day (other days / All still count).
+    if (shouldPost && !posted && forgivenForSelectedDay && !onBreak) continue
 
-    const dayStatus: ProbationStreakRow['dayStatus'] = !shouldPost
-      ? 'off'
-      : posted
-        ? 'posted'
-        : 'missed'
+    const dayStatus: ProbationStreakRow['dayStatus'] = onBreak
+      ? 'break'
+      : !shouldPost
+        ? 'off'
+        : posted
+          ? 'posted'
+          : 'missed'
     const missedTodayFlag = dayStatus === 'missed' && selectedDay === today
     if (dayStatus === 'missed') {
       missedToday.push({
@@ -759,6 +760,7 @@ export async function getProbationStreakBoard(opts: {
     rows.push({
       creatorId: person.id,
       name: person.name,
+      whatsappPhone: person.whatsapp_phone?.trim() || null,
       projectId: person.project_id,
       projectName: person.project_name,
       probationStartedOn: start,
@@ -806,6 +808,7 @@ export async function getProbationStreakBoard(opts: {
       second: rows.filter((r) => !r.paused && streakBucketFromMisses(r.missCount) === 2).length,
       final: rows.filter((r) => !r.paused && streakBucketFromMisses(r.missCount) === 3).length,
       total: rows.filter((r) => !r.paused && r.missCount > 0).length,
+      allCreators: rows.length,
       missedToday: rows.filter((r) => r.dayStatus === 'missed' && selectedDay === today).length,
       postedOnDay: rows.filter((r) => r.dayStatus === 'posted').length,
       missedOnDay: rows.filter((r) => r.dayStatus === 'missed').length,

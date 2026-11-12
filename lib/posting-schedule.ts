@@ -111,7 +111,9 @@ export function describeSchedule(schedule: PostingSchedule, locale: string = 'en
     case 'every_n_days':
       return schedule.everyDays === 2
         ? 'Every other day'
-        : `1 day on, ${schedule.everyDays - 1} days off`
+        : schedule.everyDays === 3
+          ? 'Once every 3 days'
+          : `Once every ${schedule.everyDays} days`
     case 'weekdays':
       return schedule.weekdays.map((d) => WEEKDAY_SHORT[d]).join(', ')
     case 'per_week':

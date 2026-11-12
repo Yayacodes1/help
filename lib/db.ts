@@ -42,6 +42,8 @@ export type Creator = {
   last_paid_at: string | null
   pay_every_days: number
   notes: string | null
+  /** WhatsApp number in E.164 when set (e.g. +9665…). */
+  whatsapp_phone?: string | null
   tiktok_username: string | null
   instagram_username: string | null
   /** Brand-specific profiles (same person, Notek vs Miqat accounts). */

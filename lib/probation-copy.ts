@@ -41,6 +41,8 @@ export type DayPostStatus = 'posted' | 'missed' | 'break' | 'off'
 export type ProbationStreakRow = {
   creatorId: number
   name: string
+  /** E.164 WhatsApp number when on file; null until added. */
+  whatsappPhone: string | null
   projectId: number | null
   projectName: string | null
   probationStartedOn: string
@@ -85,6 +87,8 @@ export type ProbationStreakBoard = {
     final: number
     /** Active people still on the list (not fired). Used for Clear all. */
     total: number
+    /** Everyone in this project filter (including break / off day). */
+    allCreators: number
     missedToday: number
     postedOnDay: number
     missedOnDay: number
