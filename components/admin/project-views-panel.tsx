@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Check, Copy, Download, Search } from 'lucide-react'
+import { BringBackButton } from '@/components/admin/fire-person-button'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
 import { PanelProjectFilter } from '@/components/admin/panel-project-filter'
 import { SubmissionsTable } from '@/components/admin/submissions-table'
@@ -40,6 +41,7 @@ type Labels = {
   allProjects: string
   chooseProject: string
   firedNow?: string
+  bringBack?: string
 }
 
 function csvEscape(value: string | number): string {
@@ -511,8 +513,13 @@ export function ProjectViewsPanel({
                         {row.name}
                       </button>
                       {row.firedNow ? (
-                        <span className="ml-1.5 rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#9a0d18] dark:text-rose-300">
-                          {labels.firedNow ?? 'Fired now'}
+                        <span className="ml-1.5 inline-flex items-center gap-1">
+                          <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#9a0d18] dark:text-rose-300">
+                            {labels.firedNow ?? 'Fired now'}
+                          </span>
+                          {labels.bringBack ? (
+                            <BringBackButton creatorId={row.creatorId} label={labels.bringBack} />
+                          ) : null}
                         </span>
                       ) : null}
                     </td>

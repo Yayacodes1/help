@@ -980,6 +980,7 @@ export default async function AdminPage({
     pickHint: t('analyticsPickHint'),
     splitPlatforms: t('analyticsSplit'),
     firedNow: t('rankingFiredNow'),
+    bringBack: t('bringBackPerson'),
   }
 
   const attentionLabels = {
@@ -1230,6 +1231,7 @@ export default async function AdminPage({
                     search: t('rankingSearch'),
                     rank: t('rankingRank'),
                     firedNow: t('rankingFiredNow'),
+                    bringBack: t('bringBackPerson'),
                     views: t('views'),
                     videos: t('videosWord'),
                     creatorRole: t('creatorRole'),
@@ -1283,6 +1285,7 @@ export default async function AdminPage({
                   allProjects: t('allProjects'),
                   chooseProject: t('chooseProject'),
                   firedNow: t('rankingFiredNow'),
+                  bringBack: t('bringBackPerson'),
                 }}
               />
             ),

@@ -27,6 +27,7 @@ import type {
   ViewsSummary,
 } from '@/lib/analytics'
 import { DateRangePresets } from '@/components/admin/date-range-presets'
+import { BringBackButton } from '@/components/admin/fire-person-button'
 
 const IG = '#E1306C'
 const TT = '#0F766E'
@@ -68,6 +69,7 @@ type Labels = {
   pickHint: string
   splitPlatforms: string
   firedNow?: string
+  bringBack?: string
 }
 
 type NavPatch = {
@@ -654,8 +656,13 @@ export function AnalyticsPanel({
                         />
                         {i + 1}. {row.creator_name}
                         {row.fired_now ? (
-                          <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#9a0d18] dark:text-rose-300">
-                            {labels.firedNow ?? 'Fired now'}
+                          <span className="inline-flex items-center gap-1">
+                            <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#9a0d18] dark:text-rose-300">
+                              {labels.firedNow ?? 'Fired now'}
+                            </span>
+                            {labels.bringBack ? (
+                              <BringBackButton creatorId={row.creator_id} label={labels.bringBack} />
+                            ) : null}
                           </span>
                         ) : null}
                       </span>

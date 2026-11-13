@@ -2,6 +2,7 @@
 
 import { useMemo, useState, Fragment } from 'react'
 import { ChevronDown, Minus, Search, TrendingDown, TrendingUp } from 'lucide-react'
+import { BringBackButton } from '@/components/admin/fire-person-button'
 import { formatNumber } from '@/lib/format'
 import type { LeagueBoard, LeagueRow } from '@/lib/ranking-types'
 
@@ -119,6 +120,7 @@ export function RankingBoard({
     search: string
     rank: string
     firedNow?: string
+    bringBack?: string
     views: string
     videos: string
     creatorRole?: string
@@ -219,9 +221,14 @@ export function RankingBoard({
                       </button>
                       <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                         {row.firedNow ? (
-                          <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#9a0d18] dark:text-rose-300">
-                            {labels.firedNow ?? 'Fired now'}
-                          </span>
+                          <>
+                            <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#9a0d18] dark:text-rose-300">
+                              {labels.firedNow ?? 'Fired now'}
+                            </span>
+                            {labels.bringBack ? (
+                              <BringBackButton creatorId={row.creatorId} label={labels.bringBack} />
+                            ) : null}
+                          </>
                         ) : null}
                         {identity === 'handle' ? (
                           <span className="text-xs text-muted-foreground">

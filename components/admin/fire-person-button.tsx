@@ -5,6 +5,39 @@ import { useRouter } from 'next/navigation'
 import { UserX, Play } from 'lucide-react'
 import { pauseCreator, resumeCreator } from '@/app/actions/admin'
 
+/** Compact unfire control for lists that already show a FIRED NOW badge. */
+export function BringBackButton({
+  creatorId,
+  label,
+  className = '',
+}: {
+  creatorId: number
+  label: string
+  className?: string
+}) {
+  const [pending, startTransition] = useTransition()
+  const router = useRouter()
+
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={(e) => {
+        e.stopPropagation()
+        startTransition(async () => {
+          await resumeCreator(creatorId)
+          router.refresh()
+        })
+      }}
+      className={`inline-flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-[10px] font-semibold hover:bg-accent disabled:opacity-60 ${className}`}
+      title={label}
+    >
+      <Play className="size-3" />
+      {label}
+    </button>
+  )
+}
+
 export function FirePersonButton({
   creatorId,
   name,
