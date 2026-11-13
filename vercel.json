@@ -5,6 +5,10 @@
       "schedule": "0 21 * * *"
     },
     {
+      "path": "/api/cron/sync-downloads",
+      "schedule": "15 */6 * * *"
+    },
+    {
       "path": "/api/cron/telegram-live",
       "schedule": "0 14 * * *"
     }

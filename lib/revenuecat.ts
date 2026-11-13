@@ -1,5 +1,6 @@
 import 'server-only'
 import { sql } from '@/lib/db'
+import { addDays } from '@/lib/campaign'
 import { isMiyqatProjectName, isNotekProjectName } from '@/lib/project-scope'
 
 const API = 'https://api.revenuecat.com/v2'
@@ -169,4 +170,34 @@ export async function syncRevenueCatDownloads(opts: {
     }
   }
   return results
+}
+
+/**
+ * Auto catch-up: re-pull from the older of (today − lookback) and the last
+ * stored RevenueCat day, so multi-week gaps heal without a manual range.
+ */
+export async function syncRevenueCatCatchUp(opts: {
+  today: string
+  projectId?: number | null
+  /** Default 60 — also extends back to the last stored RC day if older. */
+  lookbackDays?: number
+} = { today: '' }): Promise<RevenueCatSyncResult[]> {
+  if (revenueCatLinks().length === 0) return []
+  const today = opts.today
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) return []
+  const lookback = opts.lookbackDays ?? 60
+  const floor = addDays(today, -lookback)
+  const rows = (await sql`
+    SELECT MAX(day)::text AS last
+    FROM daily_downloads
+    WHERE source = 'revenuecat'
+      AND (${opts.projectId ?? null}::int IS NULL OR project_id = ${opts.projectId ?? null})
+  `) as { last: string | null }[]
+  const last = rows[0]?.last
+  const from = last && last < floor ? last : floor
+  return syncRevenueCatDownloads({
+    from,
+    to: today,
+    projectId: opts.projectId,
+  })
 }

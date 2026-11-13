@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Suspense } from 'react'
 import nextDynamic from 'next/dynamic'
+import { after } from 'next/server'
 import { redirect } from 'next/navigation'
 import { canManageOutreachAccounts, canMoveYahyaExpenses, canSeeAhmedWallet, canSeeCreatorPayouts, canSeeUrgentList, canSeeYahyaExpenses, canSendUrgentList } from '@/lib/admin-access'
 import { getAdminSession, isAdmin } from '@/lib/admin-auth'
@@ -555,6 +556,14 @@ export default async function AdminPage({
         ]).then(([directory, board, marks]) => ({ directory, board, marks }))
       : null
   const analyticsData = tab === 'analytics' ? await loadAnalytics() : null
+  // Heal download gaps in the background whenever someone opens Analytics on prod.
+  if (showDownloads && tab === 'analytics') {
+    after(() => {
+      void import('@/lib/revenuecat')
+        .then(({ syncRevenueCatCatchUp }) => syncRevenueCatCatchUp({ today }))
+        .catch(() => {})
+    })
+  }
   const moneyData = tab === 'money' ? await loadMoney() : null
   const calMonth = parseYearMonth(sp.calMonth, opToday)
   const calRole = parseCalendarRole(sp.calRole)

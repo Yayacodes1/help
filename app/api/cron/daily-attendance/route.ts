@@ -29,6 +29,17 @@ async function run(req: Request) {
   const { ensureStreakEpoch } = await import('@/lib/streak-epoch')
 
   await ensureCreatorTrackingColumns()
+  const serverToday = await getServerToday()
+
+  // Downloads first so attendance/Telegram slowness cannot skip the catch-up.
+  const { syncRevenueCatCatchUp } = await import('@/lib/revenuecat')
+  let revenueCat: Awaited<ReturnType<typeof syncRevenueCatCatchUp>> | null = null
+  try {
+    revenueCat = await syncRevenueCatCatchUp({ today: serverToday })
+  } catch (e) {
+    revenueCat = [{ appName: '*', projectId: null, days: 0, error: e instanceof Error ? e.message : String(e) }]
+  }
+
   const opToday = await getOperationalToday()
   const strikesAdded = await syncReposterStrikes({ today: opToday })
   const { syncProbationMisses } = await import('@/lib/probation')
@@ -37,7 +48,7 @@ async function run(req: Request) {
     noticesUnlocked: 0,
     error: String(e),
   }))
-  const streakEpoch = await ensureStreakEpoch(await getServerToday())
+  const streakEpoch = await ensureStreakEpoch(serverToday)
   const telegram = await sendAttendanceReports(opToday, 'final')
   const webhook = await ensureTelegramWebhook(new URL(req.url).origin).catch((e) => ({ ok: false, error: String(e) }))
 
@@ -48,17 +59,6 @@ async function run(req: Request) {
     lastCompletedOperationalDay(opToday),
     prodHost ? `https://${prodHost}` : new URL(req.url).origin,
   ).catch((e) => ({ created: 0, telegram: { ok: false, error: String(e) } }))
-
-  const { syncRevenueCatDownloads } = await import('@/lib/revenuecat')
-  const { addDays } = await import('@/lib/campaign')
-  const serverToday = await getServerToday()
-  let revenueCat: Awaited<ReturnType<typeof syncRevenueCatDownloads>> | null = null
-  try {
-    // Re-pull the last week: RevenueCat keeps finalizing recent days. Downloads only.
-    revenueCat = await syncRevenueCatDownloads({ from: addDays(serverToday, -7), to: serverToday })
-  } catch (e) {
-    revenueCat = [{ appName: '*', projectId: null, days: 0, error: e instanceof Error ? e.message : String(e) }]
-  }
 
   const url = new URL(req.url)
   const skipViews = url.searchParams.get('skipViews') === '1'
