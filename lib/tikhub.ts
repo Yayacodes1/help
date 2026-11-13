@@ -12,6 +12,7 @@ import {
   extractPayloadInstagramCode,
   extractPostedAt,
   extractViewCount,
+  extractYouTubeViewCount,
   parseTikHubEnvelope,
   payloadMatchesRequestedVideo,
 } from '@/lib/tikhub-views'
@@ -28,6 +29,7 @@ import {
   INSTAGRAM_V2_PATH,
   YOUTUBE_V1_PATH,
   YOUTUBE_V2_PATH,
+  YOUTUBE_WEB_LEGACY_PATH,
   TIKTOK_AWEME_PATH,
   TIKTOK_MULTI_PATH,
   TIKTOK_SHARE_PATH,
@@ -40,6 +42,7 @@ export {
   extractInstagramCode,
   extractPostedAt,
   extractViewCount,
+  extractYouTubeViewCount,
 } from '@/lib/tikhub-views'
 
 export { extractTikTokAwemeId } from '@/lib/media-url'
@@ -473,8 +476,41 @@ function youtubeIdFromPayload(data: unknown): string | null {
     root.data && typeof root.data === 'object' && !Array.isArray(root.data)
       ? (root.data as Record<string, unknown>)
       : root
-  const id = inner.video_id ?? inner.videoId
+  const details =
+    inner.playerResponse &&
+    typeof inner.playerResponse === 'object' &&
+    !Array.isArray(inner.playerResponse)
+      ? ((inner.playerResponse as Record<string, unknown>).videoDetails as
+          | Record<string, unknown>
+          | undefined)
+      : undefined
+  const id =
+    inner.video_id ??
+    inner.videoId ??
+    details?.videoId ??
+    details?.video_id
   return typeof id === 'string' && id.trim() ? id.trim() : null
+}
+
+function youtubeMetaFromPayload(
+  data: unknown,
+  resolvedUrl: string,
+  expectedId: string,
+): FetchViewsOk | null {
+  const gotId = youtubeIdFromPayload(data)
+  if (gotId && gotId !== expectedId) {
+    logTikHub('youtube-id-mismatch', { expected: expectedId, got: gotId })
+    return null
+  }
+  const views = extractYouTubeViewCount(data)
+  if (views == null) return null
+  const postedAt = extractPostedAt(data) ?? undefined
+  return {
+    ok: true,
+    views,
+    resolvedUrl,
+    postedAt,
+  }
 }
 
 async function fetchYouTubeViews(url: string): Promise<FetchViewsResult> {
@@ -483,28 +519,46 @@ async function fetchYouTubeViews(url: string): Promise<FetchViewsResult> {
     return failViews('youtube: no video id', 'youtube', { category: 'invalid_url' })
   }
 
-  const paths = [YOUTUBE_V1_PATH, YOUTUBE_V2_PATH]
-  for (let i = 0; i < paths.length; i++) {
-    const path = paths[i]
+  // web_v2 with need_format returns a stable view_count. v2 first, then v1, then legacy web.
+  const attempts: Array<{ path: string; query: Record<string, string> }> = [
+    {
+      path: YOUTUBE_V2_PATH,
+      query: { video_id: videoId, need_format: 'true' },
+    },
+    {
+      path: YOUTUBE_V1_PATH,
+      query: { video_id: videoId, need_format: 'true' },
+    },
+    {
+      path: YOUTUBE_WEB_LEGACY_PATH,
+      query: { video_id: videoId },
+    },
+  ]
+
+  let lastError: FetchViewsErr | null = null
+  for (let i = 0; i < attempts.length; i++) {
+    const { path, query } = attempts[i]
     try {
-      const data = await tikhubGet(path, { video_id: videoId })
-      const gotId = youtubeIdFromPayload(data)
-      if (gotId && gotId !== videoId) {
-        logTikHub('youtube-id-mismatch', { expected: videoId, got: gotId, path })
-        continue
+      const data = await tikhubGet(path, query)
+      const hit = youtubeMetaFromPayload(data, url, videoId)
+      if (hit) {
+        logTikHub('youtube-views', { path, videoId, views: hit.views })
+        return hit
       }
-      const hit = metaFromPayload(data, url)
-      if (hit) return hit
       logTikHub('youtube-missing-count', { path, videoId })
     } catch (e) {
       const failed = errorFromCaught(e, 'youtube')
-      if (i === paths.length - 1 || !shouldFallbackToNextEndpoint(failed.category)) {
+      lastError = failed
+      if (!shouldFallbackToNextEndpoint(failed.category)) {
         return failed
       }
     }
   }
 
-  return failViews('youtube: no view count', 'youtube', { category: 'metric_missing' })
+  return (
+    lastError ??
+    failViews('youtube: no view count', 'youtube', { category: 'metric_missing' })
+  )
 }
 
 export async function fetchViewsDetailed(

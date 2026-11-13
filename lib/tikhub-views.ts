@@ -76,8 +76,15 @@ function asFiniteCount(value: unknown): number | null {
     return Math.floor(value)
   }
   if (typeof value === 'string' && value.trim() !== '') {
-    const n = Number(value)
+    const trimmed = value.trim()
+    const n = Number(trimmed)
     if (Number.isFinite(n) && n >= 0) return Math.floor(n)
+    // YouTube / locale strings: "1,234,567" or "1,234,567 views"
+    const digits = trimmed.replace(/,/g, '').replace(/\s*views?\s*$/i, '').trim()
+    if (digits !== trimmed) {
+      const parsed = Number(digits)
+      if (Number.isFinite(parsed) && parsed >= 0) return Math.floor(parsed)
+    }
   }
   return null
 }
@@ -312,6 +319,46 @@ export function extractViewCount(payload: unknown): number | null {
     if (n != null) return n
   }
   return deepPlayCount(payload)
+}
+
+/**
+ * YouTube-only: read documented formatted fields and playerResponse.videoDetails.
+ * Never deep-walk the raw watch-page blob — related rows often carry `viewCount: 0`
+ * and that used to overwrite the real count.
+ */
+export function extractYouTubeViewCount(payload: unknown): number | null {
+  const root = asRecord(unwrapTikHubPayload(payload))
+  if (!root) return null
+  const data = asRecord(root.data) ?? firstArrayItem(root.data) ?? root
+  const inner = asRecord(data.data) ?? data
+
+  const formatted =
+    asFiniteCount(inner.view_count) ??
+    asFiniteCount(inner.viewCount) ??
+    asFiniteCount(data.view_count) ??
+    asFiniteCount(data.viewCount)
+  if (formatted != null) return formatted
+
+  const player =
+    asRecord(inner.playerResponse) ??
+    asRecord(data.playerResponse) ??
+    asRecord(root.playerResponse)
+  const details =
+    asRecord(player?.videoDetails) ??
+    asRecord(inner.videoDetails) ??
+    asRecord(data.videoDetails)
+  const fromDetails =
+    asFiniteCount(details?.viewCount) ?? asFiniteCount(details?.view_count)
+  if (fromDetails != null) return fromDetails
+
+  const micro =
+    asRecord(asRecord(player?.microformat)?.playerMicroformatRenderer) ??
+    asRecord(asRecord(inner.microformat)?.playerMicroformatRenderer)
+  const fromMicro =
+    asFiniteCount(micro?.viewCount) ?? asFiniteCount(micro?.view_count)
+  if (fromMicro != null) return fromMicro
+
+  return null
 }
 
 export type AwemeRecord = {

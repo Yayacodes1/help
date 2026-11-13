@@ -7,6 +7,7 @@ import {
   extractPayloadAwemeId,
   extractPostedAt,
   extractViewCount,
+  extractYouTubeViewCount,
   parseTikHubEnvelope,
   payloadMatchesRequestedVideo,
 } from './tikhub-views.ts'
@@ -60,13 +61,36 @@ test('extractViewCount: success, zero, missing', () => {
   assert.equal(extractViewCount({ data: { id: 'x', caption: 'hi' } }), null)
 })
 
-test('extractViewCount reads a YouTube video info payload', () => {
+test('extractYouTubeViewCount reads formatted and playerResponse payloads', () => {
   assert.equal(
-    extractViewCount({
+    extractYouTubeViewCount({
       code: 200,
       data: { video_id: 'dQw4w9WgXcQ', view_count: 1640000000, publish_date: '2009-10-25' },
     }),
     1640000000,
+  )
+  assert.equal(
+    extractYouTubeViewCount({
+      code: 200,
+      data: {
+        video_id: 'dQw4w9WgXcQ',
+        view_count: '1,234,567',
+      },
+    }),
+    1234567,
+  )
+  assert.equal(
+    extractYouTubeViewCount({
+      code: 200,
+      data: {
+        playerResponse: {
+          videoDetails: { videoId: 'dQw4w9WgXcQ', viewCount: '98765' },
+        },
+        // Related / stub rows often carry viewCount: 0 — must not win.
+        contents: [{ viewCount: 0 }, { view_count: 0 }],
+      },
+    }),
+    98765,
   )
   assert.equal(
     extractPostedAt({
@@ -75,6 +99,20 @@ test('extractViewCount reads a YouTube video info payload', () => {
     })?.slice(0, 10),
     '2009-10-25',
   )
+})
+
+test('extractViewCount on raw YouTube blobs can wrongly return nested zero', () => {
+  const raw = {
+    code: 200,
+    data: {
+      playerResponse: {
+        videoDetails: { videoId: 'abcABCabcAB', viewCount: '4242' },
+      },
+      related: [{ view_count: 0 }],
+    },
+  }
+  // Generic deep walk may hit the nested zero first; YouTube extractor must not.
+  assert.equal(extractYouTubeViewCount(raw), 4242)
 })
 
 test('extractViewCount unwraps JSON-string data and prefers play_count over likes', () => {

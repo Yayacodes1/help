@@ -6,8 +6,11 @@ export const TIKTOK_SHARE_PATH = '/api/v1/tiktok/app/v3/fetch_one_video_by_share
 export const TIKTOK_MULTI_PATH = '/api/v1/tiktok/app/v3/fetch_multi_video_v2'
 export const INSTAGRAM_V1_PATH = '/api/v1/instagram/v1/fetch_post_by_url'
 export const INSTAGRAM_V2_PATH = '/api/v1/instagram/v2/fetch_post_info'
-export const YOUTUBE_V1_PATH = '/api/v1/youtube/web/get_video_info'
-export const YOUTUBE_V2_PATH = '/api/v1/youtube/web/get_video_info_v2'
+/** Formatted YouTube details (need_format=true). Prefer web_v2 — the older `/youtube/web/` paths return raw player blobs. */
+export const YOUTUBE_V1_PATH = '/api/v1/youtube/web_v2/get_video_info'
+export const YOUTUBE_V2_PATH = '/api/v1/youtube/web_v2/get_video_info_v2'
+/** Older web API kept as a last-resort fallback. */
+export const YOUTUBE_WEB_LEGACY_PATH = '/api/v1/youtube/web/get_video_info'
 
 export type TikTokEndpointName = 'aweme_id' | 'share_url'
 export type InstagramEndpointName = 'ig_v1' | 'ig_v2'
