@@ -4,13 +4,12 @@ import { useActionState, useState } from 'react'
 import { AlertCircle, ArrowLeft, Eye, EyeOff, Lock, Users } from 'lucide-react'
 import { startSubmission } from '@/app/actions/creator'
 import { login } from '@/app/actions/admin'
-import { loginLeader } from '@/app/actions/leader'
-import { loginOutreach } from '@/app/actions/outreach'
 import { LanguageToggle } from '@/components/language-toggle'
 import { CreatorLoginFields } from '@/components/creator-login-fields'
 import { createT, type Locale } from '@/lib/i18n'
 
-type Role = 'creator' | 'reposter' | 'yahya' | 'ahmed' | 'lula' | 'sultan' | 'leader' | 'outreach'
+type Role = 'creator' | 'reposter' | 'yahya' | 'ahmed' | 'admin'
+type AdminPerson = 'lula' | 'sultan' | 'ammar' | 'rimas'
 type CreatorState = { ok: boolean; message: string } | null
 type AdminState = { ok: boolean; message: string }
 
@@ -20,17 +19,13 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
   const t = createT(locale)
   const rtl = locale === 'ar'
   const [role, setRole] = useState<Role>('creator')
+  const [adminPerson, setAdminPerson] = useState<AdminPerson>('lula')
   const [showPassword, setShowPassword] = useState(true)
   const [creatorState, creatorAction, creatorPending] = useActionState<CreatorState, FormData>(
     startSubmission,
     null,
   )
   const [adminState, adminAction, adminPending] = useActionState(login, adminInitial)
-  const [leaderState, leaderAction, leaderPending] = useActionState(loginLeader, adminInitial)
-  const [outreachState, outreachAction, outreachPending] = useActionState(loginOutreach, adminInitial)
-  const accountAction = role === 'outreach' ? outreachAction : leaderAction
-  const accountPending = role === 'outreach' ? outreachPending : leaderPending
-  const accountMessage = role === 'outreach' ? outreachState?.message : leaderState?.message
 
   return (
     <div className="min-h-dvh bg-background">
@@ -70,78 +65,13 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
           >
             <option value="creator">{t('creatorRole')}</option>
             <option value="reposter">{t('reposterRole')}</option>
-            <option value="leader">{t('leaderRole')}</option>
-            <option value="outreach">Outreach</option>
             <option value="yahya">Yahya</option>
             <option value="ahmed">Ahmed</option>
-            <option value="lula">Lula</option>
-            <option value="sultan">Sultan</option>
+            <option value="admin">{t('adminRole')}</option>
           </select>
         </div>
 
-        {role === 'leader' || role === 'outreach' ? (
-          <form action={accountAction} className="mt-5 flex flex-col gap-3">
-            <label htmlFor="leader-name" className="text-sm font-semibold text-foreground">
-              {t('yourName')}
-            </label>
-            <input
-              id="leader-name"
-              name="name"
-              autoComplete="username"
-              className={`h-12 w-full rounded-xl border border-input bg-card px-3 text-sm font-medium shadow-sm outline-none transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring ${
-                rtl ? 'text-right' : 'text-left'
-              }`}
-            />
-            <label htmlFor="leader-password" className="text-sm font-semibold text-foreground">
-              {t('password')}
-            </label>
-            <div className="relative">
-              <Lock
-                className={`pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-primary ${
-                  rtl ? 'right-3' : 'left-3'
-                }`}
-              />
-              <input
-                id="leader-password"
-                name="password"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                dir="ltr"
-                className={`h-12 w-full rounded-xl border border-input bg-card px-10 text-sm font-medium shadow-sm outline-none transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring ${
-                  rtl ? 'text-right' : 'text-left'
-                }`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className={`absolute top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent ${
-                  rtl ? 'left-2' : 'right-2'
-                }`}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-            {accountMessage ? (
-              <p className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive" role="status">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                {accountMessage}
-              </p>
-            ) : null}
-            <button
-              type="submit"
-              disabled={accountPending}
-              className="mt-1 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-60"
-            >
-              <Lock className="h-4 w-4" />
-              {accountPending ? t('sending') : t('continue')}
-              <ArrowLeft className={`h-4 w-4 ${rtl ? '' : 'rotate-180'}`} />
-            </button>
-          </form>
-        ) : role === 'creator' || role === 'reposter' ? (
+        {role === 'creator' || role === 'reposter' ? (
           <form
             action={creatorAction}
             className="mt-5 flex flex-col gap-3"
@@ -175,7 +105,27 @@ export function UnifiedLogin({ locale }: { locale: Locale }) {
           </form>
         ) : (
           <form action={adminAction} className="mt-5 flex flex-col gap-3">
-            <input type="hidden" name="name" value={role} />
+            <input type="hidden" name="name" value={role === 'admin' ? adminPerson : role} />
+            {role === 'admin' ? (
+              <div className="flex flex-col gap-3">
+                <label htmlFor="admin-person" className="text-sm font-semibold text-foreground">
+                  {t('adminPerson')}
+                </label>
+                <select
+                  id="admin-person"
+                  value={adminPerson}
+                  onChange={(e) => setAdminPerson(e.target.value as AdminPerson)}
+                  className={`h-12 w-full rounded-xl border border-input bg-card px-3 text-sm font-medium shadow-sm outline-none transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring ${
+                    rtl ? 'text-right' : 'text-left'
+                  }`}
+                >
+                  <option value="lula">Lula</option>
+                  <option value="sultan">Sultan</option>
+                  <option value="ammar">Ammar</option>
+                  <option value="rimas">Rimas</option>
+                </select>
+              </div>
+            ) : null}
             <label htmlFor="password" className="text-sm font-semibold text-foreground">
               {t('password')}
             </label>

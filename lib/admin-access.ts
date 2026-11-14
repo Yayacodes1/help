@@ -1,4 +1,11 @@
-/** Yahya and Ahmed can open Ahmed’s wallet. Lula and Sultan cannot. */
+/** Lula, Sultan, Ammar, and Rimas share the same admin access. */
+const STAFF_ADMINS = new Set(['lula', 'sultan', 'ammar', 'rimas'])
+
+export function isStaffAdmin(accountId: string | null | undefined): boolean {
+  return accountId != null && STAFF_ADMINS.has(accountId)
+}
+
+/** Yahya and Ahmed can open Ahmed’s wallet. Staff admins cannot. */
 export function canSeeAhmedWallet(accountId: string | null | undefined): boolean {
   return accountId === 'yahya' || accountId === 'ahmed'
 }
@@ -13,47 +20,42 @@ export function canMoveYahyaExpenses(accountId: string | null | undefined): bool
   return accountId === 'yahya' || accountId === 'ahmed'
 }
 
-/** Ahmed, Lula, and Sultan can add or remove outreach logins. */
+/** Ahmed and staff admins can add or remove outreach logins. */
 export function canManageOutreachAccounts(accountId: string | null | undefined): boolean {
-  return accountId === 'ahmed' || accountId === 'lula' || accountId === 'sultan'
+  return accountId === 'ahmed' || isStaffAdmin(accountId)
 }
 
-/** Yahya, Ahmed, Lula, and Sultan can open the urgent pay list. */
+/** Yahya, Ahmed, and staff admins can open the urgent pay list. */
 export function canSeeUrgentList(accountId: string | null | undefined): boolean {
-  return (
-    accountId === 'yahya' ||
-    accountId === 'ahmed' ||
-    accountId === 'lula' ||
-    accountId === 'sultan'
-  )
+  return accountId === 'yahya' || accountId === 'ahmed' || isStaffAdmin(accountId)
 }
 
-/** Yahya, Ahmed, Lula, and Sultan can open creator payout details (PayPal / bank). */
+/** Yahya, Ahmed, and staff admins can open creator payout details (PayPal / bank). */
 export function canSeeCreatorPayouts(accountId: string | null | undefined): boolean {
-  return (
-    accountId === 'yahya' ||
-    accountId === 'ahmed' ||
-    accountId === 'lula' ||
-    accountId === 'sultan'
-  )
+  return accountId === 'yahya' || accountId === 'ahmed' || isStaffAdmin(accountId)
 }
 
-/** Ahmed, Lula, and Sultan can add someone to the urgent pay list. */
+/** Ahmed and staff admins can add someone to the urgent pay list. */
 export function canSendUrgentList(accountId: string | null | undefined): boolean {
-  return accountId === 'ahmed' || accountId === 'lula' || accountId === 'sultan'
+  return accountId === 'ahmed' || isStaffAdmin(accountId)
+}
+
+/** Yahya, Ahmed, and staff admins can edit company-structure pay. */
+export function canEditStructurePay(accountId: string | null | undefined): boolean {
+  return accountId === 'yahya' || accountId === 'ahmed' || isStaffAdmin(accountId)
 }
 
 export type StructureTier = 'ceo' | 'coo' | 'deputy_coo' | 'leader' | 'outreach' | 'reposter'
 
 /**
  * Yahya (CEO & Founder) and Ahmed (COO) see every company-structure payment.
- * Lula (Deputy COO) and Sultan see leaders / outreach / reposters / deputy — not CEO or COO pay.
+ * Staff admins see leaders / outreach / reposters / deputy — not CEO or COO pay.
  */
 export function canSeeStructureTier(
   accountId: string | null | undefined,
   tier: StructureTier,
 ): boolean {
   if (accountId === 'yahya' || accountId === 'ahmed') return true
-  if (accountId === 'lula' || accountId === 'sultan') return tier !== 'ceo' && tier !== 'coo'
+  if (isStaffAdmin(accountId)) return tier !== 'ceo' && tier !== 'coo'
   return false
 }

@@ -35,6 +35,8 @@ function payerLabel(paidBy?: string | null, recordedBy?: string | null): string 
   if (id === 'ahmed') return 'Ahmed'
   if (id === 'lula') return 'Lula'
   if (id === 'sultan') return 'Sultan'
+  if (id === 'ammar') return 'Ammar'
+  if (id === 'rimas') return 'Rimas'
   if (id) return id.charAt(0).toUpperCase() + id.slice(1)
   return '—'
 }

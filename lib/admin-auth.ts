@@ -17,6 +17,8 @@ function accounts(): Account[] {
   out.push({ id: 'ahmed', name: 'Ahmed', role: 'manager', password: 'iwillgetcashed' })
   out.push({ id: 'lula', name: 'Lula', role: 'manager', password: 'lulaisadmin' })
   out.push({ id: 'sultan', name: 'Sultan', role: 'manager', password: 'sultanisadmin' })
+  out.push({ id: 'ammar', name: 'Ammar', role: 'manager', password: 'amarisadmin' })
+  out.push({ id: 'rimas', name: 'Rimas', role: 'manager', password: 'rimasisadmin' })
   return out
 }
 

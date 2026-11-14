@@ -3,7 +3,7 @@ import { Suspense } from 'react'
 import nextDynamic from 'next/dynamic'
 import { after } from 'next/server'
 import { redirect } from 'next/navigation'
-import { canManageOutreachAccounts, canMoveYahyaExpenses, canSeeAhmedWallet, canSeeCreatorPayouts, canSeeUrgentList, canSeeYahyaExpenses, canSendUrgentList } from '@/lib/admin-access'
+import { canEditStructurePay, canManageOutreachAccounts, canMoveYahyaExpenses, canSeeAhmedWallet, canSeeCreatorPayouts, canSeeUrgentList, canSeeYahyaExpenses, canSendUrgentList } from '@/lib/admin-access'
 import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import { ADMIN_TABS, resolveAdminTab } from '@/lib/admin-tabs'
 import { AdminTabs } from '@/components/admin/admin-tabs'
@@ -2435,12 +2435,7 @@ export default async function AdminPage({
                     <StructurePayBoard
                       slots={structurePay}
                       today={opToday}
-                      canEdit={
-                        session?.id === 'yahya' ||
-                        session?.id === 'ahmed' ||
-                        session?.id === 'lula' ||
-                        session?.id === 'sultan'
-                      }
+                      canEdit={canEditStructurePay(session?.id)}
                     />
                   ) : null,
                 },
