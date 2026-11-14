@@ -32,6 +32,7 @@ import { BreaksManager } from '@/components/admin/breaks-manager'
 import { StrikesManager } from '@/components/admin/strikes-manager'
 import { getCreatorStrikeSummary, syncReposterStrikes } from '@/lib/strikes'
 import { PersonHandlesLine } from '@/components/person-handles'
+import { WhatsAppContact } from '@/components/whatsapp-contact'
 import { StatCard } from '@/components/stat-card'
 import { StandingBadge } from '@/components/standing-badge'
 import { getCommissionBoard, getCreatorCommissionSheets } from '@/lib/commission-data'
@@ -168,6 +169,10 @@ export default async function CreatorDetailPage({
             {perf ? <StandingBadge standing={perf.standing} /> : null}
           </h1>
           <PersonHandlesLine person={creator} className="mt-1 text-xs text-muted-foreground" />
+          <WhatsAppContact
+            phone={creator.whatsapp_phone}
+            buttonLabel={t('textThemWhatsApp')}
+          />
           {creatorLeader ? (
             <p className="mt-1 text-sm text-muted-foreground">Leader: {creatorLeader.name}</p>
           ) : null}

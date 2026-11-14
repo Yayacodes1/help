@@ -11,6 +11,7 @@ import { SubmissionsTable } from '@/components/admin/submissions-table'
 import { RefreshViewsButton } from '@/components/admin/refresh-views-button'
 import { idsOnPage } from '@/lib/refresh-scope'
 import { PersonHandlesLine } from '@/components/person-handles'
+import { WhatsAppContact } from '@/components/whatsapp-contact'
 import { StatCard } from '@/components/stat-card'
 import { getLeaderSession } from '@/lib/leader-auth'
 import { getLeaderBoard, getLeaderScope } from '@/lib/leaders'
@@ -335,6 +336,10 @@ export default async function LeaderCreatorPage({
             ) : null}
           </h2>
           <PersonHandlesLine person={creator} className="mt-1 text-sm text-muted-foreground" />
+          <WhatsAppContact
+            phone={creator.whatsapp_phone}
+            buttonLabel={t('textThemWhatsApp')}
+          />
           <p className="mt-1 text-sm text-muted-foreground">
             {project?.name ?? t('bothProjects')}
             {active
