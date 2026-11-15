@@ -7,6 +7,7 @@ import {
   buildPaymentCalendarModel,
   parseCalendarRole,
   type CalendarContractInput,
+  type CalendarDayCell,
   type CalendarPaymentInput,
   type CalendarRoleFilter,
   type CalendarVideoHit,
@@ -217,13 +218,49 @@ export async function loadPaymentCalendar(opts: {
     commissionRecordedSar: 0,
     commissionDueSar: 0,
   })
+  const horizon = addDays(opts.today, 29)
+  const monthKeys = new Set<string>([
+    opts.month,
+    nextMonth,
+    ...monthsBetween(opts.today.slice(0, 7), horizon.slice(0, 7)),
+  ])
+  const built = new Map<string, PaymentCalendarModel>([
+    [opts.month, current],
+    [nextMonth, next],
+  ])
+  const byDate = new Map<string, CalendarDayCell>()
+  for (const month of [...monthKeys].sort()) {
+    const model = built.get(month) ?? buildPaymentCalendarModel({
+      ...shared,
+      month,
+      commissionEarnedSar: 0,
+      commissionRecordedSar: 0,
+      commissionDueSar: 0,
+    })
+    for (const day of model.days) {
+      if (!day.inMonth || byDate.has(day.date)) continue
+      byDate.set(day.date, day)
+    }
+  }
   return {
     ...current,
     reposterCommission,
     nextMonth,
     nextScheduledSar: next.scheduledTotalSar,
     nextScheduledUsd: next.scheduledTotalUsd,
+    spanDays: [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)),
   }
+}
+
+function monthsBetween(startMonth: string, endMonth: string): string[] {
+  const out: string[] = []
+  let cursor = startMonth
+  while (cursor <= endMonth && out.length < 6) {
+    out.push(cursor)
+    const [year, month] = cursor.split('-').map(Number)
+    cursor = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`
+  }
+  return out
 }
 
 function roundCommission(value: number): number {

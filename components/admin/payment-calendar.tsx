@@ -2,15 +2,22 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { formatMoney, formatNumber, formatYearMonth } from '@/lib/format'
-import { addDays } from '@/lib/campaign'
-import type {
-  CalendarDayCell,
-  CalendarRoleFilter,
-  PaymentCalendarModel,
-  SettledObligation,
+import { formatMoney, formatNumber, formatWeekdayDate, formatYearMonth } from '@/lib/format'
+import { addDays, calendarMonthRange } from '@/lib/campaign'
+import {
+  monthGridDates,
+  type CalendarDayCell,
+  type CalendarRoleFilter,
+  type PaymentCalendarModel,
+  type SettledObligation,
 } from '@/lib/payment-calendar'
-import { daysAhead, type PayUrgency } from '@/lib/payment-calendar-math'
+import {
+  daysAhead,
+  payLineCategory,
+  roundMoney,
+  type PayLineCategory,
+  type PayUrgency,
+} from '@/lib/payment-calendar-math'
 import { MoneyPair } from '@/components/admin/money-pair'
 import { PushContractForward } from '@/components/admin/push-contract-forward'
 import { PaymentCalendarNav } from '@/components/admin/payment-calendar-nav'
@@ -34,6 +41,83 @@ const SELECTED_CLASS =
 function sameDateSet(a: Set<string>, b: string[]): boolean {
   if (a.size !== b.length) return false
   return b.every((date) => a.has(date))
+}
+
+function categoryLabel(
+  id: PayLineCategory,
+  labels: { creators: string; reposters: string; management: string },
+): string {
+  if (id === 'management') return labels.management
+  if (id === 'reposters') return labels.reposters
+  return labels.creators
+}
+
+function shortDay(value: string, locale: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  const [year, month, day] = value.split('-').map(Number)
+  const loc = locale === 'ar' || locale.startsWith('ar') ? 'ar' : 'en-US'
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(loc, {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
+function paySpan(model: PaymentCalendarModel): CalendarDayCell[] {
+  return model.spanDays.length > 0 ? model.spanDays : model.days.filter((day) => day.inMonth)
+}
+
+type DayPayPerson = { creatorId: number; name: string; sar: number }
+type DayPayCategory = { id: PayLineCategory; sar: number; usd: number; people: DayPayPerson[] }
+type DayPayRow = { date: string; sar: number; usd: number; categories: DayPayCategory[] }
+
+function buildDayPayRows(
+  days: CalendarDayCell[],
+  selected: Set<string>,
+  role: CalendarRoleFilter,
+): { rows: DayPayRow[]; totals: Record<PayLineCategory, number> & { sar: number; usd: number } } {
+  const byDate = new Map(days.map((day) => [day.date, day]))
+  const totals = { creators: 0, reposters: 0, management: 0, sar: 0, usd: 0 }
+  const rows: DayPayRow[] = []
+  for (const date of [...selected].sort()) {
+    const day = byDate.get(date)
+    if (!day) continue
+    const items = unpaidItemsOnDay(day, role)
+    if (items.length === 0) continue
+    const buckets = new Map<PayLineCategory, Map<number, DayPayPerson>>()
+    let sar = 0
+    for (const item of items) {
+      sar += item.remainingSar
+      const id = payLineCategory(item.creatorId, item.role)
+      const people = buckets.get(id) ?? new Map<number, DayPayPerson>()
+      const name =
+        item.creatorId < 0 && item.projectName && item.projectName !== item.creatorName
+          ? `${item.creatorName} · ${item.projectName}`
+          : item.creatorName
+      const existing = people.get(item.creatorId)
+      if (existing) existing.sar += item.remainingSar
+      else people.set(item.creatorId, { creatorId: item.creatorId, name, sar: item.remainingSar })
+      buckets.set(id, people)
+    }
+    sar = roundMoney(sar)
+    const usd = day.remainingSar > 0 ? roundMoney(day.remainingUsd * (sar / day.remainingSar)) : 0
+    const categories: DayPayCategory[] = []
+    for (const id of ['creators', 'reposters', 'management'] as const) {
+      const peopleMap = buckets.get(id)
+      if (!peopleMap) continue
+      const people = [...peopleMap.values()]
+        .map((person) => ({ ...person, sar: roundMoney(person.sar) }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+      const catSar = roundMoney(people.reduce((sum, person) => sum + person.sar, 0))
+      const catUsd = sar > 0 ? roundMoney(usd * (catSar / sar)) : 0
+      totals[id] = roundMoney(totals[id] + catSar)
+      categories.push({ id, sar: catSar, usd: catUsd, people })
+    }
+    totals.sar = roundMoney(totals.sar + sar)
+    totals.usd = roundMoney(totals.usd + usd)
+    rows.push({ date, sar, usd, categories })
+  }
+  return { rows, totals }
 }
 
 type PayPersonRow = {
@@ -222,6 +306,130 @@ function PayPeople({
   )
 }
 
+function PayRangeCalendar({
+  spanDays,
+  payable,
+  weekdays,
+  locale,
+  today,
+  from,
+  to,
+  onApply,
+  onClose,
+  labels,
+}: {
+  spanDays: CalendarDayCell[]
+  payable: Set<string>
+  weekdays: string[]
+  locale: string
+  today: string
+  from: string
+  to: string
+  onApply: (from: string, to: string) => void
+  onClose: () => void
+  labels: { pickRange: string; showDays: string; prev: string; next: string }
+}) {
+  const months = useMemo(
+    () => [...new Set(spanDays.map((day) => day.date.slice(0, 7)))].sort(),
+    [spanDays],
+  )
+  const allowed = useMemo(() => new Set(spanDays.map((day) => day.date)), [spanDays])
+  const [cursor, setCursor] = useState(
+    months.includes(from.slice(0, 7)) ? from.slice(0, 7) : (months[0] ?? from.slice(0, 7)),
+  )
+  const [draftFrom, setDraftFrom] = useState(from)
+  const [draftTo, setDraftTo] = useState<string | null>(to)
+  const { start, end } = calendarMonthRange(cursor)
+  const cells = monthGridDates(start, end)
+  const index = months.indexOf(cursor)
+  const rangeStart = !draftTo || draftFrom <= draftTo ? draftFrom : draftTo
+  const rangeEnd = !draftTo || draftFrom <= draftTo ? (draftTo ?? draftFrom) : draftFrom
+
+  function pick(date: string) {
+    if (!draftFrom || draftTo) {
+      setDraftFrom(date)
+      setDraftTo(null)
+      return
+    }
+    if (date < draftFrom) {
+      setDraftTo(draftFrom)
+      setDraftFrom(date)
+    } else {
+      setDraftTo(date)
+    }
+  }
+
+  return (
+    <>
+      <button type="button" className="fixed inset-0 z-20 cursor-default" aria-label="Close" onClick={onClose} />
+      <div className="absolute left-0 z-30 mt-2 w-72 rounded-xl border border-border bg-card p-3 shadow-lg">
+        <p className="text-xs text-muted-foreground">{labels.pickRange}</p>
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            disabled={index <= 0}
+            onClick={() => setCursor(months[index - 1])}
+            className="h-8 rounded-md border border-border px-2 text-xs disabled:opacity-40"
+          >
+            {labels.prev}
+          </button>
+          <span className="text-sm font-semibold">{formatYearMonth(cursor, locale)}</span>
+          <button
+            type="button"
+            disabled={index < 0 || index >= months.length - 1}
+            onClick={() => setCursor(months[index + 1])}
+            className="h-8 rounded-md border border-border px-2 text-xs disabled:opacity-40"
+          >
+            {labels.next}
+          </button>
+        </div>
+        <div className="mt-2 grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase text-muted-foreground">
+          {weekdays.map((day) => (
+            <div key={day}>{day}</div>
+          ))}
+        </div>
+        <div className="mt-1 grid grid-cols-7 gap-1">
+          {cells.map((date) => {
+            const inCursor = date >= start && date <= end
+            if (!inCursor) return <div key={date} />
+            const enabled = allowed.has(date)
+            const chosen = enabled && date >= rangeStart && date <= rangeEnd
+            return (
+              <button
+                key={date}
+                type="button"
+                disabled={!enabled}
+                onClick={() => pick(date)}
+                className={`flex h-8 flex-col items-center justify-center rounded-md text-xs tabular-nums ${
+                  chosen
+                    ? 'bg-zinc-950 font-semibold text-white'
+                    : enabled
+                      ? 'hover:bg-accent'
+                      : 'text-muted-foreground/40'
+                } ${date === today && !chosen ? 'ring-1 ring-foreground' : ''}`}
+              >
+                {Number(date.slice(8))}
+                {payable.has(date) ? <span className="mt-0.5 block size-1 rounded-full bg-current" /> : null}
+              </button>
+            )
+          })}
+        </div>
+        <p className="mt-2 text-xs font-medium">
+          {shortDay(rangeStart, locale)}
+          {rangeEnd !== rangeStart ? ` – ${shortDay(rangeEnd, locale)}` : ''}
+        </p>
+        <button
+          type="button"
+          onClick={() => onApply(rangeStart, rangeEnd)}
+          className="mt-2 h-9 w-full rounded-lg bg-zinc-950 text-sm font-medium text-white hover:bg-zinc-800"
+        >
+          {labels.showDays}
+        </button>
+      </div>
+    </>
+  )
+}
+
 export function PaymentCalendarBoard({
   model,
   locale,
@@ -275,61 +483,84 @@ export function PaymentCalendarBoard({
     customDays: string
     addDays: string
     owedPresets: string
-    next15: string
-    monthStartEnd: string
-    todayToEnd: string
+    next7: string
+    next14: string
+    comingMonth: string
     pickDays: string
+    dayList: string
+    dayListHint: string
+    management: string
+    nothingInRange: string
+    customDates: string
+    pickRange: string
+    showDays: string
+    rangeTotal: string
     selected: string
     clearSelection: string
     paying: string
     openDay: string
     noSelection: string
-    pickDate: string
-    from: string
-    to: string
-    applyRange: string
-    addDay: string
   }
 }) {
-  const [selected, setSelected] = useState<Set<string>>(() => new Set())
-  const [rangeFrom, setRangeFrom] = useState(model.today)
-  const [rangeTo, setRangeTo] = useState(addDays(model.today, 14))
-  const [pickOne, setPickOne] = useState(model.today)
+  const [payFrom, setPayFrom] = useState(model.today)
+  const [payTo, setPayTo] = useState(() => addDays(model.today, 6))
+  const [preset, setPreset] = useState<'7' | '14' | '30' | 'custom'>('7')
+  const [rangeOpen, setRangeOpen] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(() => {
+    const span = paySpan(model)
+    return new Set(sumRange(span, model.today, addDays(model.today, 6), model.role).dates)
+  })
   /** Local filter for owed totals / selection; follows page role when that page is already filtered. */
   const [pickRole, setPickRole] = useState<CalendarRoleFilter>(model.role)
 
   const hrefFor = (date: string) => {
     const q = new URLSearchParams()
-    q.set('calMonth', model.month)
+    q.set('calMonth', date.slice(0, 7))
     if (model.role !== 'all') q.set('calRole', model.role)
     return `/admin/payments/${date}?${q.toString()}`
   }
 
   const roleFilter = model.role !== 'all' ? model.role : pickRole
+  const spanDays = paySpan(model)
 
-  const next15 = useMemo(
-    () => sumRange(model.days, model.today, addDays(model.today, 14), roleFilter),
-    [model.days, model.today, roleFilter],
-  )
-  const monthFull = useMemo(
-    () => sumRange(model.days, model.start, model.end, roleFilter),
-    [model.days, model.start, model.end, roleFilter],
-  )
-  const todayToEnd = useMemo(
-    () => sumRange(model.days, model.today, model.end, roleFilter),
-    [model.days, model.today, model.end, roleFilter],
+  const presets = useMemo(
+    () =>
+      [
+        { key: '7' as const, label: labels.next7, data: sumRange(spanDays, model.today, addDays(model.today, 6), roleFilter) },
+        { key: '14' as const, label: labels.next14, data: sumRange(spanDays, model.today, addDays(model.today, 13), roleFilter) },
+        {
+          key: '30' as const,
+          label: labels.comingMonth,
+          data: sumRange(spanDays, model.today, addDays(model.today, 29), roleFilter),
+        },
+      ],
+    [spanDays, model.today, roleFilter, labels.next7, labels.next14, labels.comingMonth],
   )
 
   const selection = useMemo(
-    () => peopleFromDates(model.days, selected, roleFilter),
-    [model.days, selected, roleFilter],
+    () => peopleFromDates(spanDays, selected, roleFilter),
+    [spanDays, selected, roleFilter],
   )
-  const next15Active = sameDateSet(selected, next15.dates)
-  const monthFullActive = sameDateSet(selected, monthFull.dates)
-  const todayToEndActive = sameDateSet(selected, todayToEnd.dates)
+  const dayPay = useMemo(
+    () => buildDayPayRows(spanDays, selected, roleFilter),
+    [spanDays, selected, roleFilter],
+  )
+  const payableDates = useMemo(() => {
+    const dates = new Set<string>()
+    for (const day of spanDays) {
+      if (dayRemainingForRole(day, roleFilter) > 0.009) dates.add(day.date)
+    }
+    return dates
+  }, [spanDays, roleFilter])
 
-  function applyPreset(dates: string[]) {
-    setSelected(new Set(dates))
+  function applyWindow(from: string, to: string, nextPreset: '7' | '14' | '30' | 'custom') {
+    const start = from <= to ? from : to
+    const end = from <= to ? to : from
+    setPayFrom(start)
+    setPayTo(end)
+    setPreset(nextPreset)
+    setSelected(new Set(sumRange(spanDays, start, end, roleFilter).dates))
+    setRangeOpen(false)
   }
 
   function toggleDay(date: string) {
@@ -341,26 +572,6 @@ export function PaymentCalendarBoard({
     })
   }
 
-  function applyCustomRange() {
-    const from = rangeFrom <= rangeTo ? rangeFrom : rangeTo
-    const to = rangeFrom <= rangeTo ? rangeTo : rangeFrom
-    const dates = sumRange(model.days, from, to, roleFilter).dates
-    setSelected(new Set(dates))
-  }
-
-  function addPickedDay() {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(pickOne)) return
-    const day = model.days.find((d) => d.date === pickOne && d.inMonth)
-    const remaining = day ? dayRemainingForRole(day, roleFilter) : 0
-    if (!day || remaining <= 0.009) {
-      setSelected((prev) => new Set(prev).add(pickOne))
-      return
-    }
-    toggleDay(pickOne)
-  }
-
-  const inputClass =
-    'h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
   const roleToggleClass = (active: boolean) =>
     `rounded-md px-2.5 py-1.5 text-xs font-medium sm:text-sm ${
       active ? 'bg-zinc-950 text-white' : 'text-muted-foreground hover:bg-accent'
@@ -474,7 +685,9 @@ export function PaymentCalendarBoard({
                 type="button"
                 onClick={() => {
                   setPickRole(opt.id)
-                  setSelected(new Set())
+                  const start = payFrom <= payTo ? payFrom : payTo
+                  const end = payFrom <= payTo ? payTo : payFrom
+                  setSelected(new Set(sumRange(spanDays, start, end, opt.id).dates))
                 }}
                 className={roleToggleClass(pickRole === opt.id)}
               >
@@ -485,91 +698,142 @@ export function PaymentCalendarBoard({
         ) : null}
 
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          {(
-            [
-              { key: 'next15', label: labels.next15, data: next15, active: next15Active },
-              { key: 'month', label: labels.monthStartEnd, data: monthFull, active: monthFullActive },
-              { key: 'todayEnd', label: labels.todayToEnd, data: todayToEnd, active: todayToEndActive },
-            ] as const
-          ).map((preset) => (
-            <button
-              key={preset.key}
-              type="button"
-              onClick={() => applyPreset(preset.data.dates)}
-              className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                preset.active
-                  ? 'border-zinc-950 bg-zinc-950 text-white shadow-md'
-                  : 'border-border hover:border-primary/50 hover:bg-accent/40'
-              }`}
-            >
-              <div
-                className={`text-xs font-semibold ${
-                  preset.active ? 'text-white/80' : 'text-muted-foreground'
+          {presets.map((item) => {
+            const active = preset === item.key && sameDateSet(selected, item.data.dates)
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => {
+                  const from = model.today
+                  const to =
+                    item.key === '7'
+                      ? addDays(model.today, 6)
+                      : item.key === '14'
+                        ? addDays(model.today, 13)
+                        : addDays(model.today, 29)
+                  applyWindow(from, to, item.key)
+                }}
+                className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                  active
+                    ? 'border-zinc-950 bg-zinc-950 text-white shadow-md'
+                    : 'border-border hover:border-primary/50 hover:bg-accent/40'
                 }`}
               >
-                {preset.label}
-                {preset.active ? ' · ✓' : ''}
-              </div>
-              <div className={`mt-1 ${preset.active ? '[&_span]:text-white' : ''}`}>
-                <MoneyPair sar={preset.data.sar} usd={preset.data.usd} />
-              </div>
-            </button>
-          ))}
+                <div className={`text-xs font-semibold ${active ? 'text-white/80' : 'text-muted-foreground'}`}>
+                  {item.label}
+                  {active ? ' · ✓' : ''}
+                </div>
+                <div className={`mt-1 ${active ? '[&_span]:text-white' : ''}`}>
+                  <MoneyPair sar={item.data.sar} usd={item.data.usd} />
+                </div>
+              </button>
+            )
+          })}
         </div>
 
-        <div className="mt-4 grid gap-3 rounded-lg border border-border bg-muted/30 p-3 sm:grid-cols-[1fr_1fr_auto]">
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            {labels.from}
-            <input
-              type="date"
-              value={rangeFrom}
-              min={model.start}
-              max={model.end}
-              onChange={(e) => setRangeFrom(e.target.value)}
-              className={inputClass}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            {labels.to}
-            <input
-              type="date"
-              value={rangeTo}
-              min={model.start}
-              max={model.end}
-              onChange={(e) => setRangeTo(e.target.value)}
-              className={inputClass}
-            />
-          </label>
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={applyCustomRange}
-              className="h-9 w-full rounded-lg bg-zinc-950 px-3 text-sm font-medium text-white hover:bg-zinc-800 sm:w-auto"
-            >
-              {labels.applyRange}
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-end gap-2">
-          <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
-            {labels.pickDate}
-            <input
-              type="date"
-              value={pickOne}
-              min={model.start}
-              max={model.end}
-              onChange={(e) => setPickOne(e.target.value)}
-              className={inputClass}
-            />
-          </label>
+        <div className="relative mt-3">
           <button
             type="button"
-            onClick={addPickedDay}
-            className="h-9 rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
+            onClick={() => setRangeOpen((open) => !open)}
+            className={`h-9 rounded-lg border px-3 text-sm font-medium ${
+              preset === 'custom'
+                ? 'border-zinc-950 bg-zinc-950 text-white'
+                : 'border-border hover:bg-accent'
+            }`}
           >
-            {labels.addDay}
+            {labels.customDates}
+            {' · '}
+            {shortDay(payFrom, locale)}
+            {payTo !== payFrom ? ` – ${shortDay(payTo, locale)}` : ''}
           </button>
+          {rangeOpen ? (
+            <PayRangeCalendar
+              key={`${payFrom}:${payTo}`}
+              spanDays={spanDays}
+              payable={payableDates}
+              weekdays={labels.weekdays}
+              locale={locale}
+              today={model.today}
+              from={payFrom}
+              to={payTo}
+              onClose={() => setRangeOpen(false)}
+              onApply={(from, to) => applyWindow(from, to, 'custom')}
+              labels={{
+                pickRange: labels.pickRange,
+                showDays: labels.showDays,
+                prev: labels.prev,
+                next: labels.next,
+              }}
+            />
+          ) : null}
+        </div>
+
+        <div className="mt-4 border-t border-border pt-4">
+          <h5 className="text-sm font-semibold">{labels.dayList}</h5>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {labels.dayListHint}
+            {dayPay.rows.length > 0
+              ? ` · ${shortDay(dayPay.rows[0].date, locale)}${
+                  dayPay.rows.length > 1
+                    ? ` – ${shortDay(dayPay.rows[dayPay.rows.length - 1].date, locale)}`
+                    : ''
+                }`
+              : ''}
+          </p>
+          {dayPay.rows.length === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground">{labels.nothingInRange}</p>
+          ) : (
+            <>
+              <ul className="mt-3 flex flex-col gap-2">
+                {dayPay.rows.map((row) => (
+                  <li key={row.date} className="rounded-lg border border-border px-3 py-3">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <Link href={hrefFor(row.date)} className="font-semibold hover:underline">
+                        {formatWeekdayDate(row.date, locale)}
+                      </Link>
+                      <MoneyPair sar={row.sar} usd={row.usd} big />
+                    </div>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                      {row.categories.map((category) => (
+                        <div key={category.id} className="rounded-md bg-muted/40 px-2.5 py-2">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-xs font-semibold">{categoryLabel(category.id, labels)}</span>
+                            <MoneyPair sar={category.sar} usd={category.usd} />
+                          </div>
+                          <ul className="mt-1 flex flex-col gap-0.5">
+                            {category.people.map((person) => (
+                              <li
+                                key={person.creatorId}
+                                className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground"
+                              >
+                                <span className="min-w-0 truncate">{person.name}</span>
+                                <span className="shrink-0 tabular-nums">{formatMoney(person.sar, 'SAR')}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-3 grid gap-2 border-t border-border pt-3 sm:grid-cols-4">
+                {(['creators', 'reposters', 'management'] as const).map((id) =>
+                  dayPay.totals[id] <= 0.009 ? null : (
+                    <div key={id}>
+                      <p className="text-xs text-muted-foreground">{categoryLabel(id, labels)}</p>
+                      <MoneyPair sar={dayPay.totals[id]} />
+                    </div>
+                  ),
+                )}
+                <div>
+                  <p className="text-xs text-muted-foreground">{labels.rangeTotal}</p>
+                  <MoneyPair sar={dayPay.totals.sar} usd={dayPay.totals.usd} big />
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </section>
 

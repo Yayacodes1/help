@@ -5,6 +5,7 @@ import {
   amountsForPaySlices,
   buildCreatorPaySchedule,
   monthGridDates,
+  payLineCategory,
   reposterViewCommissionSar,
   resolvePayTiming,
   sarToUsd,
@@ -269,4 +270,10 @@ test('reposter commission is 2 SAR for every 2,000 views after 10,000', () => {
   assert.equal(reposterViewCommissionSar(18_000), 8)
   assert.equal(reposterViewCommissionSar(20_000), 10)
   assert.equal(reposterViewCommissionSar(21_999), 10)
+})
+
+test('pay lines split management, creators, and reposters', () => {
+  assert.equal(payLineCategory(-2, 'creator'), 'management')
+  assert.equal(payLineCategory(4, 'creator'), 'creators')
+  assert.equal(payLineCategory(9, 'reposter'), 'reposters')
 })

@@ -180,6 +180,8 @@ export type PaymentCalendarModel = {
   /** View commission for the Reposters switch. Empty on the other switches. */
   reposterCommission: ReposterCommissionLine[]
   days: CalendarDayCell[]
+  /** Viewed month, the next month, and today through the coming month — so a range can cross the month line. */
+  spanDays: CalendarDayCell[]
   unscheduled: UnscheduledPayment[]
   undated: SettledObligation[]
   items: SettledObligation[]
@@ -484,6 +486,7 @@ export function buildPaymentCalendarModel(opts: {
     commissionDueSar: roundMoney(opts.commissionDueSar),
     reposterCommission: [],
     days,
+    spanDays: days.filter((day) => day.inMonth),
     unscheduled,
     undated,
     items: monthItems,

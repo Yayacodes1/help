@@ -314,6 +314,15 @@ export function reposterViewCommissionSar(views: number): number {
   return Math.floor(over / 2_000) * 2
 }
 
+/** Company salaries use negative ids. Creators and reposters stay on their own contracts. */
+export type PayLineCategory = 'creators' | 'reposters' | 'management'
+
+export function payLineCategory(creatorId: number, role: 'creator' | 'reposter'): PayLineCategory {
+  if (creatorId < 0) return 'management'
+  if (role === 'reposter') return 'reposters'
+  return 'creators'
+}
+
 export function monthGridDates(start: string, end: string): string[] {
   const lead = weekdayIndexMondayFirst(start)
   const dates: string[] = []
