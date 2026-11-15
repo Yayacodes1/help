@@ -308,7 +308,19 @@ export default async function CreatorDetailPage({
                     {formatDate(consistency.streakEpochEnd)}. {t('streakPeriodHint')}
                   </p>
                 ) : null}
-                <ConsistencyCalendar days={consistency.days} />
+                {consistency.contractEndedOn ? (
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    {t('streakContractEnded').replace(
+                      '{date}',
+                      formatDate(consistency.contractEndedOn),
+                    )}
+                    {consistency.extendedPastEnd ? ` ${t('streakExtendedPastEnd')}` : null}
+                  </p>
+                ) : null}
+                <ConsistencyCalendar
+                  days={consistency.days}
+                  contractEndedOn={consistency.contractEndedOn}
+                />
                 <p className="mt-3 text-xs text-muted-foreground">
                   {consistency.missDays} · {consistency.partialDays} · {consistency.currentStreak} /{' '}
                   {consistency.bestStreak}

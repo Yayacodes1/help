@@ -121,6 +121,35 @@ export function streakMustPost(opts: {
   return !opts.videosComplete
 }
 
+/**
+ * Consistency boards show day-by-day through today when a contract ended
+ * but video targets are still unfinished. Otherwise they stop at the contract window.
+ */
+export function consistencyCalendarEnd(opts: {
+  startDate: string
+  endDate: string | null
+  windowEnd: string
+  today: string
+  videosComplete: boolean
+}): { end: string; contractEndedOn: string | null; extendedPastEnd: boolean } {
+  const contractEndedOn =
+    opts.endDate && opts.endDate < opts.today ? opts.endDate : null
+  const mustPost = streakMustPost({
+    asOf: opts.today,
+    startDate: opts.startDate,
+    endDate: opts.endDate,
+    videosComplete: opts.videosComplete,
+  })
+  if (contractEndedOn && mustPost && opts.today > opts.windowEnd) {
+    return { end: opts.today, contractEndedOn, extendedPastEnd: true }
+  }
+  return {
+    end: opts.windowEnd,
+    contractEndedOn,
+    extendedPastEnd: false,
+  }
+}
+
 /** Calendar day in Riyadh (YYYY-MM-DD). */
 function riyadhTodayYmd(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' })

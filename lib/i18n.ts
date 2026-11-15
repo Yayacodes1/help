@@ -138,6 +138,9 @@ export const messages = {
     streakPeriod: 'Contract period',
     streakPeriodHint:
       'Hit rate uses this contract. Streaks keep going from the previous contract, and Restore last streaks puts the old number back after a miss.',
+    streakContractEnded: 'Contract ended {date}.',
+    streakExtendedPastEnd:
+      'Calendar continues day by day while videos for this contract are still unfinished.',
     restoreStreaks: 'Restore last streaks',
     restoreStreaksOne: 'Restore last streak',
     restoreStreaksHint:
@@ -1012,6 +1015,8 @@ export const messages = {
     streakPeriod: 'فترة العقد',
     streakPeriodHint:
       'نسبة الالتزام لهذا العقد. السلاسل تُكمل من العقد السابق، و«استعادة السلاسل» يُرجع الرقم السابق بعد يوم ضائع.',
+    streakContractEnded: 'انتهى العقد في {date}.',
+    streakExtendedPastEnd: 'التقويم يكمل يوماً بيوم لأن فيديوهات هذا العقد لم تكتمل بعد.',
     restoreStreaks: 'استعادة السلاسل السابقة',
     restoreStreaksOne: 'استعادة السلسلة السابقة',
     restoreStreaksHint:

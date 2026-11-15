@@ -18,7 +18,14 @@ const STATUS_LABEL: Record<DayStatus, string> = {
   break: 'Break / rest (posts turn green)',
 }
 
-export function ConsistencyCalendar({ days }: { days: DayProgress[] }) {
+export function ConsistencyCalendar({
+  days,
+  contractEndedOn,
+}: {
+  days: DayProgress[]
+  /** YYYY-MM-DD — ring this day and note it in the legend. */
+  contractEndedOn?: string | null
+}) {
   if (days.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -36,18 +43,32 @@ export function ConsistencyCalendar({ days }: { days: DayProgress[] }) {
             {STATUS_LABEL[status]}
           </span>
         ))}
+        {contractEndedOn ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block size-2.5 rounded-sm ring-2 ring-foreground ring-offset-1 ring-offset-background" />
+            Contract ended
+          </span>
+        ) : null}
       </div>
       <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
         {days.map((d) => {
           const dayNum = d.date.slice(8, 10)
-          const title = `${d.date}: ${STATUS_LABEL[d.status]} · IG ${d.instagram}/${d.goalInstagram} · TT ${d.tiktok}/${d.goalTiktok}`
+          const endedHere = contractEndedOn != null && d.date === contractEndedOn
+          const title = endedHere
+            ? `${d.date}: Contract ended · ${STATUS_LABEL[d.status]} · IG ${d.instagram}/${d.goalInstagram} · TT ${d.tiktok}/${d.goalTiktok}`
+            : `${d.date}: ${STATUS_LABEL[d.status]} · IG ${d.instagram}/${d.goalInstagram} · TT ${d.tiktok}/${d.goalTiktok}`
           return (
             <div
               key={d.date}
               title={title}
-              className={`flex aspect-square items-center justify-center rounded-md text-[10px] font-medium tabular-nums ${STATUS_CLASS[d.status]}`}
+              className={`relative flex aspect-square items-center justify-center rounded-md text-[10px] font-medium tabular-nums ${STATUS_CLASS[d.status]} ${
+                endedHere ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' : ''
+              }`}
             >
               {dayNum}
+              {endedHere ? (
+                <span className="absolute -bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-foreground" />
+              ) : null}
             </div>
           )
         })}

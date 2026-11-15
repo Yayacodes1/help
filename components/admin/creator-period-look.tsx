@@ -422,7 +422,16 @@ export function CreatorPeriodLookPanel({
                 <h4 className="mb-3 text-sm font-semibold">
                   {labels.calendar} · {labels.consistency}
                 </h4>
-                <ConsistencyCalendar days={look.consistency.days} />
+                <ConsistencyCalendar
+                  days={look.consistency.days}
+                  contractEndedOn={
+                    look.contract?.end_date &&
+                    look.contract.end_date >= look.from &&
+                    look.contract.end_date <= look.to
+                      ? look.contract.end_date
+                      : null
+                  }
+                />
               </div>
             </>
           )}

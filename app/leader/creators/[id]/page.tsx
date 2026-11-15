@@ -145,7 +145,16 @@ export default async function LeaderCreatorPage({
             {t('streakPeriodHint')}
           </p>
         ) : null}
-        <ConsistencyCalendar days={consistency.days} />
+        {consistency.contractEndedOn ? (
+          <p className="mb-2 text-xs text-muted-foreground">
+            {t('streakContractEnded').replace('{date}', formatDate(consistency.contractEndedOn))}
+            {consistency.extendedPastEnd ? ` ${t('streakExtendedPastEnd')}` : null}
+          </p>
+        ) : null}
+        <ConsistencyCalendar
+          days={consistency.days}
+          contractEndedOn={consistency.contractEndedOn}
+        />
         <p className="mt-3 text-xs text-muted-foreground">
           {t('daysHit')} {consistency.hitDays}/{consistency.requiredDays} · {t('leaderMissed')} {consistency.missDays} ·{' '}
           {t('leaderPartial')} {consistency.partialDays} · {t('currentStreak')} {consistency.currentStreak} ·{' '}

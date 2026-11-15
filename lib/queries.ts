@@ -34,6 +34,7 @@ import {
   normalizePayTiming,
   resolvePayTiming,
 } from '@/lib/payment-calendar-math'
+import { consistencyCalendarEnd } from '@/lib/probation-copy'
 
 export async function getServerToday(): Promise<string> {
   const rows = (await sql`SELECT CURRENT_DATE::text AS today`) as { today: string }[]
@@ -811,6 +812,50 @@ export function goalsForContract(
   return { goalInstagram, goalTiktok }
 }
 
+function contractTargetsComplete(
+  contract: Pick<Contract, 'target_instagram' | 'target_tiktok' | 'platforms'>,
+  posted: { instagram: number; tiktok: number },
+): boolean {
+  const mode = normalizePlatforms(contract.platforms)
+  const needIg = mode === 'tiktok' ? 0 : Math.max(0, contract.target_instagram)
+  const needTt = mode === 'instagram' ? 0 : Math.max(0, contract.target_tiktok)
+  if (needIg + needTt <= 0) return true
+  const rate = videoCompletionRate({
+    postedInstagram: posted.instagram,
+    postedTiktok: posted.tiktok,
+    targetInstagram: contract.target_instagram,
+    targetTiktok: contract.target_tiktok,
+    platforms: contract.platforms,
+  })
+  return rate != null && rate >= 0.999
+}
+
+async function videosCompleteForContract(
+  creatorId: number,
+  contract: Contract,
+  today: string,
+): Promise<boolean> {
+  const countThrough =
+    contract.end_date == null || contract.end_date >= today ? (contract.end_date ?? today) : today
+  const counts = await getContractVideoCounts(creatorId, contract.start_date, countThrough)
+  return contractTargetsComplete(contract, counts)
+}
+
+function sumPlatformCounts(
+  byDate: Record<string, { instagram: number; tiktok: number }>,
+  start: string,
+  end: string,
+): { instagram: number; tiktok: number } {
+  let instagram = 0
+  let tiktok = 0
+  for (const [date, row] of Object.entries(byDate)) {
+    if (date < start || date > end) continue
+    instagram += row.instagram
+    tiktok += row.tiktok
+  }
+  return { instagram, tiktok }
+}
+
 export async function getCreatorConsistency(
   creator: Creator,
   today: string,
@@ -820,6 +865,16 @@ export async function getCreatorConsistency(
   // Hit rate follows the active contract. Streaks can look back one contract
   // and resume from a saved number after a break or manual restore.
   const window = contractWindow(creator, today, active)
+  const videosComplete = active
+    ? await videosCompleteForContract(creator.id, active, today)
+    : true
+  const calendar = consistencyCalendarEnd({
+    startDate: active?.start_date ?? window.start,
+    endDate: active?.end_date ?? null,
+    windowEnd: window.end,
+    today,
+    videosComplete,
+  })
 
   const restoreRows = (await sql`
     SELECT COALESCE(c.streak_carry, 0)::int AS streak_carry,
@@ -851,13 +906,13 @@ export async function getCreatorConsistency(
   const summary = await getConsistencyForWindow(
     creator,
     fetchStart,
-    window.end,
+    calendar.end,
     today,
     goals,
     {
       streakFrom,
       streakEpochStart: window.start,
-      streakEpochEnd: window.end,
+      streakEpochEnd: active?.end_date ?? window.end,
       streakCarry,
       windowStart: window.start,
     },
@@ -867,6 +922,8 @@ export async function getCreatorConsistency(
   return {
     ...summary,
     days: summary.days.filter((d) => d.date >= window.start),
+    contractEndedOn: calendar.contractEndedOn ?? undefined,
+    extendedPastEnd: calendar.extendedPastEnd || undefined,
   }
 }
 
@@ -1938,6 +1995,7 @@ export async function getConsistencyForCreators(
   }
   const plans: Plan[] = []
   let minStart = today
+  // Always load through today so ended-but-unfinished contracts can extend day-by-day.
   let maxEnd = today
 
   for (const creator of creators) {
@@ -2002,23 +2060,45 @@ export async function getConsistencyForCreators(
   }
 
   for (const plan of plans) {
+    const byDate = countsByCreator.get(plan.creator.id) ?? {}
+    const countThrough =
+      plan.active?.end_date == null || plan.active.end_date >= today
+        ? (plan.active?.end_date ?? today)
+        : today
+    const videosComplete = plan.active
+      ? contractTargetsComplete(
+          plan.active,
+          sumPlatformCounts(
+            byDate,
+            addDays(plan.active.start_date, -1),
+            addDays(countThrough, 1),
+          ),
+        )
+      : true
+    const calendar = consistencyCalendarEnd({
+      startDate: plan.active?.start_date ?? plan.window.start,
+      endDate: plan.active?.end_date ?? null,
+      windowEnd: plan.window.end,
+      today,
+      videosComplete,
+    })
     const breakDates = new Set<string>()
     for (const row of breaksByCreator.get(plan.creator.id) ?? []) {
       const from = row.start_date < plan.fetchStart ? plan.fetchStart : row.start_date
-      const to = row.end_date > plan.window.end ? plan.window.end : row.end_date
+      const to = row.end_date > calendar.end ? calendar.end : row.end_date
       for (const d of eachDate(from, to)) breakDates.add(d)
     }
     const summary = buildConsistency({
       start: plan.fetchStart,
-      end: plan.window.end,
+      end: calendar.end,
       today,
       goalInstagram: plan.goals.goalInstagram,
       goalTiktok: plan.goals.goalTiktok,
-      countsByDate: countsByCreator.get(plan.creator.id) ?? {},
+      countsByDate: byDate,
       breakDates,
       streakFrom: plan.streakFrom,
       streakEpochStart: plan.window.start,
-      streakEpochEnd: plan.window.end,
+      streakEpochEnd: plan.active?.end_date ?? plan.window.end,
       streakCarry: plan.streakCarry,
       windowStart: plan.window.start,
       schedule: scheduleFromContract(plan.active),
@@ -2028,6 +2108,8 @@ export async function getConsistencyForCreators(
       consistency: {
         ...summary,
         days: summary.days.filter((d) => d.date >= plan.window.start),
+        contractEndedOn: calendar.contractEndedOn ?? undefined,
+        extendedPastEnd: calendar.extendedPastEnd || undefined,
       },
     })
   }

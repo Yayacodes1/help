@@ -27,6 +27,10 @@ export type ConsistencySummary = {
   streakEpochEnd?: string
   /** First day that counts toward streak (epoch start left out). */
   streakFrom?: string
+  /** Contract calendar end when that day is already past (YYYY-MM-DD). */
+  contractEndedOn?: string
+  /** Board continues past contract end while video targets are unfinished. */
+  extendedPastEnd?: boolean
 }
 
 function dayStatus(

@@ -816,6 +816,15 @@ export default async function SubmitPage({
                       {formatDate(consistency.streakEpochEnd)}. {t('streakPeriodHint')}
                     </p>
                   ) : null}
+                  {consistency.contractEndedOn ? (
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      {t('streakContractEnded').replace(
+                        '{date}',
+                        formatDate(consistency.contractEndedOn),
+                      )}
+                      {consistency.extendedPastEnd ? ` ${t('streakExtendedPastEnd')}` : null}
+                    </p>
+                  ) : null}
                   <CreatorStats stats={displayStats} locale={locale} />
                 </div>
               ),

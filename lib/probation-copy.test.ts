@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { streakMustPost } from './probation-copy.ts'
+import { consistencyCalendarEnd, streakMustPost } from './probation-copy.ts'
 
 test('open calendar always must post', () => {
   assert.equal(
@@ -48,4 +48,34 @@ test('future contract start → not yet', () => {
     }),
     false,
   )
+})
+
+test('ended + unfinished extends consistency calendar through today', () => {
+  const result = consistencyCalendarEnd({
+    startDate: '2026-10-04',
+    endDate: '2026-11-04',
+    windowEnd: '2026-11-04',
+    today: '2026-11-15',
+    videosComplete: false,
+  })
+  assert.deepEqual(result, {
+    end: '2026-11-15',
+    contractEndedOn: '2026-11-04',
+    extendedPastEnd: true,
+  })
+})
+
+test('ended + videos done keeps calendar at contract end', () => {
+  const result = consistencyCalendarEnd({
+    startDate: '2026-10-04',
+    endDate: '2026-11-04',
+    windowEnd: '2026-11-04',
+    today: '2026-11-15',
+    videosComplete: true,
+  })
+  assert.deepEqual(result, {
+    end: '2026-11-04',
+    contractEndedOn: '2026-11-04',
+    extendedPastEnd: false,
+  })
 })
