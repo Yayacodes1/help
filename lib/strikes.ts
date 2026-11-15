@@ -71,6 +71,24 @@ export async function syncReposterStrikes(opts: {
 
   if (start > lastCompleted) return 0
 
+  // Clear auto misses once a submission lands for that day (late submit / re-sync).
+  await sql`
+    DELETE FROM creator_strikes cs
+    USING creators c
+    WHERE cs.creator_id = c.id
+      AND c.role = 'reposter'
+      AND (${creatorId}::int IS NULL OR c.id = ${creatorId})
+      AND cs.status = 'active'
+      AND cs.source = 'auto'
+      AND cs.strike_date >= ${start}::date
+      AND cs.strike_date <= ${lastCompleted}::date
+      AND EXISTS (
+        SELECT 1 FROM submissions s
+        WHERE s.creator_id = cs.creator_id
+          AND s.video_date = cs.strike_date
+      )
+  `
+
   const inserted = (await sql`
     INSERT INTO creator_strikes (creator_id, contract_id, strike_date, source, status, reason)
     SELECT

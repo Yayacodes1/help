@@ -164,13 +164,7 @@ export function SubmitForm({
       setProjectId(initialProject)
       setAutoPicked(null)
       submittedLock.current = false
-      if (state.videoDate && state.videoDate !== params.get('date')) {
-        const next = new URLSearchParams(params.toString())
-        next.set('date', state.videoDate)
-        router.push(`?${next.toString()}`, { scroll: false })
-      } else {
-        router.refresh()
-      }
+      router.refresh()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])

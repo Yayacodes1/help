@@ -10,6 +10,7 @@ import {
   recordPayment,
   updatePayment,
 } from '@/app/actions/admin'
+import { PayWhenQuestion } from '@/components/admin/pay-when-question'
 import { formatDate, formatMoney } from '@/lib/format'
 
 const inputClass =
@@ -53,6 +54,7 @@ export function PaymentsManager({
   paidTotal,
   isOwner = false,
   currency = 'SAR',
+  defaultWhen = null,
 }: {
   /** Reposters are paid in USD, creators in SAR. */
   currency?: 'USD' | 'SAR'
@@ -63,6 +65,8 @@ export function PaymentsManager({
   paidTotal?: number
   /** Yahya can mark a payment as paid directly (not from Ahmed's wallet). */
   isOwner?: boolean
+  /** Ahmed’s company default (before start / after end). */
+  defaultWhen?: 'upfront' | 'end' | null
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -72,9 +76,35 @@ export function PaymentsManager({
   const total =
     paidTotal ??
     payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+  const activeContract =
+    contracts.find((c) => {
+      if (c.start_date > today) return false
+      if (c.end_date && c.end_date < today) return false
+      return true
+    }) ?? contracts[0] ?? null
+  const activeTiming =
+    activeContract?.pay_timing === 'upfront' ||
+    activeContract?.pay_timing === 'end' ||
+    activeContract?.pay_timing === 'fifteen'
+      ? activeContract.pay_timing
+      : null
 
   return (
     <div className="flex flex-col gap-4">
+      {activeContract ? (
+        <PayWhenQuestion
+          value={activeTiming}
+          defaultWhen={defaultWhen}
+          creatorId={creatorId}
+          contractId={activeContract.id}
+          standalone
+          showFifteen
+        />
+      ) : (
+        <div className="rounded-xl border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
+          Add a contract first, then answer whether we pay before the start or after the end.
+        </div>
+      )}
       <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
         <p className="font-medium text-foreground">Total paid = this list only</p>
         <p className="mt-1">

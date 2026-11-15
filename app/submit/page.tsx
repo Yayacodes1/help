@@ -51,10 +51,6 @@ import { SubmitModeToggle } from '@/components/submit-mode-toggle'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
-function isValidDate(value: string | undefined): value is string {
-  return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value)
-}
-
 export default async function SubmitPage({
   searchParams,
 }: {
@@ -169,17 +165,13 @@ export default async function SubmitPage({
   ])
   const opToday = operationalDayFromIso(serverNow)
   const today = opToday
-  const { creatorIsOnProbation } = await import('@/lib/creator-fitness')
-  const onProbation =
-    creator.role === 'creator' ? await creatorIsOnProbation(creator.id).catch(() => false) : false
   const checkIn =
     creator.role === 'creator'
       ? await import('@/lib/telegram-creator-notes')
           .then((m) => m.getCreatorCheckInStats(creator.id))
           .catch(() => null)
       : null
-  const date = onProbation ? today : isValidDate(dateParam) ? dateParam : today
-  const isToday = date === today
+  const date = today
   const submitMode =
     modeParam === 'ideas' ? 'ideas' : modeParam === 'mine' ? 'mine' : 'post'
 
@@ -731,7 +723,7 @@ export default async function SubmitPage({
                   videoDate={date}
                   defaultTime={defaultTime}
                   brandProjects={brandProjects}
-                  dateLocked={onProbation}
+                  dateLocked
                   maxDate={today}
                   labels={{
                     pasteLinks: t('pasteLinks'),
@@ -746,7 +738,7 @@ export default async function SubmitPage({
                     autoProject: t('autoProject'),
                     postDate: t('postDate'),
                     postTime: t('postTime'),
-                    postWhenHint: onProbation ? t('probationDateLocked') : t('submitTimeHint'),
+                    postWhenHint: t('submitTimeHint'),
                     dailyGoalLabel: t('submitDailyGoalLabel'),
                     stepLinks: t('submitStepLinks'),
                     stepWhen: t('submitStepWhen'),
@@ -760,11 +752,6 @@ export default async function SubmitPage({
                   <h2 className="text-sm font-semibold text-foreground">{t('todaysVideos')}</h2>
                   <p className="text-xs tabular-nums text-muted-foreground">{formatDate(date)}</p>
                 </div>
-                {!isToday && !onProbation ? (
-                  <p className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground">
-                    {t('addingPast')}
-                  </p>
-                ) : null}
                 <TodayVideos
                   username={username}
                   submissions={submissions}

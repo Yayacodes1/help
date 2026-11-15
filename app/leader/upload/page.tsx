@@ -2,7 +2,6 @@ import { redirect } from 'next/navigation'
 import { Send } from 'lucide-react'
 import { SubmitForm, type BrandProject } from '@/components/submit-form'
 import { TodayVideos } from '@/components/today-videos'
-import { DateSelect } from '@/components/date-select'
 import { PersonHandlesLine } from '@/components/person-handles'
 import { getLeaderSession } from '@/lib/leader-auth'
 import { getLeaderScope } from '@/lib/leaders'
@@ -26,18 +25,10 @@ import { createT } from '@/lib/i18n'
 
 export const dynamic = 'force-dynamic'
 
-export default async function LeaderUploadPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ date?: string }>
-}) {
+export default async function LeaderUploadPage() {
   const session = await getLeaderSession()
   if (!session) redirect('/login')
-  const [locale, scope, { date: dateParam }] = await Promise.all([
-    getLocale(),
-    getLeaderScope(session.id),
-    searchParams,
-  ])
+  const [locale, scope] = await Promise.all([getLocale(), getLeaderScope(session.id)])
   const t = createT(locale)
   const creator = scope.ownId != null ? await getCreatorById(scope.ownId) : null
 
@@ -55,7 +46,7 @@ export default async function LeaderUploadPage({
     getAllProjects(),
   ])
   const today = operationalDayFromIso(serverNow)
-  const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : today
+  const date = today
   const username = loginHandleFor(creator).handle || creator.name
 
   const miqatId = findMiyqatProject(projects)?.id ?? null
@@ -113,6 +104,8 @@ export default async function LeaderUploadPage({
           videoDate={date}
           defaultTime={defaultTime}
           brandProjects={brandProjects}
+          dateLocked
+          maxDate={today}
           labels={{
             pasteLinks: t('pasteLinks'),
             pasteHint: t('pasteLinksHint'),
@@ -121,26 +114,18 @@ export default async function LeaderUploadPage({
             sending: '…',
             project: t('submitProject'),
             projectHint: t('submitProjectHint'),
+            projectFixed: t('submitProjectFixed'),
             pickProject: t('pickProject'),
             autoProject: t('autoProject'),
             postDate: t('postDate'),
             postTime: t('postTime'),
             postWhenHint: t('submitTimeHint'),
+            dailyGoalLabel: t('submitDailyGoalLabel'),
+            stepLinks: t('submitStepLinks'),
+            stepWhen: t('submitStepWhen'),
+            nowLabel: t('submitNowLabel'),
           }}
         />
-      </section>
-
-      <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">{t('chooseDay')}</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">{t('chooseDayHint')}</p>
-          </div>
-          <DateSelect date={date} />
-        </div>
-        {date !== today ? (
-          <p className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground">{t('addingPast')}</p>
-        ) : null}
       </section>
 
       <section className="flex flex-col gap-3">

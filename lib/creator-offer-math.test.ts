@@ -59,7 +59,7 @@ test('likes tiers and country market', () => {
   assert.equal(marketFromCountry('United States'), 'us')
 })
 
-test('offer message mentions median and approximation', () => {
+test('offer message is terms-only (no review/stats dump)', () => {
   const terms = buildOfferTerms({
     market: 'us',
     likes: 20_000,
@@ -81,7 +81,10 @@ test('offer message mentions median and approximation', () => {
   })
   assert.match(msg, /Instagram/)
   assert.match(msg, /approximation/i)
-  assert.match(msg, /median/i)
-  assert.match(msg, /@studywithjames/)
-  assert.match(msg, /last 18 videos|recent videos/i)
+  assert.match(msg, /Payment structure/)
+  assert.doesNotMatch(msg, /We reviewed/)
+  assert.doesNotMatch(msg, /average ~/i)
+  assert.doesNotMatch(msg, /Top audience/)
+  assert.doesNotMatch(msg, /Using ~/i)
+  assert.doesNotMatch(msg, /CPM/)
 })

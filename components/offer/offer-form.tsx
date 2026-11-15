@@ -92,6 +92,32 @@ function buildFormData(input: {
   return fd
 }
 
+/** Turn offer markdown-ish text into short readable blocks. */
+function offerBlocks(text: string): { title?: string; lines: string[] }[] {
+  const blocks: { title?: string; lines: string[] }[] = []
+  let current: { title?: string; lines: string[] } = { lines: [] }
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line) {
+      if (current.lines.length || current.title) {
+        blocks.push(current)
+        current = { lines: [] }
+      }
+      continue
+    }
+    const heading = line.match(/^\*\*(.+?)\*\*:?\s*$/)
+    if (heading) {
+      if (current.lines.length || current.title) blocks.push(current)
+      current = { title: heading[1].replace(/:$/, ''), lines: [] }
+      continue
+    }
+    current.lines.push(line.replace(/^\*\*(.+?)\*\*/, '$1').replace(/^[-•]\s*/, ''))
+  }
+  if (current.lines.length || current.title) blocks.push(current)
+  return blocks
+}
+
 function CountrySearchSelect({
   value,
   onChange,
@@ -182,6 +208,7 @@ export function CreatorOfferForm() {
   const [national, setNational] = useState('')
   const [offerText, setOfferText] = useState('')
   const [termsSummary, setTermsSummary] = useState('')
+  const [offerOpen, setOfferOpen] = useState(false)
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -191,10 +218,14 @@ export function CreatorOfferForm() {
     [dial, national],
   )
 
+  const blocks = useMemo(() => (offerText ? offerBlocks(offerText) : []), [offerText])
+  const hasUpload = frames.length > 0
+
   async function onAnalyticsFiles(fileList: FileList | File[] | null, append = false) {
     setMediaError('')
     setOfferText('')
     setTermsSummary('')
+    setOfferOpen(false)
     setStatus(null)
     if (!fileList || (fileList as FileList | File[]).length === 0) {
       if (!append) {
@@ -254,14 +285,22 @@ export function CreatorOfferForm() {
     })
   }
 
+  function clearUpload() {
+    setFrames([])
+    setFileNames([])
+    setMediaError('')
+    setUploadRequiredHint(true)
+    setOfferText('')
+    setTermsSummary('')
+    setOfferOpen(false)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4" dir="ltr">
       <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4">
-        <label className="flex flex-col gap-1 text-sm font-medium">
+        <label className="flex flex-col gap-1.5 text-sm font-medium">
           Account link
-          <span className="text-xs font-normal text-muted-foreground">
-            Your TikTok or Instagram profile URL.
-          </span>
           <input
             value={accountUrl}
             onChange={(e) => setAccountUrl(e.target.value)}
@@ -272,57 +311,38 @@ export function CreatorOfferForm() {
           />
         </label>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <p className="text-sm font-medium">Where are you based?</p>
-          <p className="text-xs text-muted-foreground">
-            Where you live — used for compensation. Audience countries come from your analytics
-            upload.
-          </p>
           <CountrySearchSelect value={baseCountry} onChange={setBaseCountry} />
         </div>
 
-        <div className="rounded-xl border border-border/80 bg-muted/20 px-3 py-3 text-sm leading-relaxed">
-          <p className="font-medium text-foreground">How to get the info we need before you upload</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            We pull your last 10 videos from the account link for average / median views. The
-            recording is for audience (top countries % + age).
-          </p>
-          <ol className="mt-3 list-decimal space-y-2 pl-4 text-xs text-muted-foreground">
+        <div className="rounded-xl border border-border/80 bg-muted/20 px-3 py-3">
+          <p className="text-sm font-medium text-foreground">How to screen record what we need</p>
+          <ol className="mt-2 list-decimal space-y-2 pl-4 text-xs leading-relaxed text-muted-foreground">
             <li>
-              <span className="font-medium text-foreground">Prove the account:</span> start on your
-              profile so your <span className="text-foreground">@username</span> is clearly visible
-              (same handle as the link above).
+              <span className="font-medium text-foreground">Start on your profile</span> so your{' '}
+              <span className="text-foreground">@username</span> is clearly visible (same handle as
+              the link above).
             </li>
             <li>
-              <span className="font-medium text-foreground">Open analytics:</span> TikTok → Profile →
-              Creator tools / Analytics (or Instagram Professional dashboard).
+              Open <span className="font-medium text-foreground">Analytics</span> (TikTok: Profile →
+              Creator tools · Instagram: Professional dashboard).
             </li>
             <li>
-              <span className="font-medium text-foreground">Audience countries:</span> open Followers
-              / Audience and show the <span className="text-foreground">top 3 countries with %</span>
-              .
-            </li>
-            <li>
-              <span className="font-medium text-foreground">Age:</span> show{' '}
-              <span className="text-foreground">age groups</span> on the same audience screens.
+              Show <span className="font-medium text-foreground">top 3 audience countries with %</span>{' '}
+              and <span className="font-medium text-foreground">age groups</span>.
             </li>
           </ol>
-          <p className="mt-3 text-[11px] text-muted-foreground">
-            TikTok tip: if you don’t see Analytics, switch to a Creator account under Settings →
-            Account → Switch to Creator account, then reopen Profile → Creator tools.
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            No Analytics on TikTok? Settings → Account → Switch to Creator account, then try again.
           </p>
         </div>
 
         <div className="flex flex-col gap-2">
-          <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium">
-              Upload screen recording or screenshots{' '}
-              <span className="font-normal text-destructive">(required)</span>
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Required — profile @username, then audience top countries with % and age groups.
-            </p>
-          </div>
+          <p className="text-sm font-medium">
+            Upload screen recording or screenshots{' '}
+            <span className="font-normal text-destructive">(required)</span>
+          </p>
 
           <input
             ref={fileInputRef}
@@ -352,27 +372,35 @@ export function CreatorOfferForm() {
               setUploadRequiredHint(false)
               void onAnalyticsFiles(e.dataTransfer.files, frames.length > 0)
             }}
-            className={`flex min-h-36 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-6 text-center transition hover:border-foreground/40 hover:bg-muted/35 ${
-              uploadRequiredHint && frames.length === 0
+            className={`flex min-h-32 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-5 text-center transition ${
+              uploadRequiredHint && !hasUpload
                 ? 'border-destructive bg-destructive/10'
-                : frames.length > 0
-                  ? 'border-emerald-500/40 bg-emerald-500/5'
-                  : 'border-border bg-muted/20'
+                : hasUpload
+                  ? 'border-muted-foreground/30 bg-muted/40'
+                  : 'border-border bg-muted/20 hover:border-foreground/40 hover:bg-muted/35'
             }`}
           >
-            <p className="text-sm font-semibold text-foreground">
-              {mediaBusy
-                ? 'Processing…'
-                : frames.length > 0
-                  ? 'Add more photos or another recording'
-                  : 'Tap to upload'}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Photos or screen recording · drag & drop works too
-            </p>
-            <span className="mt-1 inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
-              {frames.length > 0 ? 'Choose more files' : 'Choose files'}
-            </span>
+            {mediaBusy ? (
+              <p className="text-sm font-semibold text-foreground">Processing…</p>
+            ) : hasUpload ? (
+              <>
+                <p className="text-sm font-semibold text-foreground">Successful drop</p>
+                <p className="text-xs text-muted-foreground">You can add more if needed</p>
+                <span className="mt-1 inline-flex h-10 items-center justify-center rounded-lg bg-muted-foreground/25 px-4 text-sm font-semibold text-foreground">
+                  Choose more files
+                </span>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-foreground">Tap to upload</p>
+                <p className="text-xs text-muted-foreground">
+                  Photos or screen recording · drag & drop works too
+                </p>
+                <span className="mt-1 inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
+                  Choose files
+                </span>
+              </>
+            )}
           </button>
 
           {fileNames.length > 0 ? (
@@ -382,15 +410,7 @@ export function CreatorOfferForm() {
               <button
                 type="button"
                 className="underline underline-offset-2"
-                onClick={() => {
-                  setFrames([])
-                  setFileNames([])
-                  setMediaError('')
-                  setUploadRequiredHint(true)
-                  setOfferText('')
-                  setTermsSummary('')
-                  if (fileInputRef.current) fileInputRef.current.value = ''
-                }}
+                onClick={clearUpload}
               >
                 Clear
               </button>
@@ -406,15 +426,15 @@ export function CreatorOfferForm() {
           )}
 
           {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
-          {frames.length > 0 ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {frames.map((src, i) => (
+          {hasUpload ? (
+            <div className="grid grid-cols-4 gap-1.5">
+              {frames.slice(0, 4).map((src, i) => (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   key={`${i}-${src.slice(0, 24)}`}
                   src={src}
                   alt={`Analytics frame ${i + 1}`}
-                  className="h-28 w-full rounded-lg object-cover"
+                  className="h-16 w-full rounded-md object-cover"
                 />
               ))}
             </div>
@@ -464,6 +484,9 @@ export function CreatorOfferForm() {
           disabled={pending || mediaBusy}
           onClick={() => {
             setStatus(null)
+            setOfferOpen(false)
+            setOfferText('')
+            setTermsSummary('')
             if (frames.length === 0) {
               setUploadRequiredHint(true)
               setMediaError('Upload is required — add a screen recording or screenshots first.')
@@ -483,6 +506,7 @@ export function CreatorOfferForm() {
               if (result.ok && result.messageBody) {
                 setOfferText(result.messageBody)
                 setTermsSummary(result.termsSummary ?? '')
+                setOfferOpen(false)
               } else {
                 setOfferText('')
                 setTermsSummary('')
@@ -491,41 +515,92 @@ export function CreatorOfferForm() {
           }}
           className="h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-60"
         >
-          {pending ? 'Reading your analytics…' : 'Get my offer estimate'}
+          {pending && !offerText ? 'Reading your analytics…' : 'Get my offer estimate'}
         </button>
 
-        {status ? (
-          <p className={`text-sm ${status.ok ? 'text-foreground' : 'text-destructive'}`}>
-            {status.message}
-            {status.ok && termsSummary ? ` · ${termsSummary}` : ''}
-          </p>
+        {status && !status.ok ? (
+          <p className="text-sm text-destructive">{status.message}</p>
         ) : null}
       </div>
 
       {offerText && !submitted ? (
-        <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
-          <h2 className="text-sm font-semibold">Your approximate offer</h2>
-          <pre className="whitespace-pre-wrap rounded-xl bg-muted/40 p-3 text-sm leading-relaxed">
-            {offerText}
-          </pre>
-          <p className="text-xs text-muted-foreground">
-            This is an approximation — not the final contract. If you agree, we’ll WhatsApp you next.
-          </p>
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => {
-              setStatus(null)
-              startTransition(async () => {
-                const result = await submitCreatorOffer({ ok: false, message: '' }, payload(true))
-                setStatus({ ok: result.ok, message: result.message })
-                if (result.ok) setSubmitted(true)
-              })
-            }}
-            className="h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-60"
-          >
-            {pending ? 'Submitting…' : 'Submit — I’m interested'}
-          </button>
+        <div className="flex flex-col gap-3">
+          {!offerOpen ? (
+            <button
+              type="button"
+              onClick={() => setOfferOpen(true)}
+              className="flex w-full flex-col items-center gap-1 rounded-2xl border border-emerald-500/35 bg-emerald-500/10 px-4 py-4 text-center transition hover:bg-emerald-500/15"
+            >
+              <span className="text-sm font-semibold text-foreground">
+                Offer is ready — tap to open
+              </span>
+              {termsSummary ? (
+                <span className="text-xs text-muted-foreground">{termsSummary}</span>
+              ) : null}
+            </button>
+          ) : (
+            <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Your approximate offer</h2>
+                  {termsSummary ? (
+                    <p className="mt-0.5 text-xs text-muted-foreground">{termsSummary}</p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOfferOpen(false)}
+                  className="shrink-0 text-xs text-muted-foreground underline underline-offset-2"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                {blocks.map((block, i) => (
+                  <div
+                    key={`${block.title ?? 'b'}-${i}`}
+                    className="rounded-xl bg-muted/35 px-3 py-2.5"
+                  >
+                    {block.title ? (
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {block.title}
+                      </p>
+                    ) : null}
+                    <ul className={block.title ? 'mt-1.5 space-y-1' : 'space-y-1'}>
+                      {block.lines.map((line, j) => (
+                        <li key={j} className="text-sm leading-relaxed text-foreground">
+                          {line}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Approximation only — not the final contract. If you agree, we’ll WhatsApp you next.
+              </p>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  setStatus(null)
+                  startTransition(async () => {
+                    const result = await submitCreatorOffer(
+                      { ok: false, message: '' },
+                      payload(true),
+                    )
+                    setStatus({ ok: result.ok, message: result.message })
+                    if (result.ok) setSubmitted(true)
+                  })
+                }}
+                className="h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+              >
+                {pending ? 'Submitting…' : 'Submit — I’m interested'}
+              </button>
+            </div>
+          )}
         </div>
       ) : null}
 

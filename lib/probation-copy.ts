@@ -46,11 +46,11 @@ export type ProbationStreakRow = {
   projectId: number | null
   projectName: string | null
   probationStartedOn: string
-  /** Consecutive miss days ending at last completed day. */
+  /** Consecutive miss days ending on the selected board day (includes today if still Didn’t post). */
   missCount: number
-  /** Consecutive miss dates (newest streak run). */
+  /** Consecutive miss dates for the selected day (newest streak run). */
   missDates: string[]
-  /** Every miss day since the epoch (for the calendar chips). */
+  /** Every miss day since the epoch (for the calendar chips); includes selected day when still open. */
   allMissDates: string[]
   /** 0 = clean, else current streak ladder step. */
   streakLevel: 0 | ProbationLevel
@@ -102,6 +102,23 @@ export function streakBucketFromMisses(missCount: number): 0 | ProbationLevel {
   if (missCount >= PROBATION_LEVEL_THRESHOLDS[2]) return 2
   if (missCount >= PROBATION_LEVEL_THRESHOLDS[1]) return 1
   return 0
+}
+
+/**
+ * Whether this creator still owes daily posts for streaks.
+ * Calendar still open → yes. Calendar ended with unfinished video targets → yes.
+ * Calendar ended and videos done (or no targets) → no (pay / start a new contract).
+ */
+export function streakMustPost(opts: {
+  asOf: string
+  startDate: string
+  endDate: string | null
+  videosComplete: boolean
+}): boolean {
+  if (!opts.startDate || opts.startDate > opts.asOf) return false
+  const periodOpen = opts.endDate == null || opts.endDate >= opts.asOf
+  if (periodOpen) return true
+  return !opts.videosComplete
 }
 
 /** Calendar day in Riyadh (YYYY-MM-DD). */

@@ -25,8 +25,8 @@ const GROUPS: Array<{ tier: StructurePaySlot['tier']; title: string; dropdown: b
 ]
 
 function timingLabel(timing: StructurePayTiming | null): string {
-  if (timing === 'upfront') return 'Upfront'
-  if (timing === 'end') return 'One payment at the end'
+  if (timing === 'upfront') return 'Before the start'
+  if (timing === 'end') return 'After the end'
   if (timing === 'fifteen') return 'Every 15 days'
   return 'No pay set'
 }
@@ -445,18 +445,23 @@ function PayForm({
         />
       </label>
       <fieldset className="grid gap-1.5 text-xs">
-        <label className="flex items-center gap-2">
-          <input type="radio" name="pay_timing" value="fifteen" defaultChecked={timing === 'fifteen'} />
-          Every 15 days — first pay 15 days after the start, last pay at the end
-        </label>
+        <legend className="font-medium text-foreground">
+          Should we pay them before the start of the contract, or after the end?
+        </legend>
         <label className="flex items-center gap-2">
           <input type="radio" name="pay_timing" value="upfront" defaultChecked={timing === 'upfront'} />
-          Upfront — pay at the start, then every 2 weeks
+          Before the start — pay at the start, then every 2 weeks
         </label>
         <label className="flex items-center gap-2">
           <input type="radio" name="pay_timing" value="end" defaultChecked={timing === 'end'} />
-          One payment on the last day
+          After the end — one payment when the contract ends
         </label>
+        {timing === 'fifteen' ? (
+          <label className="flex items-center gap-2">
+            <input type="radio" name="pay_timing" value="fifteen" defaultChecked />
+            Every 15 days — first pay 15 days after the start, last pay at the end
+          </label>
+        ) : null}
       </fieldset>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="flex gap-2">

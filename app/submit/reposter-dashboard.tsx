@@ -120,7 +120,8 @@ export async function ReposterDashboard({
     getServerToday(),
     getLeaderForCreator(creator.id).catch(() => null),
   ])
-  const date = DATE_RE.test(searchParams.date ?? '') ? searchParams.date! : today
+  // Uploads always land on today — no past-day submit / date switching.
+  const date = today
   const yesterday = addDays(today, -1)
   const checkDay =
     DATE_RE.test(searchParams.checkDate ?? '') && searchParams.checkDate! <= today
@@ -570,6 +571,7 @@ export async function ReposterDashboard({
             videoDate={date}
             defaultTime={defaultTime}
             brandProjects={brandProjects}
+            dateLocked
             maxDate={today}
             labels={{
               pasteLinks: t('pasteLinks'),

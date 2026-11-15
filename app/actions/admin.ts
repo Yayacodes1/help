@@ -157,16 +157,15 @@ function parseContractQuotas(
       : parseOptionalAmount(formData.get('commission_amount')),
   }
   const q = applyPlatformsToQuotas(platforms, raw)
+  const cadence = normalizeBasePayCadence(
+    (formData.get('base_pay_cadence') ?? '').toString(),
+  )
   return {
     ...q,
     platforms,
-    basePayCadence: normalizeBasePayCadence(
-      (formData.get('base_pay_cadence') ?? '').toString(),
-    ),
-    payTiming:
-      normalizeBasePayCadence((formData.get('base_pay_cadence') ?? '').toString()) === 'monthly'
-        ? 'end'
-        : parsePayTiming(formData.get('pay_timing')),
+    basePayCadence: cadence,
+    /** Resolved later against Ahmed’s company default when still null. */
+    payTiming: cadence === 'monthly' ? ('end' as const) : parsePayTiming(formData.get('pay_timing')),
     countMode: parseContractCountMode(formData.get('count_mode')),
     viewsThreshold: parseOptionalPositiveInt(formData.get('views_threshold')),
     viewCommissionAmount: parseOptionalAmount(formData.get('view_commission_amount')),
@@ -174,6 +173,14 @@ function parseContractQuotas(
     projectTargets: JSON.stringify(parseProjectTargets(formData)),
     ...parseSchedule(formData),
   }
+}
+
+async function resolvePayTimingOrDefault(
+  payTiming: 'fifteen' | 'upfront' | 'end' | null,
+): Promise<'fifteen' | 'upfront' | 'end' | null> {
+  if (payTiming) return payTiming
+  const { getPayDefaults } = await import('@/lib/pay-defaults')
+  return (await getPayDefaults()).when
 }
 
 /** Posting schedule inputs; anything incomplete falls back to every day. */
@@ -577,6 +584,9 @@ export async function createContract(creatorId: number, formData: FormData) {
   if (!name || !start) return
   if (end && end < start) return
   const q = parseContractQuotas(formData)
+  const payTiming = await resolvePayTimingOrDefault(q.payTiming)
+  if (!payTiming) return
+  if (payTiming === 'end' && !end) return
 
   await sql`
     INSERT INTO contracts (
@@ -590,7 +600,7 @@ export async function createContract(creatorId: number, formData: FormData) {
     VALUES (
       ${creatorId}, ${name}, ${start}, ${end},
       ${q.goalInstagram}, ${q.goalTiktok}, ${q.targetInstagram}, ${q.targetTiktok},
-      ${q.platforms}, ${q.baseAmount}, ${q.basePayCadence}, ${q.payTiming}, ${q.commissionAmount},
+      ${q.platforms}, ${q.baseAmount}, ${q.basePayCadence}, ${payTiming}, ${q.commissionAmount},
       ${q.countMode}, ${q.viewsThreshold}, ${q.viewCommissionAmount}, ${q.commissionReels},
       ${q.projectTargets}::jsonb,
       ${q.scheduleType}, ${q.scheduleEveryDays}, ${q.scheduleWeekdays}, ${q.schedulePerWeek}
@@ -879,6 +889,9 @@ export async function updateContract(id: number, creatorId: number, formData: Fo
     Number.isFinite(maxStrikesRaw) && maxStrikesRaw >= 1 && maxStrikesRaw <= 20
       ? Math.floor(maxStrikesRaw)
       : null
+  const payTiming = await resolvePayTimingOrDefault(q.payTiming)
+  if (!payTiming) return
+  if (payTiming === 'end' && !end) return
 
   await sql`
     UPDATE contracts
@@ -887,7 +900,7 @@ export async function updateContract(id: number, creatorId: number, formData: Fo
         target_instagram = ${q.targetInstagram}, target_tiktok = ${q.targetTiktok},
         platforms = ${q.platforms},
         base_amount = ${q.baseAmount}, base_pay_cadence = ${q.basePayCadence},
-        pay_timing = ${q.payTiming},
+        pay_timing = ${payTiming},
         commission_amount = ${q.commissionAmount},
         count_mode = ${q.countMode}, views_threshold = ${q.viewsThreshold},
         view_commission_amount = ${q.viewCommissionAmount},
@@ -921,6 +934,60 @@ export async function updateContract(id: number, creatorId: number, formData: Fo
   revalidatePath('/submit')
 }
 
+/** Ahmed/Yahya: company default — pay before start vs after end. */
+export async function saveDefaultPayWhenAction(when: 'upfront' | 'end') {
+  const session = await getAdminSession()
+  if (!session) throw new Error('Unauthorized')
+  if (when !== 'upfront' && when !== 'end') {
+    return { ok: false as const, message: 'Pick before the start or after the end.' }
+  }
+  const { setPayDefaults } = await import('@/lib/pay-defaults')
+  await setPayDefaults(when, session.name)
+  revalidatePath('/admin')
+  revalidatePath('/admin', 'layout')
+  return { ok: true as const }
+}
+
+/** Per-creator contract: answer the before-start / after-end question. */
+export async function saveCreatorPayWhenAction(
+  creatorId: number,
+  contractId: number,
+  when: 'upfront' | 'end' | 'fifteen',
+) {
+  await requireAdmin()
+  if (!Number.isFinite(creatorId) || creatorId <= 0) {
+    return { ok: false as const, message: 'Missing person.' }
+  }
+  if (!Number.isFinite(contractId) || contractId <= 0) {
+    return { ok: false as const, message: 'Missing contract.' }
+  }
+  if (when !== 'upfront' && when !== 'end' && when !== 'fifteen') {
+    return { ok: false as const, message: 'Pick when we pay.' }
+  }
+  const owned = (await sql`
+    SELECT id, end_date::text AS end_date
+    FROM contracts
+    WHERE id = ${contractId} AND creator_id = ${creatorId}
+    LIMIT 1
+  `) as { id: number; end_date: string | null }[]
+  if (!owned[0]) return { ok: false as const, message: 'Contract not found.' }
+  if (when === 'end' && !owned[0].end_date) {
+    return { ok: false as const, message: 'End date is required for pay after the end.' }
+  }
+  await sql`
+    UPDATE contracts
+    SET pay_timing = ${when},
+        first_pay_amount = NULL,
+        second_pay_amount = NULL,
+        first_pay_on = NULL,
+        second_pay_on = NULL
+    WHERE id = ${contractId} AND creator_id = ${creatorId}
+  `
+  revalidatePath('/admin')
+  revalidatePath(`/admin/creators/${creatorId}`)
+  return { ok: true as const }
+}
+
 /** People › Timeline Manage: dates + pay method only, then open Payment Calendar. */
 export async function saveTimelineContract(formData: FormData) {
   await requireAdmin()
@@ -930,7 +997,16 @@ export async function saveTimelineContract(formData: FormData) {
   }
   const start = parseOptionalDate(formData.get('start_date'))
   const end = parseOptionalDate(formData.get('end_date'))
-  const payTiming = parsePayTiming(formData.get('pay_timing')) ?? 'fifteen'
+  const { getPayDefaults } = await import('@/lib/pay-defaults')
+  const defaults = await getPayDefaults()
+  const payTiming =
+    parsePayTiming(formData.get('pay_timing')) ?? defaults.when ?? null
+  if (!payTiming) {
+    return {
+      ok: false as const,
+      message: 'Pick when we pay: before the start, or after the end.',
+    }
+  }
   if (!start) return { ok: false as const, message: 'Start date is required.' }
   if (end && end < start) return { ok: false as const, message: 'End cannot be before start.' }
   if (payTiming === 'end' && !end) {

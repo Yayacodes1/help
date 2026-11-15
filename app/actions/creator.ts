@@ -17,7 +17,6 @@ import { OPERATIONAL_TZ, operationalDayFromIso } from '@/lib/operational-day'
 import { creatorIsPaused, PAUSED_ACCOUNT_MESSAGE } from '@/lib/pause-person'
 import { findExistingVideos, resolveVideoKey, videoKeyFromUrl } from '@/lib/video-key'
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const TIME_RE = /^\d{2}:\d{2}(:\d{2})?$/
 
 // Public gate: verify the TikTok username belongs to a registered creator,
@@ -99,20 +98,12 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
     return { ok: false, message: 'Paste at least one Instagram, TikTok, or YouTube video link.' }
   }
 
-  const videoDateRaw = (formData.get('video_date') ?? '').toString().trim()
   const postTimeRaw = (formData.get('post_time') ?? '').toString().trim()
-  if (!DATE_RE.test(videoDateRaw)) {
-    return { ok: false, message: 'Pick the date you are posting for.' }
-  }
   if (!TIME_RE.test(postTimeRaw)) {
     return { ok: false, message: 'Pick the time you posted.' }
   }
-  const opToday = operationalDayFromIso(await getServerNowIso())
-  const { creatorIsOnProbation } = await import('@/lib/creator-fitness')
-  const onProbation =
-    creator.role === 'creator' ? await creatorIsOnProbation(creator.id).catch(() => false) : false
-  // Probation creators cannot backdate — only today's operational day counts.
-  const videoDate = onProbation ? opToday : videoDateRaw
+  // Submissions always count for today’s operational day — no backdating / date switching.
+  const videoDate = operationalDayFromIso(await getServerNowIso())
   const postTime = postTimeRaw.length === 5 ? `${postTimeRaw}:00` : postTimeRaw
 
   // Same video can't be submitted twice (by anyone), however the link is written.
@@ -145,7 +136,7 @@ export async function submitVideos(username: string, _prev: unknown, formData: F
   ]
   const ownHint =
     ownPriorDays.length > 0
-      ? `\n\n💡 فيديوهاتك محفوظة ليوم ${ownPriorDays.join('، ')} — غيّر تاريخ النشر أعلاه لتراها. Your videos are saved for ${ownPriorDays.join(', ')} — change the post date above to see them.`
+      ? `\n\n💡 فيديوهاتك محفوظة ليوم ${ownPriorDays.join('، ')}. Your videos are already saved for ${ownPriorDays.join(', ')}.`
       : ''
   const blockedNote =
     blocked.length > 0

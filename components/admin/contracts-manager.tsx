@@ -28,6 +28,7 @@ function useMoney() {
   return (n: number) => formatMoney(n, currency)
 }
 import { CommissionTermsFields } from '@/components/admin/commission-terms-fields'
+import { PayWhenQuestion } from '@/components/admin/pay-when-question'
 import {
   halfPaymentNote,
   type ContractHalfStatus,
@@ -308,6 +309,7 @@ function PayFields({
   commission,
   cadence = 'monthly',
   timing = null,
+  defaultWhen = null,
   requireBase = false,
   variant = 'current',
 }: {
@@ -315,6 +317,8 @@ function PayFields({
   commission?: number | null
   cadence?: 'monthly' | 'biweekly'
   timing?: 'fifteen' | 'upfront' | 'end' | null
+  /** Ahmed’s company default when this contract has no timing yet. */
+  defaultWhen?: 'upfront' | 'end' | null
   requireBase?: boolean
   variant?: 'current' | 'past'
 }) {
@@ -386,51 +390,7 @@ function PayFields({
           </span>
         </label>
       </fieldset>
-      <fieldset className="grid gap-1.5">
-        <legend className="text-xs font-medium text-foreground">When we pay</legend>
-        <label className="flex items-start gap-2 text-xs text-muted-foreground">
-          <input
-            type="radio"
-            name="pay_timing"
-            value="fifteen"
-            defaultChecked={timing === 'fifteen'}
-            className="mt-0.5"
-          />
-          <span>
-            <span className="font-medium text-foreground">Every 15 days</span>
-            {' — '}
-            First pay 15 days after start, then the last pay at the contract end (Nov 1 → Nov 15, then end).
-          </span>
-        </label>
-        <label className="flex items-start gap-2 text-xs text-muted-foreground">
-          <input
-            type="radio"
-            name="pay_timing"
-            value="upfront"
-            defaultChecked={timing === 'upfront'}
-            className="mt-0.5"
-          />
-          <span>
-            <span className="font-medium text-foreground">Upfront</span>
-            {' — '}
-            Pay at the start for the first 2 weeks, then every 2 weeks until the contract ends.
-          </span>
-        </label>
-        <label className="flex items-start gap-2 text-xs text-muted-foreground">
-          <input
-            type="radio"
-            name="pay_timing"
-            value="end"
-            defaultChecked={timing === 'end'}
-            className="mt-0.5"
-          />
-          <span>
-            <span className="font-medium text-foreground">One payment at the end</span>
-            {' — '}
-            A single final payment on the last day of the contract.
-          </span>
-        </label>
-      </fieldset>
+      <PayWhenQuestion value={timing} defaultWhen={defaultWhen} showFifteen />
     </div>
   )
 }
@@ -848,6 +808,7 @@ export function ContractsManager({
   comparisons,
   projects,
   currency = 'SAR',
+  defaultWhen = null,
 }: {
   creatorId: number
   today: string
@@ -855,6 +816,8 @@ export function ContractsManager({
   projects: Project[]
   /** Reposters are paid in USD, creators in SAR. */
   currency?: PayCurrency
+  /** Ahmed’s company default (before start / after end). */
+  defaultWhen?: 'upfront' | 'end' | null
 }) {
   const [pending, startTransition] = useTransition()
   const money = (n: number) => formatMoney(n, currency)
@@ -1040,7 +1003,12 @@ export function ContractsManager({
             title="Pay (base)"
             hint="Fixed pay for the period. Flat bonus is optional."
           >
-            <PayFields base={Number(stickyBase) || 0} requireBase variant="current" timing="fifteen" />
+            <PayFields
+              base={Number(stickyBase) || 0}
+              requireBase
+              variant="current"
+              defaultWhen={defaultWhen}
+            />
           </FormSection>
           <CommissionTermsFields />
         </form>
@@ -1093,7 +1061,7 @@ export function ContractsManager({
               <ProjectTargetFields projects={projects} />
             </FormSection>
             <FormSection title="Pay (base)" hint="Fixed pay for the period. Flat bonus is optional.">
-              <PayFields requireBase variant="current" timing="fifteen" />
+              <PayFields requireBase variant="current" defaultWhen={defaultWhen} />
             </FormSection>
             <CommissionTermsFields />
             <button
@@ -1249,6 +1217,7 @@ export function ContractsManager({
                               ? contract.pay_timing
                               : null
                           }
+                          defaultWhen={defaultWhen}
                           variant={pastVariant ? 'past' : 'current'}
                         />
                       </FormSection>

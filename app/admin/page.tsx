@@ -147,6 +147,7 @@ import { loadUrgentList } from '@/lib/urgent-list'
 import { loadStructurePaySlots } from '@/lib/structure-pay'
 import { parseCalendarRole } from '@/lib/payment-calendar'
 import { PaymentCalendarBoard } from '@/components/admin/payment-calendar'
+import { PayWhenDefaultCard } from '@/components/admin/pay-when-question'
 
 export const dynamic = 'force-dynamic'
 
@@ -567,6 +568,16 @@ export default async function AdminPage({
   const moneyData = tab === 'money' ? await loadMoney() : null
   const calMonth = parseYearMonth(sp.calMonth, opToday)
   const calRole = parseCalendarRole(sp.calRole)
+  const payDefaults =
+    tab === 'money' || tab === 'people'
+      ? await import('@/lib/pay-defaults')
+          .then((m) => m.getPayDefaults())
+          .catch(() => ({
+            when: null as 'upfront' | 'end' | null,
+            updatedBy: null as string | null,
+            updatedAt: null as string | null,
+          }))
+      : { when: null as 'upfront' | 'end' | null, updatedBy: null, updatedAt: null }
   let calendarData: Awaited<ReturnType<typeof loadPaymentCalendar>> | null = null
   let calendarError: string | null = null
   if (tab === 'money' && sp.panel === 'calendar') {
@@ -1773,6 +1784,21 @@ export default async function AdminPage({
             children: calendarError ? (
               <p className="text-sm text-destructive">{calendarError}</p>
             ) : calendarData ? (
+              <div className="flex flex-col gap-4">
+                <PayWhenDefaultCard
+                  value={payDefaults.when}
+                  updatedBy={payDefaults.updatedBy}
+                  labels={{
+                    question: t('payWhenQuestion'),
+                    beforeStart: t('timelinePayUpfront'),
+                    beforeStartHint: t('payWhenBeforeHint'),
+                    afterEnd: t('timelinePayEnd'),
+                    afterEndHint: t('payWhenAfterHint'),
+                    companyDefault: t('payWhenCompanyDefault'),
+                    companyDefaultHint: t('payWhenCompanyHint'),
+                    unmet: t('payWhenUnmet'),
+                  }}
+                />
               <PaymentCalendarBoard
                 model={calendarData}
                 locale={locale}
@@ -1841,6 +1867,7 @@ export default async function AdminPage({
                   people: t('people'),
                 }}
               />
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground">{t('loadingPage')}</p>
             ),
@@ -1900,16 +1927,32 @@ export default async function AdminPage({
             summary: formatMoney(periodTotal, payCurrency(roleFilter)),
             hint: `${formatMoney(paidAllTime, payCurrency(roleFilter))} ${t('totalPaid').toLowerCase()}`,
             children: (
-              <Suspense fallback={<p className="text-sm text-muted-foreground">…</p>}>
-                <PaymentsPeriodPanel
-                  currency={payCurrency(roleFilter)}
-                  payments={periodPayments}
-                  total={periodTotal}
-                  today={today}
-                  defaultFrom={payFrom}
-                  defaultTo={payTo}
+              <div className="flex flex-col gap-4">
+                <PayWhenDefaultCard
+                  value={payDefaults.when}
+                  updatedBy={payDefaults.updatedBy}
+                  labels={{
+                    question: t('payWhenQuestion'),
+                    beforeStart: t('timelinePayUpfront'),
+                    beforeStartHint: t('payWhenBeforeHint'),
+                    afterEnd: t('timelinePayEnd'),
+                    afterEndHint: t('payWhenAfterHint'),
+                    companyDefault: t('payWhenCompanyDefault'),
+                    companyDefaultHint: t('payWhenCompanyHint'),
+                    unmet: t('payWhenUnmet'),
+                  }}
                 />
-              </Suspense>
+                <Suspense fallback={<p className="text-sm text-muted-foreground">…</p>}>
+                  <PaymentsPeriodPanel
+                    currency={payCurrency(roleFilter)}
+                    payments={periodPayments}
+                    total={periodTotal}
+                    today={today}
+                    defaultFrom={payFrom}
+                    defaultTo={payTo}
+                  />
+                </Suspense>
+              </div>
             ),
           },
           {
@@ -2391,6 +2434,7 @@ export default async function AdminPage({
                             labels={{ ...timelineLabels, title: t('roleFilterCreators'), hint: '' }}
                             urgentIds={urgentList.ids}
                             canSendUrgent={canSendUrgent}
+                            defaultWhen={payDefaults.when}
                           />
                         ),
                       }))}
@@ -2404,6 +2448,7 @@ export default async function AdminPage({
                       labels={{ ...timelineLabels, title: t('roleFilterCreators'), hint: '' }}
                       urgentIds={urgentList.ids}
                       canSendUrgent={canSendUrgent}
+                      defaultWhen={payDefaults.when}
                     />
                   )
                 }
@@ -2415,6 +2460,7 @@ export default async function AdminPage({
                     labels={{ ...timelineLabels, title: t('roleFilterReposters'), hint: '' }}
                     urgentIds={urgentList.ids}
                     canSendUrgent={canSendUrgent}
+                    defaultWhen={payDefaults.when}
                   />
                 }
               />

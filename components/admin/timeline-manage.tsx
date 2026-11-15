@@ -85,6 +85,7 @@ export function TimelineManage({
   labels,
   urgentIds = [],
   canSendUrgent = false,
+  defaultWhen = null,
 }: {
   people: CreatorTrackingRow[]
   pausedPeople?: CreatorTrackingRow[]
@@ -93,6 +94,8 @@ export function TimelineManage({
   labels: TimelineLabels
   urgentIds?: number[]
   canSendUrgent?: boolean
+  /** Ahmed’s company default for before-start vs after-end. */
+  defaultWhen?: 'upfront' | 'end' | null
 }) {
   const router = useRouter()
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -298,7 +301,7 @@ export function TimelineManage({
     const timing =
       person.pay_timing === 'upfront' || person.pay_timing === 'end' || person.pay_timing === 'fifteen'
         ? person.pay_timing
-        : 'fifteen'
+        : defaultWhen
     const showPays = person.first_due > 0.009 || person.second_due > 0.009 || person.first_paid > 0.009
     return (
       <form
@@ -357,16 +360,17 @@ export function TimelineManage({
         </label>
         <fieldset className="grid gap-1.5">
           <legend className="text-xs font-medium text-foreground">{labels.pay}</legend>
+          <p className="text-[11px] text-muted-foreground">
+            Should we pay them before the start of the contract, or after the end?
+          </p>
           <label className="flex items-start gap-2 text-xs text-muted-foreground">
-            <input type="radio" name="pay_timing" value="fifteen" defaultChecked={timing === 'fifteen'} className="mt-0.5" />
-            <span>
-              <span className="font-medium text-foreground">{labels.payFifteen}</span>
-              {' — '}
-              first pay 15 days after start, last pay at the contract end.
-            </span>
-          </label>
-          <label className="flex items-start gap-2 text-xs text-muted-foreground">
-            <input type="radio" name="pay_timing" value="upfront" defaultChecked={timing === 'upfront'} className="mt-0.5" />
+            <input
+              type="radio"
+              name="pay_timing"
+              value="upfront"
+              defaultChecked={timing === 'upfront' || (!timing && defaultWhen === 'upfront')}
+              className="mt-0.5"
+            />
             <span>
               <span className="font-medium text-foreground">{labels.payUpfront}</span>
               {' — '}
@@ -374,13 +378,29 @@ export function TimelineManage({
             </span>
           </label>
           <label className="flex items-start gap-2 text-xs text-muted-foreground">
-            <input type="radio" name="pay_timing" value="end" defaultChecked={timing === 'end'} className="mt-0.5" />
+            <input
+              type="radio"
+              name="pay_timing"
+              value="end"
+              defaultChecked={timing === 'end' || (!timing && defaultWhen === 'end')}
+              className="mt-0.5"
+            />
             <span>
               <span className="font-medium text-foreground">{labels.payEnd}</span>
               {' — '}
-              one payment on the last day of the contract.
+              one payment when the contract ends.
             </span>
           </label>
+          {timing === 'fifteen' ? (
+            <label className="flex items-start gap-2 text-xs text-muted-foreground">
+              <input type="radio" name="pay_timing" value="fifteen" defaultChecked className="mt-0.5" />
+              <span>
+                <span className="font-medium text-foreground">{labels.payFifteen}</span>
+                {' — '}
+                first pay 15 days after start, last pay at the contract end.
+              </span>
+            </label>
+          ) : null}
         </fieldset>
         <div className="grid gap-2">
           <div className="text-xs font-medium text-foreground">{labels.payments}</div>

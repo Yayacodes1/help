@@ -2,6 +2,7 @@ import 'server-only'
 import { sql } from '@/lib/db'
 import { addDays } from '@/lib/campaign'
 import { lastCompletedOperationalDay } from '@/lib/operational-day'
+import { normalizePlatforms, videoCompletionRate } from '@/lib/platforms-mode'
 import { isPostingDay, scheduleFromContract, type ScheduleColumns } from '@/lib/posting-schedule'
 import { pausePerson } from '@/lib/pause-person'
 import {
@@ -9,6 +10,7 @@ import {
   STREAK_EPOCH_START,
   buildProbationStreakMessage,
   streakBucketFromMisses,
+  streakMustPost,
   type ProbationLevel,
   type ProbationNotice,
   type ProbationStreakBoard,
@@ -21,11 +23,106 @@ export {
   STREAK_EPOCH_START,
   buildProbationStreakMessage,
   streakBucketFromMisses,
+  streakMustPost,
   type ProbationLevel,
   type ProbationNotice,
   type ProbationStreakBoard,
   type ProbationStreakPhase,
   type ProbationStreakRow,
+}
+
+type StreakContract = {
+  id: number
+  start_date: string
+  end_date: string | null
+  target_instagram: number
+  target_tiktok: number
+  platforms: string | null
+} & ScheduleColumns
+
+type StreakObligation = {
+  contract: StreakContract | null
+  /** Still expected to post for streaks. */
+  mustPost: boolean
+  videosComplete: boolean
+}
+
+/**
+ * Latest started contract as of `asOf`, plus whether they still owe daily posts.
+ * Period ended with unfinished video targets → still on streaks.
+ * Period ended and videos done → off (pay / new contract).
+ */
+async function loadStreakObligation(
+  creatorId: number,
+  asOf: string,
+): Promise<StreakObligation> {
+  const rows = (await sql`
+    SELECT id,
+           start_date::text AS start_date,
+           end_date::text AS end_date,
+           COALESCE(target_instagram, 0)::int AS target_instagram,
+           COALESCE(target_tiktok, 0)::int AS target_tiktok,
+           platforms,
+           COALESCE(schedule_type, 'daily') AS schedule_type,
+           GREATEST(COALESCE(schedule_every_days, 2), 1) AS schedule_every_days,
+           COALESCE(schedule_weekdays, '') AS schedule_weekdays,
+           COALESCE(schedule_per_week, 0) AS schedule_per_week
+    FROM contracts
+    WHERE creator_id = ${creatorId}
+      AND start_date <= ${asOf}::date
+    ORDER BY start_date DESC, id DESC
+    LIMIT 1
+  `) as StreakContract[]
+
+  const contract = rows[0] ?? null
+  if (!contract) {
+    return { contract: null, mustPost: false, videosComplete: true }
+  }
+
+  const mode = normalizePlatforms(contract.platforms)
+  const needIg = mode === 'tiktok' ? 0 : Math.max(0, contract.target_instagram)
+  const needTt = mode === 'instagram' ? 0 : Math.max(0, contract.target_tiktok)
+  const need = needIg + needTt
+
+  // After the calendar end, count catch-up posts through asOf so late videos clear the debt.
+  const countEnd =
+    contract.end_date == null || contract.end_date < asOf
+      ? asOf
+      : addDays(contract.end_date, 1)
+  const countStart = addDays(contract.start_date, -1)
+
+  let postedIg = 0
+  let postedTt = 0
+  if (need > 0) {
+    const counts = (await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE platform = 'instagram')::int AS ig,
+        COUNT(*) FILTER (WHERE platform = 'tiktok')::int AS tt
+      FROM submissions
+      WHERE creator_id = ${creatorId}
+        AND video_date >= ${countStart}::date
+        AND video_date <= ${countEnd}::date
+    `) as Array<{ ig: number; tt: number }>
+    postedIg = counts[0]?.ig ?? 0
+    postedTt = counts[0]?.tt ?? 0
+  }
+
+  const rate = videoCompletionRate({
+    postedInstagram: postedIg,
+    postedTiktok: postedTt,
+    targetInstagram: contract.target_instagram,
+    targetTiktok: contract.target_tiktok,
+    platforms: contract.platforms,
+  })
+  const videosComplete = need <= 0 || (rate != null && rate >= 0.999)
+  const mustPost = streakMustPost({
+    asOf,
+    startDate: contract.start_date,
+    endDate: contract.end_date,
+    videosComplete,
+  })
+
+  return { contract, mustPost, videosComplete }
 }
 
 function parseMissDates(raw: string | null | undefined): string[] {
@@ -108,23 +205,28 @@ export async function syncProbationMisses(opts: {
     const start = streakStartFor(person.probation_started_on)
     if (start > lastCompleted) continue
 
-    const contractRows = (await sql`
-      SELECT id, start_date::text AS start_date,
-             COALESCE(schedule_type, 'daily') AS schedule_type,
-             GREATEST(COALESCE(schedule_every_days, 2), 1) AS schedule_every_days,
-             COALESCE(schedule_weekdays, '') AS schedule_weekdays,
-             COALESCE(schedule_per_week, 0) AS schedule_per_week
-      FROM contracts
-      WHERE creator_id = ${person.id}
-        AND start_date <= ${lastCompleted}::date
-        AND (end_date IS NULL OR end_date >= ${start}::date)
-      ORDER BY start_date DESC, id DESC
-      LIMIT 1
-    `) as Array<{ id: number; start_date: string } & ScheduleColumns>
-
-    const contract = contractRows[0]
-    if (!contract) continue
+    // Close misses through lastCompleted — not “today” — so overnight sync still
+    // records yesterday when someone finishes their videos the next morning.
+    const obligation = await loadStreakObligation(person.id, lastCompleted)
+    if (!obligation.mustPost || !obligation.contract) continue
+    const contract = obligation.contract
     const schedule = scheduleFromContract(contract)
+
+    // Late submissions (or sync after cron) must clear auto misses — otherwise the
+    // calendar goes green while streaks still list that day as a strike.
+    await sql`
+      DELETE FROM creator_strikes cs
+      WHERE cs.creator_id = ${person.id}
+        AND cs.status = 'active'
+        AND cs.source = 'auto'
+        AND cs.strike_date >= ${start}::date
+        AND cs.strike_date <= ${lastCompleted}::date
+        AND EXISTS (
+          SELECT 1 FROM submissions s
+          WHERE s.creator_id = cs.creator_id
+            AND s.video_date = cs.strike_date
+        )
+    `
 
     const inserted = (await sql`
       INSERT INTO creator_strikes (creator_id, contract_id, strike_date, source, status, reason)
@@ -167,13 +269,18 @@ export async function syncProbationMisses(opts: {
     }
 
     const missRows = (await sql`
-      SELECT strike_date::text AS strike_date
-      FROM creator_strikes
-      WHERE creator_id = ${person.id}
-        AND status = 'active'
-        AND strike_date >= ${start}::date
-        AND strike_date <= ${lastCompleted}::date
-      ORDER BY strike_date ASC
+      SELECT cs.strike_date::text AS strike_date
+      FROM creator_strikes cs
+      WHERE cs.creator_id = ${person.id}
+        AND cs.status = 'active'
+        AND cs.strike_date >= ${start}::date
+        AND cs.strike_date <= ${lastCompleted}::date
+        AND NOT EXISTS (
+          SELECT 1 FROM submissions s
+          WHERE s.creator_id = cs.creator_id
+            AND s.video_date = cs.strike_date
+        )
+      ORDER BY cs.strike_date ASC
     `) as Array<{ strike_date: string }>
 
     const missSet = new Set(
@@ -263,19 +370,11 @@ export async function resetCreatorStreak(
 
   const forgiveDay = opts?.forgiveDay?.trim() ?? ''
   if (/^\d{4}-\d{2}-\d{2}$/.test(forgiveDay) && forgiveDay >= STREAK_EPOCH_START) {
-    const contracts = (await sql`
-      SELECT id
-      FROM contracts
-      WHERE creator_id = ${id}
-        AND start_date <= ${forgiveDay}::date
-        AND (end_date IS NULL OR end_date >= ${forgiveDay}::date)
-      ORDER BY start_date DESC, id DESC
-      LIMIT 1
-    `) as { id: number }[]
+    const obligation = await loadStreakObligation(id, forgiveDay)
     const reason = `Forgiven by admin (${forgiveDay})`
     await sql`
       INSERT INTO creator_strikes (creator_id, contract_id, strike_date, source, status, reason)
-      VALUES (${id}, ${contracts[0]?.id ?? null}, ${forgiveDay}::date, 'auto', 'waived', ${reason})
+      VALUES (${id}, ${obligation.contract?.id ?? null}, ${forgiveDay}::date, 'auto', 'waived', ${reason})
       ON CONFLICT (creator_id, strike_date) DO UPDATE
       SET status = 'waived',
           reason = EXCLUDED.reason
@@ -301,16 +400,8 @@ export async function forgiveCreatorStreakDay(
     return { ok: false, error: 'Invalid day' }
   }
 
-  const contracts = (await sql`
-    SELECT id
-    FROM contracts
-    WHERE creator_id = ${id}
-      AND start_date <= ${day}::date
-      AND (end_date IS NULL OR end_date >= ${day}::date)
-    ORDER BY start_date DESC, id DESC
-    LIMIT 1
-  `) as { id: number }[]
-  const contractId = contracts[0]?.id ?? null
+  const obligation = await loadStreakObligation(id, day)
+  const contractId = obligation.contract?.id ?? null
   const reason = `Forgiven by admin (${day})`
 
   await sql`
@@ -342,22 +433,19 @@ export async function forgiveAllCreatorStreaksForDay(
   const reason = `Forgiven by admin (${day})`
 
   // Everyone who would show as “didn’t post” that day — not only people with an active strike.
-  const targets = (await sql`
-    SELECT
-      c.id AS creator_id,
-      (
-        SELECT ct.id
-        FROM contracts ct
-        WHERE ct.creator_id = c.id
-          AND ct.start_date <= ${day}::date
-          AND (ct.end_date IS NULL OR ct.end_date >= ${day}::date)
-        ORDER BY ct.start_date DESC, ct.id DESC
-        LIMIT 1
-      ) AS contract_id
+  const candidates = (await sql`
+    SELECT c.id AS creator_id
     FROM creators c
     WHERE c.role = 'creator'
       AND c.paused_at IS NULL
-      AND (${pid}::int IS NULL OR c.project_id = ${pid})
+      AND (
+        ${pid}::int IS NULL
+        OR c.project_id = ${pid}
+        OR EXISTS (
+          SELECT 1 FROM submissions s
+          WHERE s.creator_id = c.id AND s.project_id = ${pid}
+        )
+      )
       AND NOT EXISTS (
         SELECT 1 FROM submissions s
         WHERE s.creator_id = c.id AND s.video_date = ${day}::date
@@ -368,14 +456,17 @@ export async function forgiveAllCreatorStreaksForDay(
           AND b.start_date <= ${day}::date
           AND b.end_date >= ${day}::date
       )
-  `) as Array<{ creator_id: number; contract_id: number | null }>
+  `) as Array<{ creator_id: number }>
 
-  for (const row of targets) {
+  let cleared = 0
+  for (const row of candidates) {
+    const obligation = await loadStreakObligation(row.creator_id, day)
+    if (!obligation.mustPost) continue
     await sql`
       INSERT INTO creator_strikes (creator_id, contract_id, strike_date, source, status, reason)
       VALUES (
         ${row.creator_id},
-        ${row.contract_id},
+        ${obligation.contract?.id ?? null},
         ${day}::date,
         'auto',
         'waived',
@@ -385,11 +476,12 @@ export async function forgiveAllCreatorStreaksForDay(
       SET status = 'waived',
           reason = EXCLUDED.reason
     `
+    cleared += 1
   }
 
   const { getOperationalToday } = await import('@/lib/queries')
   await syncProbationMisses({ today: await getOperationalToday() })
-  return { cleared: targets.length }
+  return { cleared }
 }
 
 /** Reset streaks for every active creator (optional project filter). */
@@ -399,7 +491,14 @@ export async function resetAllCreatorStreaks(projectId?: number | null): Promise
     SELECT id FROM creators
     WHERE role = 'creator'
       AND paused_at IS NULL
-      AND (${pid}::int IS NULL OR project_id = ${pid})
+      AND (
+        ${pid}::int IS NULL
+        OR project_id = ${pid}
+        OR EXISTS (
+          SELECT 1 FROM submissions s
+          WHERE s.creator_id = creators.id AND s.project_id = ${pid}
+        )
+      )
   `) as { id: number }[]
   if (ids.length === 0) return { cleared: 0 }
   const creatorIds = ids.map((r) => r.id)
@@ -588,7 +687,14 @@ export async function getProbationStreakBoard(opts: {
     LEFT JOIN projects p ON p.id = c.project_id
     WHERE c.role = 'creator'
       AND c.paused_at IS NULL
-      AND (${projectId}::int IS NULL OR c.project_id = ${projectId})
+      AND (
+        ${projectId}::int IS NULL
+        OR c.project_id = ${projectId}
+        OR EXISTS (
+          SELECT 1 FROM submissions s
+          WHERE s.creator_id = c.id AND s.project_id = ${projectId}
+        )
+      )
     ORDER BY c.name ASC
   `) as Array<{
     id: number
@@ -611,7 +717,14 @@ export async function getProbationStreakBoard(opts: {
     JOIN creators c ON c.id = n.creator_id
     WHERE c.paused_at IS NULL
       AND c.role = 'creator'
-      AND (${projectId}::int IS NULL OR c.project_id = ${projectId})
+      AND (
+        ${projectId}::int IS NULL
+        OR c.project_id = ${projectId}
+        OR EXISTS (
+          SELECT 1 FROM submissions s
+          WHERE s.creator_id = c.id AND s.project_id = ${projectId}
+        )
+      )
   `) as Array<{
     id: number
     creator_id: number
@@ -657,60 +770,47 @@ export async function getProbationStreakBoard(opts: {
 
   for (const person of people) {
     const start = streakStartFor(person.probation_started_on)
-    const contractRows = (await sql`
-      SELECT id, start_date::text AS start_date,
-             COALESCE(schedule_type, 'daily') AS schedule_type,
-             GREATEST(COALESCE(schedule_every_days, 2), 1) AS schedule_every_days,
-             COALESCE(schedule_weekdays, '') AS schedule_weekdays,
-             COALESCE(schedule_per_week, 0) AS schedule_per_week
-      FROM contracts
-      WHERE creator_id = ${person.id}
-        AND start_date <= ${today}::date
-        AND (end_date IS NULL OR end_date >= ${start}::date)
-      ORDER BY start_date DESC, id DESC
-      LIMIT 1
-    `) as Array<{ id: number; start_date: string } & ScheduleColumns>
-
-    const contract = contractRows[0]
+    const obligation = await loadStreakObligation(person.id, selectedDay)
+    const contract = obligation.contract
     const schedule = contract ? scheduleFromContract(contract) : null
+    const mustPost = obligation.mustPost
 
     const missRows = (await sql`
-      SELECT strike_date::text AS strike_date
-      FROM creator_strikes
-      WHERE creator_id = ${person.id}
-        AND status = 'active'
-        AND strike_date >= ${start}::date
-        AND strike_date <= ${lastCompleted}::date
-      ORDER BY strike_date ASC
+      SELECT cs.strike_date::text AS strike_date
+      FROM creator_strikes cs
+      WHERE cs.creator_id = ${person.id}
+        AND cs.status = 'active'
+        AND cs.strike_date >= ${start}::date
+        AND cs.strike_date <= ${lastCompleted}::date
+        AND NOT EXISTS (
+          SELECT 1 FROM submissions s
+          WHERE s.creator_id = cs.creator_id
+            AND s.video_date = cs.strike_date
+        )
+      ORDER BY cs.strike_date ASC
     `) as Array<{ strike_date: string }>
 
-    const allMissDates =
-      schedule && contract
+    const recordedMissDates =
+      mustPost && schedule && contract
         ? missRows
             .map((r) => r.strike_date)
             .filter((d) => isPostingDay(schedule, contract.start_date, d))
-        : missRows.map((r) => r.strike_date)
-    const missSet = new Set(allMissDates)
-    const { count: missCount, dates: missDates } =
-      lastCompleted >= start
-        ? consecutiveMisses({
-            end: lastCompleted,
-            start,
-            missSet,
-            schedule,
-            contractStart: contract?.start_date ?? null,
-          })
-        : { count: 0, dates: [] as string[] }
+        : mustPost
+          ? missRows.map((r) => r.strike_date)
+          : []
+    const missSet = new Set(recordedMissDates)
 
     const onBreak = breakOnDay.has(person.id)
+    const scheduleSaysPost =
+      !schedule || !contract || isPostingDay(schedule, contract.start_date, selectedDay)
     const shouldPost =
-      selectedDay >= STREAK_EPOCH_START &&
-      (!schedule || !contract || isPostingDay(schedule, contract.start_date, selectedDay))
+      mustPost && selectedDay >= STREAK_EPOCH_START && scheduleSaysPost
     const posted = postedOnDay.has(person.id)
     const forgivenForSelectedDay = waivedOnDay.has(person.id)
     // Cleared this day’s miss → leave Didn’t post for this day (other days / All still count).
     if (shouldPost && !posted && forgivenForSelectedDay && !onBreak) continue
 
+    // Posted → Posted. No submission for that day → Didn’t post. Period done + videos done → Off.
     const dayStatus: ProbationStreakRow['dayStatus'] = onBreak
       ? 'break'
       : !shouldPost
@@ -727,10 +827,59 @@ export async function getProbationStreakBoard(opts: {
       })
     }
 
+    // Streak on the board follows the selected day: if they didn’t post that day, count it.
+    // Official strike/notice sync still closes the day overnight (through lastCompleted).
+    // No posting obligation → not on a miss streak (pay / new contract).
+    const streakEnd = selectedDay <= lastCompleted ? selectedDay : lastCompleted
+    // Past “Didn’t post” days must count even if the strike row is missing (late sync /
+    // person left the ladder). Otherwise the board shows Clean + Didn’t post.
+    const effectiveMissSet = new Set(missSet)
+    if (
+      dayStatus === 'missed' &&
+      selectedDay >= start &&
+      selectedDay <= lastCompleted
+    ) {
+      effectiveMissSet.add(selectedDay)
+    }
+    const { count: closedMissCount, dates: closedMissDates } =
+      mustPost && streakEnd >= start
+        ? consecutiveMisses({
+            end: streakEnd,
+            start,
+            missSet: effectiveMissSet,
+            schedule,
+            contractStart: contract?.start_date ?? null,
+          })
+        : { count: 0, dates: [] as string[] }
+
+    const openSelectedMiss =
+      dayStatus === 'missed' && selectedDay > lastCompleted && selectedDay >= start
+    const missCount = openSelectedMiss ? closedMissCount + 1 : closedMissCount
+    const missDates = openSelectedMiss
+      ? [...closedMissDates, selectedDay]
+      : closedMissDates
+    const allMissDates = (() => {
+      const base =
+        openSelectedMiss && !recordedMissDates.includes(selectedDay)
+          ? [...recordedMissDates, selectedDay]
+          : recordedMissDates
+      if (
+        dayStatus === 'missed' &&
+        selectedDay >= start &&
+        selectedDay <= lastCompleted &&
+        !base.includes(selectedDay)
+      ) {
+        return [...base, selectedDay].sort()
+      }
+      return base
+    })()
+
     const personNotices = byCreator.get(person.id) ?? []
-    const pending = personNotices
-      .filter((n) => n.messaged_at == null)
-      .sort((a, b) => a.level - b.level)[0]
+    const pending = mustPost
+      ? personNotices
+          .filter((n) => n.messaged_at == null)
+          .sort((a, b) => a.level - b.level)[0]
+      : undefined
     const lastMessaged = personNotices
       .filter((n) => n.messaged_at != null)
       .sort((a, b) => b.level - a.level)[0]
@@ -906,42 +1055,44 @@ export async function getCreatorProbationSnapshot(
     }
   }
 
-  const contractRows = (await sql`
-    SELECT id, start_date::text AS start_date,
-           COALESCE(schedule_type, 'daily') AS schedule_type,
-           GREATEST(COALESCE(schedule_every_days, 2), 1) AS schedule_every_days,
-           COALESCE(schedule_weekdays, '') AS schedule_weekdays,
-           COALESCE(schedule_per_week, 0) AS schedule_per_week
-    FROM contracts
-    WHERE creator_id = ${creatorId}
-      AND start_date <= ${lastCompleted}::date
-      AND (end_date IS NULL OR end_date >= ${start}::date)
-    ORDER BY start_date DESC, id DESC
-    LIMIT 1
-  `) as Array<{ id: number; start_date: string } & ScheduleColumns>
-  const contract = contractRows[0]
-  const schedule = contract ? scheduleFromContract(contract) : null
+  const obligation = await loadStreakObligation(creatorId, today)
+  if (!obligation.mustPost || !obligation.contract) {
+    return {
+      onProbation: true,
+      missCount: 0,
+      missDates: [],
+      streakLevel: 0,
+      pendingLevel: null,
+      nextThreshold: PROBATION_LEVEL_THRESHOLDS[1],
+      maxMisses: PROBATION_LEVEL_THRESHOLDS[3],
+    }
+  }
+  const contract = obligation.contract
+  const schedule = scheduleFromContract(contract)
 
   const strikeRows = (await sql`
-    SELECT strike_date::text AS d
-    FROM creator_strikes
-    WHERE creator_id = ${creatorId}
-      AND strike_date >= ${start}::date
-      AND strike_date <= ${lastCompleted}::date
-      AND status = 'active'
-    ORDER BY strike_date ASC
+    SELECT cs.strike_date::text AS d
+    FROM creator_strikes cs
+    WHERE cs.creator_id = ${creatorId}
+      AND cs.strike_date >= ${start}::date
+      AND cs.strike_date <= ${lastCompleted}::date
+      AND cs.status = 'active'
+      AND NOT EXISTS (
+        SELECT 1 FROM submissions s
+        WHERE s.creator_id = cs.creator_id
+          AND s.video_date = cs.strike_date
+      )
+    ORDER BY cs.strike_date ASC
   `) as { d: string }[]
   const missSet = new Set(
-    schedule && contract
-      ? strikeRows.map((r) => r.d).filter((d) => isPostingDay(schedule, contract.start_date, d))
-      : strikeRows.map((r) => r.d),
+    strikeRows.map((r) => r.d).filter((d) => isPostingDay(schedule, contract.start_date, d)),
   )
   const { count: missCount, dates: missDates } = consecutiveMisses({
     end: lastCompleted,
     start,
     missSet,
     schedule,
-    contractStart: contract?.start_date ?? null,
+    contractStart: contract.start_date,
   })
 
   const notices = (await sql`

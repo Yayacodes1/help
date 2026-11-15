@@ -209,42 +209,8 @@ export function buildOfferMessage(input: {
   topCountries?: Array<{ country: string; percent: number | null }> | null
   baseCountryLabel?: string | null
 }): string {
-  const handle = input.username ? `@${input.username.replace(/^@+/, '')}` : 'your account'
-  const vidLabel =
-    input.videoCount && input.videoCount > 0
-      ? `${input.videoCount} recent videos`
-      : 'your recent videos'
-  const statsBits = [
-    input.avgViews != null ? `average ~${Math.round(input.avgViews).toLocaleString()}` : null,
-    input.medianViews != null ? `median ~${Math.round(input.medianViews).toLocaleString()}` : null,
-  ].filter(Boolean)
-  const avgLine =
-    statsBits.length > 0
-      ? `Views from your last ${input.videoCount ?? 'recent'} videos: ${statsBits.join(', ')}.`
-      : 'We estimated pay from the stats we could read.'
-
-  const topCountriesLine =
-    input.topCountries && input.topCountries.length > 0
-      ? `Top audience countries: ${input.topCountries
-          .map((c) => (c.percent != null ? `${c.country} ${c.percent}%` : c.country))
-          .join(', ')}.`
-      : input.audienceCountry
-        ? `Top audience country: ${input.audienceCountry}.`
-        : null
-  const audienceBits = [
-    topCountriesLine,
-    input.audienceAge ? `top age ${input.audienceAge}` : null,
-    input.baseCountryLabel ? `you’re based in ${input.baseCountryLabel}` : null,
-  ].filter(Boolean)
-  const audienceLine =
-    audienceBits.length > 0 ? `From your analytics / profile: ${audienceBits.join('; ')}.` : null
-
   if (input.terms.currency === 'SAR') {
     return [
-      `Hey! We reviewed ${handle} and looked at ${vidLabel}.`,
-      avgLine,
-      audienceLine,
-      '',
       `We'd love to work with you. Here's an approximate offer (not a final contract):`,
       '',
       `**Posting schedule:**`,
@@ -260,28 +226,13 @@ export function buildOfferMessage(input: {
       `- ${input.terms.weeklyBase} SAR per week (7 videos).`,
       `- ${input.terms.monthlyBase} SAR per month (30 videos).`,
       '',
-      input.terms.estimatedPayPerVideo != null
-        ? `At your recent performance, that is about ${input.terms.estimatedPayPerVideo} SAR per video before we settle a final deal.`
-        : null,
-      '',
       `This is an approximation. If you agree, reply yes and we'll text you on WhatsApp to collect payment details and start a short test week.`,
       '',
       `Let us know if you're interested!`,
-    ]
-      .filter((line) => line != null)
-      .join('\n')
+    ].join('\n')
   }
 
-  const pricingLabel =
-    input.terms.pricingViews != null
-      ? Math.round(input.terms.pricingViews).toLocaleString()
-      : null
-
   return [
-    `Hey! We reviewed ${handle} and analyzed ${vidLabel} to understand your average performance.`,
-    avgLine,
-    audienceLine,
-    '',
     `We'd love to work with you. Here's our offer:`,
     '',
     `**Posting schedule:**`,
@@ -297,10 +248,6 @@ export function buildOfferMessage(input: {
     `- $${input.terms.weeklyBase} per week (7 videos).`,
     `- $${input.terms.monthlyBase} per month (30 videos).`,
     '',
-    input.terms.estimatedPayPerVideo != null && input.terms.estimatedCpm != null && pricingLabel
-      ? `Using ~${pricingLabel} views for pricing, that's about $${input.terms.estimatedPayPerVideo}/video (~$${input.terms.estimatedCpm} CPM).`
-      : `Target effective CPM is about $${input.terms.targetCpm}.`,
-    '',
     `View-based bonuses are paid on top of the guaranteed amount.`,
     '',
     `We'd like to start with a one-week test, review the results, then discuss continuing.`,
@@ -308,7 +255,5 @@ export function buildOfferMessage(input: {
     `This is an approximation — not necessarily the final contract. If you agree, reply yes and we'll WhatsApp you next.`,
     '',
     `Let us know if you're interested. We'd love to work together!`,
-  ]
-    .filter((line) => line != null)
-    .join('\n')
+  ].join('\n')
 }

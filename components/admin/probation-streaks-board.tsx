@@ -125,7 +125,8 @@ export function ProbationStreaksBoard({
   const pathname = usePathname()
   const params = useSearchParams()
   const [pending, startTransition] = useTransition()
-  const [view, setView] = useState<'missed' | 'posted' | 'streaks' | 'all'>('all')
+  // Day boards start on “Didn’t post” — Clean / Posted people are one tap away.
+  const [view, setView] = useState<'missed' | 'posted' | 'streaks' | 'all'>('missed')
   const [copiedId, setCopiedId] = useState<number | null>(null)
 
   function push(patch: Record<string, string | null>) {

@@ -770,7 +770,7 @@ export const messages = {
     fitnessLoadError: 'Could not load creator fitness. Refresh and try again.',
     streaksTitle: 'Creator streaks',
     streaksHint:
-      'Filter by Notek, Miqat, or All projects. Posted = they submitted for that day; Didn’t post = they haven’t. Streak count follows the day you pick — if they still didn’t post, it counts (not Clean). “Reset this day” clears that day only. Tap a miss-day chip to clear one day for one person. Row Reset clears one person’s whole streak.',
+      'Opens on Didn’t post for the day you pick. Clean people who posted that day only show under Posted or All creators. Posted = submitted that day; Didn’t post = no video that day; On streak = consecutive misses. If the calendar end passed but required videos aren’t done, they stay on streaks until the videos are finished — then pay them and start the next contract. “Reset this day” clears that day only. Tap a miss-day chip to clear one day for one person. Row Reset clears one person’s whole streak.',
     streaksLoadError: 'Could not load streaks. Refresh and try again.',
     streaksOnProbation: 'On streaks',
     streaksApproaching: 'Approaching',
@@ -1641,7 +1641,7 @@ export const messages = {
     fitnessLoadError: 'تعذّر تحميل قوة الصنّاع. حدّث الصفحة وحاول مرة أخرى.',
     streaksTitle: 'ستريكات الصنّاع',
     streaksHint:
-      'صفّي حسب Notek أو Miqat أو كل المشاريع. «نشر» = سلّم لذلك اليوم، «ما نشر» = لم يسلّم بعد. عدد الستريك يتبع اليوم المختار — إن لم ينشر بعد يُحسب (وليس نظيف). «إعادة ضبط هذا اليوم» تمسح هذا اليوم فقط. اضغط شارة يوم لمسح يوم واحد لشخص. إعادة ضبط الصف تمسح ستريك الشخص كامل.',
+      'صفّي حسب Notek أو Miqat أو كل المشاريع. «نشر» = سلّم لذلك اليوم، «ما نشر» = لم يسلّم بعد. إذا انتهى تاريخ العقد والفيديوهات المطلوبة لم تكتمل، يبقى على الستريك حتى يكملها — بعدها ادفعوا وابدأوا العقد التالي. عدد الستريك يتبع اليوم المختار. «إعادة ضبط هذا اليوم» تمسح هذا اليوم فقط. اضغط شارة يوم لمسح يوم واحد لشخص. إعادة ضبط الصف تمسح ستريك الشخص كامل.',
     streaksLoadError: 'تعذّر تحميل الستريكات. حدّث الصفحة وحاول مرة أخرى.',
     streaksOnProbation: 'على ستريك',
     streaksApproaching: 'يقترب',
