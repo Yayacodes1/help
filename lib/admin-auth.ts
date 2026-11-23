@@ -12,7 +12,9 @@ type Account = { id: string; name: string; role: AdminRole; password: string }
 /** Yahya’s password stays in env. Ahmed and Lula use the site passwords. */
 function accounts(): Account[] {
   const out: Account[] = []
-  const yahya = process.env.ADMIN_PASSWORD_YAHYA?.trim()
+  // ADMIN_PASSWORD is the older name. Without this fallback a stale env leaves
+  // no owner account at all, and every password fails as "Incorrect password".
+  const yahya = (process.env.ADMIN_PASSWORD_YAHYA || process.env.ADMIN_PASSWORD)?.trim()
   if (yahya) out.push({ id: 'yahya', name: 'Yahya', role: 'owner', password: yahya })
   out.push({ id: 'ahmed', name: 'Ahmed', role: 'manager', password: 'iwillgetcashed' })
   out.push({ id: 'lula', name: 'Lula', role: 'manager', password: 'lulaisadmin' })
