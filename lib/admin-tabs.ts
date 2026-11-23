@@ -1,5 +1,6 @@
 export const ADMIN_TABS = {
   today: ['leaders', 'progress', 'attention', 'reviews', 'strikes', 'videos'],
+  recovery: ['recovery'],
   twoday: ['quickBreak', 'breakRequests'],
   analytics: ['analytics', 'ranking', 'projectviews', 'topvideos', 'miqatcontest'],
   money: ['yahya', 'marketing', 'payouts', 'calendar', 'commission', 'paydue', 'payments', 'archive', 'outflow'],
@@ -20,7 +21,7 @@ export const ADMIN_TABS = {
 
 export type AdminTab = keyof typeof ADMIN_TABS
 
-export const ADMIN_TAB_ORDER: AdminTab[] = ['today', 'twoday', 'analytics', 'money', 'people']
+export const ADMIN_TAB_ORDER: AdminTab[] = ['today', 'recovery', 'twoday', 'analytics', 'money', 'people']
 
 /** An open panel decides the tab (deep links keep working); otherwise `?tab=`, else Today. */
 export function resolveAdminTab(tab?: string, panel?: string): AdminTab {

@@ -8,6 +8,7 @@ import { getAdminSession, isAdmin } from '@/lib/admin-auth'
 import { ADMIN_TABS, resolveAdminTab } from '@/lib/admin-tabs'
 import { AdminTabs } from '@/components/admin/admin-tabs'
 import { ensureCreatorTrackingColumns } from '@/lib/schema'
+import { loadRecoveryReport } from '@/lib/recovery'
 import {
   attachTracking,
   getAdminSubmissions,
@@ -49,6 +50,7 @@ import { DayNavigator } from '@/components/admin/day-navigator'
 import { LogoutButton } from '@/components/admin/logout-button'
 import { AttentionBoard } from '@/components/admin/attention-board'
 import { PanelBoard } from '@/components/admin/panel-board'
+import { RecoveryPanel } from '@/components/admin/recovery-panel'
 import { SubmissionsTable } from '@/components/admin/submissions-table'
 import { PaymentsPeriodPanel } from '@/components/admin/payments-period-panel'
 import { PaymentDuePanel } from '@/components/admin/payment-due-panel'
@@ -557,6 +559,13 @@ export default async function AdminPage({
         ]).then(([directory, board, marks]) => ({ directory, board, marks }))
       : null
   const analyticsData = tab === 'analytics' ? await loadAnalytics() : null
+  const recoveryData =
+    tab === 'recovery'
+      ? await loadRecoveryReport({ today }).catch((err) => {
+          console.error('[admin] recovery', err)
+          return null
+        })
+      : null
   // Heal download gaps in the background whenever someone opens Analytics on prod.
   if (showDownloads && tab === 'analytics') {
     after(() => {
@@ -1014,6 +1023,37 @@ export default async function AdminPage({
     strikes: t('strikeCount'),
   }
 
+  const recoveryLabels = {
+    refundRate: t('recoveryRefundRate'),
+    last7: t('recoveryLast7'),
+    prior7: t('recoveryPrior7'),
+    refunds: t('recoveryRefunds'),
+    requests: t('recoveryRequests'),
+    reasons: t('recoveryReasons'),
+    reasonsEmpty: t('recoveryReasonsEmpty'),
+    better: t('recoveryBetter'),
+    worse: t('recoveryWorse'),
+    flat: t('recoveryFlat'),
+    sparkline: t('recoverySparkline'),
+    lateNote: t('recoveryLateNote'),
+    backlog: t('recoveryBacklog'),
+    unresolved: t('recoveryUnresolved'),
+    over24h: t('recoveryOver24h'),
+    response: t('recoveryResponse'),
+    criticalBugs: t('recoveryCriticalBugs'),
+    satisfaction: t('recoverySatisfaction'),
+    notConnected: t('recoveryNotConnected'),
+    noConfig: t('recoveryNoConfig'),
+    failed: t('recoveryFailed'),
+    last28: t('recoveryLast28'),
+    prior28: t('recoveryPrior28'),
+    today: t('recoveryToday'),
+    requestsToday: t('recoveryRequestsToday'),
+    noRequestsToday: t('recoveryNoRequestsToday'),
+    pts: t('recoveryPoints'),
+    transactions: t('recoveryTransactions'),
+  }
+
   const hiddenPanels = new Set<string>()
   if (!showYahyaExpenses) hiddenPanels.add('yahya')
   if (!showWallet) hiddenPanels.add('marketing')
@@ -1028,7 +1068,9 @@ export default async function AdminPage({
           ? 'manage'
           : tab === 'twoday'
             ? 'quickBreak'
-            : null
+            : tab === 'recovery'
+              ? 'recovery'
+              : null
 
   return (
     <main
@@ -1087,6 +1129,7 @@ export default async function AdminPage({
           active={tab}
           labels={{
             today: t('tabToday'),
+            recovery: t('tabRecovery'),
             twoday: t('tabTwoday'),
             analytics: t('tabAnalytics'),
             money: t('tabMoney'),
@@ -1132,6 +1175,23 @@ export default async function AdminPage({
         columns={3}
         closeLabel={t('close')}
         panels={[
+          ...(recoveryData
+            ? [
+                {
+                  id: 'recovery',
+                  title: t('tabRecovery'),
+                  summary:
+                    recoveryData.apps[0]?.last7.rate != null
+                      ? `${recoveryData.apps[0].last7.rate.toFixed(1)}%`
+                      : '—',
+                  hint:
+                    recoveryData.apps[0] != null
+                      ? `${t('recoveryLast7')} · ${recoveryData.apps[0].last7.refunds}/${recoveryData.apps[0].last7.transactions}`
+                      : undefined,
+                  children: <RecoveryPanel report={recoveryData} labels={recoveryLabels} />,
+                },
+              ]
+            : []),
           ...(analyticsData ? [
           {
             id: 'analytics',
